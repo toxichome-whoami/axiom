@@ -29,7 +29,7 @@ impl PolicyEngine {
         operation: &str,
     ) -> Result<(), AxiomError> {
         // Fast-path: Full system administrators bypass granular policy evaluation
-        if auth.is_session {
+        if auth.is_session && auth.role.as_deref() != Some("custom") {
             return Ok(());
         }
 
@@ -148,7 +148,7 @@ impl PolicyEngine {
         table: &str,
         operation: &str,
     ) -> Option<String> {
-        if auth.is_session {
+        if auth.is_session && auth.role.as_deref() != Some("custom") {
             return None;
         }
 
@@ -190,7 +190,7 @@ impl PolicyEngine {
     ///  - Returns vector of database alias strings authorized for the caller.
     ///  - Idempotent: Yes.
     pub fn filter_databases(auth: &AuthContext, databases: &[String]) -> Vec<String> {
-        if auth.is_session {
+        if auth.is_session && auth.role.as_deref() != Some("custom") {
             return databases.to_vec();
         }
 
@@ -216,7 +216,7 @@ impl PolicyEngine {
     ///  - Returns vector of namespace strings authorized for the caller.
     ///  - Idempotent: Yes.
     pub fn filter_blob_namespaces(auth: &AuthContext, namespaces: &[String]) -> Vec<String> {
-        if auth.is_session {
+        if auth.is_session && auth.role.as_deref() != Some("custom") {
             return namespaces.to_vec();
         }
 
@@ -265,7 +265,7 @@ impl PolicyEngine {
         operation: &str,
     ) -> Result<(), AxiomError> {
         // Fast-path: Human admin sessions bypass policy evaluation
-        if auth.is_session {
+        if auth.is_session && auth.role.as_deref() != Some("custom") {
             return Ok(());
         }
 
@@ -639,5 +639,39 @@ mod tests {
             PolicyEngine::get_rls_predicate(&admin_ctx, "analytics", "orders", "SELECT"),
             None
         );
+    }
+
+    #[test]
+    fn test_custom_permission_session_evaluation() {
+        use axiom_core::PermissionSnapshot;
+
+        // Custom session user with only SELECT on public.posts
+        let custom_ctx = AuthContext {
+            api_key_name: "user:editor_alice".to_string(),
+            is_session: true,
+            role: Some("custom".to_string()),
+            permissions: vec![PermissionSnapshot {
+                database: "main_db".to_string(),
+                table_name: "posts".to_string(),
+                operations: vec!["SELECT".to_string()],
+                rls_filter: None,
+            }],
+            ..Default::default()
+        };
+
+        // Permitted SELECT on posts
+        assert!(PolicyEngine::evaluate(&custom_ctx, "main_db", "posts", "SELECT").is_ok());
+
+        // Denied INSERT on posts
+        let insert_res = PolicyEngine::evaluate(&custom_ctx, "main_db", "posts", "INSERT");
+        assert!(insert_res.is_err());
+
+        // Denied SELECT on comments
+        let comments_res = PolicyEngine::evaluate(&custom_ctx, "main_db", "comments", "SELECT");
+        assert!(comments_res.is_err());
+
+        // Denied access on other database
+        let other_db_res = PolicyEngine::evaluate(&custom_ctx, "finance_db", "invoices", "SELECT");
+        assert!(other_db_res.is_err());
     }
 }

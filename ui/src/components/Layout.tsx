@@ -9,7 +9,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "../utils/cn";
 import { api } from "../api/client";
-import { getOperatorUser, clearSession } from "../api/session";
+import { getOperatorUser, clearSession, hasPermission, setCurrentUser } from "../api/session";
 // MobileTabBar removed
 import {
   LayoutDashboard,
@@ -26,6 +26,7 @@ import {
   Table,
   Network,
   History,
+  Users,
 } from "lucide-react";
 
 export type NavPath =
@@ -34,6 +35,7 @@ export type NavPath =
   | "/system/tables"
   | "/system/storage"
   | "/system/cluster"
+  | "/system/users"
   | "/system/keys"
   | "/system/roles"
   | "/system/audit"
@@ -68,10 +70,30 @@ export function Layout({
   const userRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Synchronize document title with active page view
+  // Synchronize document title with active page view and hydrate operator permissions
   useEffect(() => {
     document.title = title ? `${title} — Axiom Gateway` : "Axiom Gateway";
   }, [title]);
+
+  useEffect(() => {
+    api.getMe().then((user) => {
+      if (user) {
+        setCurrentUser(user);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const itemPermissions: Record<string, string> = {
+    "/system/databases": "databases.view",
+    "/system/tables": "databases.view",
+    "/system/storage": "blobs.view",
+    "/system/cluster": "cluster.view",
+    "/system/users": "users.view",
+    "/system/keys": "keys.view",
+    "/system/roles": "roles.view",
+    "/system/audit": "audit.view",
+    "/system/settings": "settings.view",
+  };
 
   const searchItems = [
     {
@@ -105,6 +127,12 @@ export function Layout({
       category: "Infrastructure",
     },
     {
+      label: "Administrators",
+      path: "/system/users" as NavPath,
+      icon: Users,
+      category: "Security & Access",
+    },
+    {
       label: "API Keys",
       path: "/system/keys" as NavPath,
       icon: Key,
@@ -134,7 +162,7 @@ export function Layout({
       icon: Settings,
       category: "Configuration",
     },
-  ];
+  ].filter((item) => !itemPermissions[item.path] || hasPermission(itemPermissions[item.path]));
 
   const filteredSearchItems = searchItems.filter(
     (item) =>
@@ -246,6 +274,11 @@ export function Layout({
       title: "Security & Access",
       items: [
         {
+          path: "/system/users" as NavPath,
+          label: "Administrators",
+          icon: Users,
+        },
+        {
           path: "/system/keys" as NavPath,
           label: "API Keys",
           icon: Key,
@@ -292,7 +325,14 @@ export function Layout({
         },
       ],
     },
-  ];
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !itemPermissions[item.path] || hasPermission(itemPermissions[item.path]),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   // When viewing full-canvas workspaces (Storage or Table Editor), fit 100% viewport and prevent layout double-scroll
   const isFullPage =

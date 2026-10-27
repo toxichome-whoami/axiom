@@ -13,6 +13,7 @@ import React, {
   useRef,
 } from "react";
 import { api, ClusterStatusData, PeerNodeRecordApi } from "../api/client";
+import { hasPermission } from "../api/session";
 import { DataTable, Column } from "../components/shared/DataTable";
 import { SlideOver } from "../components/ui/SlideOver";
 import { Button } from "../components/ui/Button";
@@ -740,6 +741,7 @@ export function Cluster() {
           <Button
             variant="primary"
             size="sm"
+            disabled={!hasPermission("cluster.connect")}
             onClick={() => {
               setConnectError(null);
               setIsConnectOpen(true);
@@ -1688,7 +1690,7 @@ export function Cluster() {
               </button>
               <button
                 type="submit"
-                disabled={!canSavePeer || isSavingPeer}
+                disabled={!canSavePeer || isSavingPeer || !hasPermission("cluster.manage")}
                 className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
               >
                 <span
@@ -1730,10 +1732,11 @@ export function Cluster() {
               </p>
               <button
                 type="button"
+                disabled={!hasPermission("cluster.manage")}
                 onClick={() => {
                   setPeerToDelete(selectedPeer);
                 }}
-                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
               >
                 <span
                   aria-hidden="true"

@@ -17,7 +17,7 @@ import {
   applySslModeToUrl,
 } from "./Databases";
 import { api } from "../api/client";
-import { getSessionToken } from "../api/session";
+import { getSessionToken, setCurrentUser } from "../api/session";
 import {
   Shield,
   Key,
@@ -186,6 +186,9 @@ export function AuthPage({
       }
 
       const token = data.session_token || data.token || "";
+      if (data.user) {
+        setCurrentUser(data.user);
+      }
       setLoginPassword("");
       onLoginSuccess(token, data.username, data.expires_at);
     } catch (err: unknown) {

@@ -30,6 +30,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { api, ApiKeyRecordApi, RoleRecordApi } from "../api/client";
+import { hasPermission } from "../api/session";
 import { validateCleanName } from "../utils/validation";
 import { FilterRule, matchesRule } from "../utils/filters";
 
@@ -672,6 +673,7 @@ export function Keys() {
           <Button
             variant="primary"
             size="sm"
+            disabled={!hasPermission("keys.create")}
             onClick={() => {
               setCreatedSecret(null);
               setNewName("");
@@ -1450,7 +1452,7 @@ export function Keys() {
               <button
                 type="button"
                 onClick={handleRotateKey}
-                disabled={isRotating}
+                disabled={isRotating || !hasPermission("keys.rotate")}
                 className="h-9 px-4 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#161616] text-white hover:bg-[#202020] hover:border-[#383838] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2 cursor-pointer shadow-xs"
               >
                 <RefreshCw
@@ -1477,8 +1479,9 @@ export function Keys() {
               </div>
               <button
                 type="button"
+                disabled={!hasPermission("keys.delete")}
                 onClick={() => setConfirmRevokeOpen(true)}
-                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
               >
                 <span
                   aria-hidden="true"
@@ -1508,7 +1511,7 @@ export function Keys() {
             </button>
             <button
               type="button"
-              disabled={!isModified}
+              disabled={!isModified || !hasPermission("keys.update")}
               onClick={handleSaveEdit}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
             >

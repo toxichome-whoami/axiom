@@ -6,9 +6,12 @@
  * Last structural change: Phase 1 frontend security hardening per UI audit F-01/F-04.
  */
 
+import type { UserRecordApi } from "./client";
+
 // Ephemeral in-memory bearer token storage.
 // Memory tokens prevent malicious extensions or XSS injection from exfiltrating live credentials via localStorage.
 let memorySessionToken: string | null = null;
+let memoryCurrentUser: UserRecordApi | null = null;
 
 /**
  * Initializes or updates the active administrative session.
@@ -37,6 +40,77 @@ export function setSession(
     localStorage.setItem("axiom_operator_user", username);
   }
   localStorage.setItem("axiom_session_active", "true");
+}
+
+/**
+ * Stores the current user profile and permission set.
+ */
+export function setCurrentUser(user: UserRecordApi | null): void {
+  memoryCurrentUser = user;
+  if (user) {
+    localStorage.setItem("axiom_current_user", JSON.stringify(user));
+  } else {
+    localStorage.removeItem("axiom_current_user");
+  }
+}
+
+/**
+ * Retrieves the current logged-in user profile.
+ */
+export function getCurrentUser(): UserRecordApi | null {
+  if (memoryCurrentUser) return memoryCurrentUser;
+  const raw = localStorage.getItem("axiom_current_user");
+  if (raw) {
+    try {
+      memoryCurrentUser = JSON.parse(raw);
+      return memoryCurrentUser;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Evaluates whether the active operator has a specific granular capability.
+ * CONTRACT:
+ *  - Root super-administrator (id = 1, is_super_admin = true) bypasses all checks.
+ *  - Evaluates system permissions with wildcard support:
+ *    - `*` grants all capabilities.
+ *    - `<resource>.*` grants all operations on that resource.
+ *    - `<resource>.<action>` grants exact operation.
+ *  - Backwards compatibility for legacy tokens (e.g. `manage_keys` -> `keys.*`).
+ */
+export function hasPermission(required: string): boolean {
+  const user = getCurrentUser();
+  if (!user) {
+    return true; // Optimistic initial render before getMe hydrates
+  }
+  if (user.is_super_admin) {
+    return true;
+  }
+  const perms = user.permissions?.system || [];
+  if (perms.includes("*")) {
+    return true;
+  }
+  if (perms.includes(required)) {
+    return true;
+  }
+  const resource = required.split(".")[0];
+  if (resource && perms.includes(`${resource}.*`)) {
+    return true;
+  }
+
+  // Legacy capability token aliases
+  if (required.startsWith("keys.") && perms.includes("manage_keys")) return true;
+  if (required.startsWith("roles.") && perms.includes("manage_roles")) return true;
+  if (required.startsWith("databases.") && perms.includes("manage_databases")) return true;
+  if (required.startsWith("users.") && perms.includes("manage_users")) return true;
+  if (required.startsWith("audit.") && perms.includes("view_audit")) return true;
+  if (required.startsWith("cluster.") && perms.includes("manage_cluster")) return true;
+  if (required.startsWith("settings.") && perms.includes("manage_settings")) return true;
+
+  return false;
 }
 
 /**
@@ -96,8 +170,10 @@ export function hasActiveSession(): boolean {
  */
 export function clearSession(): void {
   memorySessionToken = null;
+  memoryCurrentUser = null;
   localStorage.removeItem("axiom_session_token");
   localStorage.removeItem("axiom_session_active");
   localStorage.removeItem("axiom_session_expires_at");
   localStorage.removeItem("axiom_operator_user");
+  localStorage.removeItem("axiom_current_user");
 }

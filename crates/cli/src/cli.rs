@@ -588,21 +588,23 @@ async fn handle_user_command(
                 }
             } else {
                 println!(
-                    "{:<6} {:<20} {:<28} {:<20}",
-                    "ID", "USERNAME", "EMAIL", "CREATED AT (UNIX)"
+                    "{:<6} {:<18} {:<15} {:<24} {:<20}",
+                    "ID", "USERNAME", "ACCESS LEVEL", "EMAIL", "CREATED AT (UNIX)"
                 );
-                println!("{:-<78}", "");
+                println!("{:-<85}", "");
                 let count = users.len();
                 for u in users {
+                    let level = if u.is_super_admin { "Super Admin" } else { "Custom" };
                     println!(
-                        "{:<6} {:<20} {:<28} {:<20}",
+                        "{:<6} {:<18} {:<15} {:<24} {:<20}",
                         u.id,
                         u.username,
+                        level,
                         u.email.as_deref().unwrap_or("-"),
                         u.created_at
                     );
                 }
-                println!("{:-<78}", "");
+                println!("{:-<85}", "");
                 println!("Total: {} user(s)", count);
             }
         }

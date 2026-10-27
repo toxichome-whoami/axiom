@@ -11,6 +11,81 @@ use serde::{Deserialize, Serialize};
 // ─── Human Admin User Model ────────────────────────────────────────────────
 // Stored in `users` table; used exclusively for Web UI authentication.
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct UserPermissionSet {
+    /// System module privileges (e.g. "databases.view", "keys.create", "cluster.*")
+    #[serde(default)]
+    pub system: Vec<String>,
+    /// Granular database permissions
+    #[serde(default)]
+    pub databases: Vec<UserDbPermission>,
+    /// Granular blob namespace permissions
+    #[serde(default)]
+    pub blobs: Vec<UserBlobPermission>,
+}
+
+impl UserPermissionSet {
+    /// Checks whether this permission set satisfies the required system capability.
+    /// Supports exact matches ("keys.create"), resource wildcards ("keys.*"),
+    /// or global wildcards ("*").
+    pub fn has_system_permission(&self, required: &str) -> bool {
+        let (req_resource, req_action) = match required.split_once('.') {
+            Some((r, a)) => (r, a),
+            None => (required, "*"),
+        };
+
+        self.system.iter().any(|perm| {
+            let p = perm.trim();
+            if p == "*" || p.eq_ignore_ascii_case(required) {
+                return true;
+            }
+            if let Some((res, act)) = p.split_once('.') {
+                if res.eq_ignore_ascii_case(req_resource)
+                    && (act == "*" || act.eq_ignore_ascii_case(req_action))
+                {
+                    return true;
+                }
+            }
+            // Backward compatibility for legacy flat tokens (e.g. "manage_keys", "view_audit")
+            if (required.starts_with("keys.")) && p == "manage_keys" {
+                return true;
+            }
+            if (required.starts_with("users.")) && p == "manage_users" {
+                return true;
+            }
+            if (required.starts_with("cluster.")) && p == "manage_cluster" {
+                return true;
+            }
+            if (required.starts_with("settings.")) && p == "manage_settings" {
+                return true;
+            }
+            if (required.starts_with("databases.")) && p == "manage_databases" {
+                return true;
+            }
+            if required == "audit.view" && (p == "view_audit" || p == "audit.view") {
+                return true;
+            }
+            if (required == "settings.view" || required == "cluster.view") && p == "view_metrics" {
+                return true;
+            }
+            false
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct UserDbPermission {
+    pub database: String,        // "*" or alias (e.g. "main_db")
+    pub table_name: String,      // "*" or table name (e.g. "users")
+    pub operations: Vec<String>, // ["SELECT", "INSERT", "UPDATE", "DELETE", "DDL"]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct UserBlobPermission {
+    pub namespace: String,       // "*" or namespace name (e.g. "assets")
+    pub operations: Vec<String>, // ["READ", "WRITE", "DELETE", "MANAGE_NS"]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRecord {
     pub id: i64,
@@ -18,7 +93,13 @@ pub struct UserRecord {
     pub email: Option<String>,
     #[serde(skip_serializing)]
     pub password_hash: String,
+    #[serde(default)]
+    pub is_super_admin: bool,
+    #[serde(default)]
+    pub permissions: UserPermissionSet,
     pub created_at: i64,
+    #[serde(default)]
+    pub updated_at: i64,
 }
 
 // ─── Role & Permission Models ──────────────────────────────────────────────
@@ -145,7 +226,10 @@ mod tests {
             username: "test".to_string(),
             email: Some("test@example.com".to_string()),
             password_hash: "secret_hash".to_string(),
+            is_super_admin: true,
+            permissions: UserPermissionSet::default(),
             created_at: 0,
+            updated_at: 0,
         };
         let val = to_value(&user).unwrap();
         assert!(val.get("password_hash").is_none());

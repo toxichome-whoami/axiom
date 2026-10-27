@@ -290,10 +290,42 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             )
             .await;
 
+            let mut is_super = true;
+            let mut permissions = Vec::new();
+
+            if let Ok(Some(user_rec)) =
+                axiom_metadata::store::MetadataStore::get_user_by_username(&username).await
+            {
+                is_super = user_rec.is_super_admin;
+                if !is_super {
+                    for db_perm in user_rec.permissions.databases {
+                        permissions.push(axiom_core::PermissionSnapshot {
+                            database: db_perm.database,
+                            table_name: db_perm.table_name,
+                            operations: db_perm.operations,
+                            rls_filter: None,
+                        });
+                    }
+                    for blob_perm in user_rec.permissions.blobs {
+                        permissions.push(axiom_core::PermissionSnapshot {
+                            database: format!("blob:{}", blob_perm.namespace),
+                            table_name: "*".to_string(),
+                            operations: blob_perm.operations,
+                            rls_filter: None,
+                        });
+                    }
+                }
+            }
+
             let ctx = AuthContext {
                 api_key_name: format!("user:{}", username),
-                role: Some("admin".to_string()),
+                role: if is_super {
+                    Some("admin".to_string())
+                } else {
+                    Some("custom".to_string())
+                },
                 is_session: true,
+                permissions,
                 ..Default::default()
             };
             req.extensions_mut().insert(ctx);

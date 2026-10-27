@@ -30,6 +30,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { api, RoleRecordApi, PermissionRecordApi } from "../api/client";
+import { hasPermission } from "../api/session";
 import { validateCleanName } from "../utils/validation";
 import { FilterRule, matchesRule } from "../utils/filters";
 
@@ -684,6 +685,7 @@ export function Roles() {
           <Button
             variant="primary"
             size="sm"
+            disabled={!hasPermission("roles.create")}
             onClick={() => {
               setNewRoleName("");
               setNewRoleDesc("");
@@ -1131,8 +1133,9 @@ export function Roles() {
               </div>
               <button
                 type="button"
+                disabled={!hasPermission("roles.delete")}
                 onClick={() => setConfirmDeleteOpen(true)}
-                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
               >
                 <span
                   aria-hidden="true"
@@ -1175,7 +1178,8 @@ export function Roles() {
                   !isModified ||
                   hasEditPermErrors ||
                   !editRoleNameValidation.valid ||
-                  isSavingRole
+                  isSavingRole ||
+                  !hasPermission("roles.update")
                 }
                 onClick={handleSaveEdit}
                 className="group relative flex shrink-0 items-center justify-center h-8 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[13px]"

@@ -121,10 +121,44 @@ export interface AuditLogResponseApi {
   has_more: boolean;
 }
 
+export interface UserDbPermission {
+  database: string;
+  table_name: string;
+  operations: string[];
+}
+
+export interface UserBlobPermission {
+  namespace: string;
+  operations: string[];
+}
+
+export interface UserPermissionSet {
+  system: string[];
+  databases: UserDbPermission[];
+  blobs: UserBlobPermission[];
+}
+
 export interface UserRecordApi {
   id: number;
   username: string;
+  email?: string | null;
+  is_super_admin: boolean;
+  permissions: UserPermissionSet;
   created_at: number;
+  updated_at: number;
+}
+
+export interface CreateUserPayload {
+  username: string;
+  password: string;
+  email?: string;
+  permissions?: UserPermissionSet;
+}
+
+export interface UpdateUserPayload {
+  email?: string;
+  password?: string;
+  permissions?: UserPermissionSet;
 }
 
 export interface ClusterStatusData {
@@ -465,10 +499,26 @@ export const api = {
   },
 
   // Users & Authentication
+  getMe: () => request<UserRecordApi>("/admin/v1/auth/me"),
   listUsers: () => request<UserRecordApi[]>("/admin/v1/users"),
+  getUser: (id: number) => request<UserRecordApi>(`/admin/v1/users/${id}`),
+  createUser: (payload: CreateUserPayload) =>
+    request<UserRecordApi>("/admin/v1/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateUser: (id: number, payload: UpdateUserPayload) =>
+    request<UserRecordApi>(`/admin/v1/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteUser: (id: number) =>
+    request<{ id: number; message: string }>(`/admin/v1/users/${id}`, {
+      method: "DELETE",
+    }),
   login: async (credentials: { username: string; password: string }) => {
     const res = await request<{
-      user?: { username: string };
+      user?: UserRecordApi;
       username?: string;
       session_token?: string;
       token?: string;
@@ -481,6 +531,7 @@ export const api = {
     const username = res.user?.username || res.username || credentials.username;
     return {
       username,
+      user: res.user,
       token,
       session_token: token,
       expires_at: res.expires_at || 0,

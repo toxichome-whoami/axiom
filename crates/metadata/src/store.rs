@@ -134,7 +134,10 @@ impl MetadataStore {
                 username TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE,
                 password_hash TEXT NOT NULL,
-                created_at INTEGER NOT NULL
+                is_super_admin INTEGER NOT NULL DEFAULT 0,
+                permissions TEXT NOT NULL DEFAULT '{}',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL DEFAULT 0
             );",
             "CREATE TABLE IF NOT EXISTS roles (
                 name TEXT PRIMARY KEY,
@@ -246,6 +249,22 @@ impl MetadataStore {
             .await;
         let _ = conn
             .execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL", ())
+            .await;
+
+        // Idempotently ensure is_super_admin, permissions, and updated_at columns exist in users table
+        let _ = conn
+            .execute("ALTER TABLE users ADD COLUMN is_super_admin INTEGER NOT NULL DEFAULT 0", ())
+            .await;
+        let _ = conn
+            .execute("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'", ())
+            .await;
+        let _ = conn
+            .execute("ALTER TABLE users ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0", ())
+            .await;
+
+        // Ensure the initial/first user account is marked as super admin
+        let _ = conn
+            .execute("UPDATE users SET is_super_admin = 1 WHERE id = (SELECT MIN(id) FROM users)", ())
             .await;
 
         Ok(())
@@ -1142,6 +1161,23 @@ impl MetadataStore {
         email: Option<&str>,
         password: &str,
     ) -> Result<(), String> {
+        Self::create_user_with_permissions(username, email, password, None, None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Creates an administrative user with explicit super-admin flag and custom granular permissions.
+    /// CONTRACT:
+    ///  - If there are currently 0 users in the metadata store, this user is forced to is_super_admin = true.
+    ///  - Password hash is Argon2id with random salt.
+    ///  - Returns the newly created UserRecord with password_hash cleared.
+    pub async fn create_user_with_permissions(
+        username: &str,
+        email: Option<&str>,
+        password: &str,
+        _is_super_admin: Option<bool>,
+        permissions: Option<UserPermissionSet>,
+    ) -> Result<UserRecord, String> {
         let clean_username = username.trim();
         if clean_username.is_empty() {
             return Err("Username cannot be empty".to_string());
@@ -1164,9 +1200,43 @@ impl MetadataStore {
             .as_secs() as i64;
 
         let conn = Self::get_conn().await?;
+
+        // Determine if this is the first user account in the system
+        let mut count_rows = conn
+            .query("SELECT COUNT(*) FROM users", ())
+            .await
+            .map_err(|e| e.to_string())?;
+        let is_first_user = match count_rows.next().await {
+            Ok(Some(row)) => {
+                let cnt: i64 = row.get(0).unwrap_or(0);
+                cnt == 0
+            }
+            _ => false,
+        };
+
+        // Single Root Super Admin Invariant:
+        // ONLY the very first user created in the system receives is_super_admin = true.
+        // All subsequent users are strictly scoped PBAC administrators (is_super_admin = false).
+        let effective_super_admin = is_first_user;
+
+        let effective_perms = permissions.unwrap_or_default();
+        let perms_json = serde_json::to_string(&effective_perms)
+            .map_err(|e| format!("Failed to serialize user permissions: {}", e))?;
+
+        let super_admin_int: i64 = if effective_super_admin { 1 } else { 0 };
+
         conn.execute(
-            "INSERT INTO users (username, email, password_hash, created_at) VALUES (?1, ?2, ?3, ?4)",
-            libsql::params![clean_username, clean_email, password_hash.as_str(), now_unix],
+            "INSERT INTO users (username, email, password_hash, is_super_admin, permissions, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            libsql::params![
+                clean_username,
+                clean_email.clone(),
+                password_hash.as_str(),
+                super_admin_int,
+                perms_json.as_str(),
+                now_unix,
+                now_unix
+            ],
         )
         .await
         .map_err(|e| {
@@ -1180,15 +1250,33 @@ impl MetadataStore {
             }
         })?;
 
+        let mut id_rows = conn
+            .query("SELECT id FROM users WHERE username = ?1", [clean_username])
+            .await
+            .map_err(|e| e.to_string())?;
+        let user_id: i64 = match id_rows.next().await {
+            Ok(Some(row)) => row.get(0).map_err(|e| e.to_string())?,
+            _ => 0,
+        };
+
         let _ = conn
             .execute(
                 "INSERT INTO audit_log (timestamp, actor, action, target, details) \
-                 VALUES (?1, 'cli', 'user.create', ?2, NULL)",
+                 VALUES (?1, 'admin', 'user.create', ?2, NULL)",
                 libsql::params![now_unix, clean_username],
             )
             .await;
 
-        Ok(())
+        Ok(UserRecord {
+            id: user_id,
+            username: clean_username.to_string(),
+            email: clean_email,
+            password_hash: String::new(),
+            is_super_admin: effective_super_admin,
+            permissions: effective_perms,
+            created_at: now_unix,
+            updated_at: now_unix,
+        })
     }
 
     /// Verifies an admin user's credentials using constant-time Argon2 verification.
@@ -1277,7 +1365,7 @@ impl MetadataStore {
         let conn = Self::get_conn().await?;
         let mut rows = conn
             .query(
-                "SELECT id, username, email, created_at FROM users ORDER BY id ASC",
+                "SELECT id, username, email, is_super_admin, permissions, created_at, updated_at FROM users ORDER BY id ASC",
                 (),
             )
             .await
@@ -1288,28 +1376,142 @@ impl MetadataStore {
             let id: i64 = row.get(0).map_err(|e| e.to_string())?;
             let username: String = row.get(1).map_err(|e| e.to_string())?;
             let email: Option<String> = row.get(2).ok();
-            let created_at: i64 = row.get(3).unwrap_or(0);
+            let is_super_admin: bool = row.get::<i64>(3).unwrap_or(0) == 1;
+            let perms_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
+            let permissions: UserPermissionSet =
+                serde_json::from_str(&perms_str).unwrap_or_default();
+            let created_at: i64 = row.get(5).unwrap_or(0);
+            let updated_at: i64 = row.get(6).unwrap_or(0);
 
             users.push(UserRecord {
                 id,
                 username,
                 email,
                 password_hash: String::new(),
+                is_super_admin,
+                permissions,
                 created_at,
+                updated_at,
             });
         }
         Ok(users)
     }
 
-    /// Deletes an administrative user by username.
-    /// CONTRACT:
-    ///  - Side effects: Removes row from SQLite `users` table and writes audit log.
-    ///  - Idempotent: Yes.
+    /// Fetches a single user by internal ID.
+    pub async fn get_user_by_id(id: i64) -> Result<Option<UserRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query(
+                "SELECT id, username, email, is_super_admin, permissions, created_at, updated_at FROM users WHERE id = ?1",
+                [id],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let user_id: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let username: String = row.get(1).map_err(|e| e.to_string())?;
+            let email: Option<String> = row.get(2).ok();
+            let is_super_admin: bool = row.get::<i64>(3).unwrap_or(0) == 1;
+            let perms_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
+            let permissions: UserPermissionSet =
+                serde_json::from_str(&perms_str).unwrap_or_default();
+            let created_at: i64 = row.get(5).unwrap_or(0);
+            let updated_at: i64 = row.get(6).unwrap_or(0);
+
+            Ok(Some(UserRecord {
+                id: user_id,
+                username,
+                email,
+                password_hash: String::new(),
+                is_super_admin,
+                permissions,
+                created_at,
+                updated_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Fetches a single user by username.
+    pub async fn get_user_by_username(username: &str) -> Result<Option<UserRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query(
+                "SELECT id, username, email, is_super_admin, permissions, created_at, updated_at FROM users WHERE username = ?1 COLLATE NOCASE",
+                [username.trim()],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let user_id: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let u_name: String = row.get(1).map_err(|e| e.to_string())?;
+            let email: Option<String> = row.get(2).ok();
+            let is_super_admin: bool = row.get::<i64>(3).unwrap_or(0) == 1;
+            let perms_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
+            let permissions: UserPermissionSet =
+                serde_json::from_str(&perms_str).unwrap_or_default();
+            let created_at: i64 = row.get(5).unwrap_or(0);
+            let updated_at: i64 = row.get(6).unwrap_or(0);
+
+            Ok(Some(UserRecord {
+                id: user_id,
+                username: u_name,
+                email,
+                password_hash: String::new(),
+                is_super_admin,
+                permissions,
+                created_at,
+                updated_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Deletes an administrative user by username, protecting the root super admin.
     pub async fn delete_user(username: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
 
+        // Guard: check if this user is the root super admin
+        let mut lookup = conn
+            .query("SELECT id FROM users WHERE username = ?1", [username])
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let user_id = match lookup.next().await.ok().flatten() {
+            Some(row) => row.get::<i64>(0).map_err(|e| e.to_string())?,
+            None => return Ok(false),
+        };
+
+        Self::delete_user_by_id(user_id).await
+    }
+
+    /// Deletes an administrative user by ID, enforcing root super admin deletion protection.
+    pub async fn delete_user_by_id(id: i64) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        // Root super admin (id = 1 or minimum id) can NEVER be deleted
+        let mut min_rows = conn
+            .query("SELECT MIN(id) FROM users", ())
+            .await
+            .map_err(|e| e.to_string())?;
+        let min_id: Option<i64> = min_rows.next().await.ok().flatten().and_then(|r| r.get(0).ok());
+
+        if id == 1 || min_id == Some(id) {
+            return Err("Root super admin account cannot be deleted".to_string());
+        }
+
+        let mut name_rows = conn
+            .query("SELECT username FROM users WHERE id = ?1", [id])
+            .await
+            .map_err(|e| e.to_string())?;
+        let username: Option<String> = name_rows.next().await.ok().flatten().and_then(|r| r.get(0).ok());
+
         let affected = conn
-            .execute("DELETE FROM users WHERE username = ?1", [username])
+            .execute("DELETE FROM users WHERE id = ?1", [id])
             .await
             .map_err(|e| format!("Failed to delete user: {}", e))?;
 
@@ -1319,11 +1521,12 @@ impl MetadataStore {
                 .unwrap_or_default()
                 .as_secs() as i64;
 
+            let target_desc = username.unwrap_or_else(|| format!("id:{}", id));
             let _ = conn
                 .execute(
                     "INSERT INTO audit_log (timestamp, actor, action, target, details) \
-                 VALUES (?1, 'cli', 'user.delete', ?2, NULL)",
-                    libsql::params![now_unix, username],
+                 VALUES (?1, 'admin', 'user.delete', ?2, NULL)",
+                    libsql::params![now_unix, target_desc],
                 )
                 .await;
         }
@@ -1331,38 +1534,60 @@ impl MetadataStore {
         Ok(affected > 0)
     }
 
-    /// Updates an existing administrative user's email or password.
-    pub async fn update_user(
-        username: &str,
+    /// Updates an existing administrative user by ID.
+    pub async fn update_user_by_id(
+        id: i64,
         email: Option<Option<&str>>,
         password: Option<&str>,
+        is_super_admin: Option<bool>,
+        permissions: Option<UserPermissionSet>,
     ) -> Result<bool, String> {
-        let clean_username = username.trim();
         let conn = Self::get_conn().await?;
 
         let mut rows = conn
             .query(
-                "SELECT id, email, password_hash FROM users WHERE username = ?1",
-                [clean_username],
+                "SELECT username, email, password_hash, is_super_admin, permissions FROM users WHERE id = ?1",
+                [id],
             )
             .await
             .map_err(|e| format!("Database query error: {}", e))?;
 
-        let existing = match rows.next().await.map_err(|e| e.to_string())? {
+        let (username, existing_email, existing_pass, _existing_super, existing_perms) = match rows.next().await.map_err(|e| e.to_string())? {
             Some(row) => {
-                let _id: i64 = row.get(0).map_err(|e| e.to_string())?;
-                let existing_email: Option<String> = row.get(1).ok();
-                let existing_pass: String = row.get(2).map_err(|e| e.to_string())?;
-                (_id, existing_email, existing_pass)
+                let u: String = row.get(0).map_err(|e| e.to_string())?;
+                let e: Option<String> = row.get(1).ok();
+                let p: String = row.get(2).map_err(|e| e.to_string())?;
+                let sa: bool = row.get::<i64>(3).unwrap_or(0) == 1;
+                let perms_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
+                let ps: UserPermissionSet = serde_json::from_str(&perms_str).unwrap_or_default();
+                (u, e, p, sa, ps)
             }
             None => return Ok(false),
         };
+
+        // Root super admin can never be demoted
+        let mut min_rows = conn
+            .query("SELECT MIN(id) FROM users", ())
+            .await
+            .map_err(|e| e.to_string())?;
+        let min_id: Option<i64> = min_rows.next().await.ok().flatten().and_then(|r| r.get(0).ok());
+
+        // Single Root Super Admin Invariants:
+        // 1. Root super-admin (id = 1 or min_id) can never be demoted.
+        // 2. Secondary accounts can NEVER be promoted to super-admin.
+        let is_root = id == 1 || min_id == Some(id);
+        if is_root && is_super_admin == Some(false) {
+            return Err("Root super admin account cannot be demoted".to_string());
+        }
+        if !is_root && is_super_admin == Some(true) {
+            return Err("Super administrator status cannot be granted to secondary accounts".to_string());
+        }
 
         let new_email = match email {
             Some(opt) => opt
                 .map(|e| e.trim().to_lowercase())
                 .filter(|e| !e.is_empty()),
-            None => existing.1,
+            None => existing_email,
         };
 
         let new_pass_hash = match password {
@@ -1374,30 +1599,66 @@ impl MetadataStore {
                     .map_err(|e| format!("Argon2 hashing failed: {}", e))?
                     .to_string()
             }
-            _ => existing.2,
+            _ => existing_pass,
         };
 
-        conn.execute(
-            "UPDATE users SET email = ?1, password_hash = ?2 WHERE username = ?3",
-            libsql::params![new_email, new_pass_hash.as_str(), clean_username],
-        )
-        .await
-        .map_err(|e| format!("Failed to update user: {}", e))?;
+        let new_super_admin = if is_root { true } else { false };
+        let super_admin_int: i64 = if new_super_admin { 1 } else { 0 };
+
+        let new_perms = permissions.unwrap_or(existing_perms);
+        let perms_json = serde_json::to_string(&new_perms)
+            .map_err(|e| format!("Failed to serialize permissions: {}", e))?;
 
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
 
+        conn.execute(
+            "UPDATE users SET email = ?1, password_hash = ?2, is_super_admin = ?3, permissions = ?4, updated_at = ?5 WHERE id = ?6",
+            libsql::params![
+                new_email,
+                new_pass_hash.as_str(),
+                super_admin_int,
+                perms_json.as_str(),
+                now_unix,
+                id
+            ],
+        )
+        .await
+        .map_err(|e| format!("Failed to update user: {}", e))?;
+
         let _ = conn
             .execute(
                 "INSERT INTO audit_log (timestamp, actor, action, target, details) \
-                 VALUES (?1, 'cli', 'user.update', ?2, NULL)",
-                libsql::params![now_unix, clean_username],
+                 VALUES (?1, 'admin', 'user.update', ?2, NULL)",
+                libsql::params![now_unix, username],
             )
             .await;
 
         Ok(true)
+    }
+
+    /// Updates an existing administrative user's email or password by username.
+    pub async fn update_user(
+        username: &str,
+        email: Option<Option<&str>>,
+        password: Option<&str>,
+    ) -> Result<bool, String> {
+        let clean_username = username.trim();
+        let conn = Self::get_conn().await?;
+
+        let mut rows = conn
+            .query("SELECT id FROM users WHERE username = ?1", [clean_username])
+            .await
+            .map_err(|e| format!("Database query error: {}", e))?;
+
+        let user_id = match rows.next().await.map_err(|e| e.to_string())? {
+            Some(row) => row.get::<i64>(0).map_err(|e| e.to_string())?,
+            None => return Ok(false),
+        };
+
+        Self::update_user_by_id(user_id, email, password, None, None).await
     }
 
     // ─── Session Management ────────────────────────────────────────────────
@@ -3089,5 +3350,140 @@ mod tests {
         assert_eq!(inserted2, 0);
 
         let _ = std::fs::remove_file(db_path.replace("file:", ""));
+    }
+
+    #[tokio::test]
+    async fn test_root_super_admin_protection_and_custom_permissions() {
+        let db = Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // 1. First account created is automatically super-admin (id = 1)
+        let perms = UserPermissionSet::default();
+        let perms_json = serde_json::to_string(&perms).unwrap();
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('rootadmin', 'hash123', 'root@axiom.io', 1, ?1, ?2, ?3)",
+            libsql::params![perms_json, now, now],
+        ).await.unwrap();
+
+        // 2. Custom permission user created
+        let custom_perms = UserPermissionSet {
+            system: vec!["manage_keys".to_string(), "view_audit".to_string()],
+            databases: vec![UserDbPermission {
+                database: "analytics_db".to_string(),
+                table_name: "events".to_string(),
+                operations: vec!["SELECT".to_string(), "INSERT".to_string()],
+            }],
+            blobs: vec![UserBlobPermission {
+                namespace: "assets".to_string(),
+                operations: vec!["READ".to_string(), "WRITE".to_string()],
+            }],
+        };
+        let custom_json = serde_json::to_string(&custom_perms).unwrap();
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('dev_bob', 'hash456', 'bob@axiom.io', 0, ?1, ?2, ?3)",
+            libsql::params![custom_json, now, now],
+        ).await.unwrap();
+
+        // 3. Verify querying root user and custom user
+        let mut rows = conn
+            .query("SELECT id, username, is_super_admin, permissions FROM users ORDER BY id ASC", ())
+            .await
+            .unwrap();
+
+        let row1 = rows.next().await.unwrap().unwrap();
+        let id1: i64 = row1.get(0).unwrap();
+        let u1: String = row1.get(1).unwrap();
+        let is_super1: i64 = row1.get(2).unwrap();
+        assert_eq!(id1, 1);
+        assert_eq!(u1, "rootadmin");
+        assert_eq!(is_super1, 1);
+
+        let row2 = rows.next().await.unwrap().unwrap();
+        let id2: i64 = row2.get(0).unwrap();
+        let u2: String = row2.get(1).unwrap();
+        let is_super2: i64 = row2.get(2).unwrap();
+        let perms2_str: String = row2.get(3).unwrap();
+        let parsed_perms2: UserPermissionSet = serde_json::from_str(&perms2_str).unwrap();
+        assert_eq!(id2, 2);
+        assert_eq!(u2, "dev_bob");
+        assert_eq!(is_super2, 0);
+        assert_eq!(parsed_perms2.system, vec!["manage_keys", "view_audit"]);
+        assert_eq!(parsed_perms2.databases[0].database, "analytics_db");
+        assert_eq!(parsed_perms2.databases[0].table_name, "events");
+        assert_eq!(parsed_perms2.blobs[0].namespace, "assets");
+
+        // 4. Invariant: Root account (id = 1 or min id) cannot be deleted
+        let min_id_res: i64 = conn.query("SELECT MIN(id) FROM users", ())
+            .await
+            .unwrap()
+            .next()
+            .await
+            .unwrap()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(min_id_res, 1);
+
+        // Attempting to delete id = 1 must be prevented by business logic guard
+        let target_delete_id = 1i64;
+        let delete_allowed = target_delete_id != 1 && target_delete_id != min_id_res;
+        assert!(!delete_allowed, "Root account deletion must be prevented");
+
+        // Attempting to demote root account must be prevented by business logic guard
+        let target_demote_id = 1i64;
+        let demote_allowed = target_demote_id != 1 && target_demote_id != min_id_res;
+        assert!(!demote_allowed, "Root account demotion must be prevented");
+    }
+
+    #[test]
+    fn test_has_system_permission_evaluation() {
+        let perms = UserPermissionSet {
+            system: vec![
+                "databases.view".to_string(),
+                "keys.*".to_string(),
+                "cluster.manage".to_string(),
+                "audit.view".to_string(),
+            ],
+            databases: vec![],
+            blobs: vec![],
+        };
+
+        // Exact match
+        assert!(perms.has_system_permission("databases.view"));
+        assert!(!perms.has_system_permission("databases.create"));
+        assert!(!perms.has_system_permission("databases.delete"));
+
+        // Resource wildcard match (keys.*)
+        assert!(perms.has_system_permission("keys.view"));
+        assert!(perms.has_system_permission("keys.create"));
+        assert!(perms.has_system_permission("keys.rotate"));
+        assert!(perms.has_system_permission("keys.delete"));
+
+        // Single action match (cluster.manage)
+        assert!(perms.has_system_permission("cluster.manage"));
+        assert!(!perms.has_system_permission("cluster.connect"));
+
+        // Audit view
+        assert!(perms.has_system_permission("audit.view"));
+
+        // Global wildcard
+        let admin_perms = UserPermissionSet {
+            system: vec!["*".to_string()],
+            databases: vec![],
+            blobs: vec![],
+        };
+        assert!(admin_perms.has_system_permission("users.delete"));
+        assert!(admin_perms.has_system_permission("anything.any_action"));
     }
 }

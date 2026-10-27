@@ -28,6 +28,7 @@ import {
   Table,
 } from "lucide-react";
 import { api, DatabaseRecordApi } from "../api/client";
+import { hasPermission } from "../api/session";
 import { validateCleanName } from "../utils/validation";
 import { FilterRule, matchesRule } from "../utils/filters";
 
@@ -998,6 +999,7 @@ export function Databases() {
           <Button
             variant="primary"
             size="sm"
+            disabled={!hasPermission("databases.create")}
             onClick={() => {
               setTestResult(null);
               setAttachError(null);
@@ -2122,8 +2124,9 @@ export function Databases() {
               </p>
               <button
                 type="button"
+                disabled={!hasPermission("databases.delete")}
                 onClick={() => setConfirmDisconnectOpen(true)}
-                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
               >
                 <span
                   aria-hidden="true"
@@ -2153,7 +2156,7 @@ export function Databases() {
             </button>
             <button
               type="button"
-              disabled={!canSave || isSaving}
+              disabled={!canSave || isSaving || !hasPermission("databases.update")}
               onClick={handleSaveEdit}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >

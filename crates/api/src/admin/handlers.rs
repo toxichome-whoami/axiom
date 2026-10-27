@@ -19,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axiom_core::{AuthContext, AxiomError};
 use axiom_db::DatabasePoolManager;
-use axiom_metadata::models::PermissionRecord;
+use axiom_metadata::models::{PermissionRecord, UserPermissionSet};
 use axiom_metadata::store::MetadataStore;
 
 pub const SETUP_SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60; // 30 days initial admin setup session
@@ -76,6 +76,37 @@ pub fn validate_clean_name(kind: &str, name: &str) -> Result<(), AxiomError> {
     }
 
     Ok(())
+}
+
+/// Enforces that the calling operator session possesses the required PBAC capability.
+/// Super-admin accounts (role == "admin" or is_super_admin == true) bypass all checks.
+pub async fn check_permission(auth: &AuthContext, required: &str) -> Result<(), AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin session privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    // Fast-path: Super-administrator session bypasses all capability checks
+    if auth.role.as_deref() == Some("admin") {
+        return Ok(());
+    }
+
+    // Check operator's granular capabilities
+    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    if let Ok(Some(calling_user)) = MetadataStore::get_user_by_username(actor).await {
+        if calling_user.is_super_admin || calling_user.permissions.has_system_permission(required) {
+            return Ok(());
+        }
+    }
+
+    Err(AxiomError::new(
+        "FORBIDDEN",
+        &format!("Insufficient privileges: permission '{}' is required for this action", required),
+        StatusCode::FORBIDDEN,
+    ))
 }
 
 /// Resolves and sanitizes database connection URLs with security constraints:
@@ -270,13 +301,7 @@ pub struct UpdateRoleRequest {
 pub async fn get_status(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "settings.view").await?;
 
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     let now = SystemTime::now()
@@ -305,13 +330,7 @@ pub async fn get_status(
 pub async fn reload_metadata(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "settings.manage").await?;
 
     MetadataStore::sync_snapshot().await.map_err(|e| {
         AxiomError::new(
@@ -351,13 +370,7 @@ pub async fn reload_metadata(
 pub async fn list_keys(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "keys.view").await?;
 
     let keys = MetadataStore::list_keys()
         .await
@@ -381,13 +394,7 @@ pub async fn create_key(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateKeyRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "keys.create").await?;
 
     validate_clean_name("Key name", &payload.name)?;
 
@@ -426,13 +433,7 @@ pub async fn delete_key(
     Extension(auth): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "keys.delete").await?;
 
     let deleted = MetadataStore::delete_key(&name).await.map_err(|e| {
         AxiomError::new("KEY_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
@@ -466,13 +467,7 @@ pub async fn rotate_key(
     Extension(auth): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "keys.rotate").await?;
 
     let secret = MetadataStore::rotate_key(&name).await.map_err(|e| {
         if e.contains("not found") {
@@ -511,13 +506,7 @@ pub async fn update_key(
     Path(name): Path<String>,
     Json(payload): Json<UpdateKeyRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "keys.update").await?;
 
     let role_ref = payload.role.as_ref().map(|opt| opt.as_deref());
     let updated =
@@ -555,13 +544,7 @@ pub async fn update_key(
 pub async fn list_databases(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "databases.view").await?;
 
     let databases = MetadataStore::list_databases()
         .await
@@ -585,13 +568,7 @@ pub async fn add_database(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<AddDatabaseRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "databases.create").await?;
 
     validate_clean_name("Database alias", &payload.alias)?;
 
@@ -698,13 +675,7 @@ pub async fn delete_database(
     Extension(auth): Extension<AuthContext>,
     Path(alias): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "databases.delete").await?;
 
     let deleted = MetadataStore::delete_database(&alias).await.map_err(|e| {
         AxiomError::new(
@@ -749,13 +720,7 @@ pub async fn update_database(
     Path(alias): Path<String>,
     Json(payload): Json<UpdateDatabaseRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "databases.update").await?;
 
     if let Some(ref new_a) = payload.new_alias {
         validate_clean_name("Database alias", new_a)?;
@@ -800,13 +765,7 @@ pub async fn test_database(
     Extension(auth): Extension<AuthContext>,
     Path(alias): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "databases.view").await?;
 
     let exists = axiom_metadata::snapshot::get_snapshot()
         .databases
@@ -863,13 +822,7 @@ pub async fn test_database(
 pub async fn list_roles(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "roles.view").await?;
 
     let roles = MetadataStore::list_roles()
         .await
@@ -893,13 +846,7 @@ pub async fn create_role(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateRoleRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "roles.create").await?;
 
     let role_name = payload.name.trim();
     validate_clean_name("Role name", role_name)?;
@@ -944,13 +891,7 @@ pub async fn update_role(
     Path(name): Path<String>,
     Json(payload): Json<UpdateRoleRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "roles.update").await?;
 
     let permissions = payload.permissions.map(|perms| {
         perms
@@ -998,13 +939,7 @@ pub async fn delete_role(
     Extension(auth): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "roles.delete").await?;
 
     let deleted = MetadataStore::delete_role(&name).await.map_err(|e| {
         if e.contains("active API key") {
@@ -1043,13 +978,7 @@ pub async fn delete_role(
 pub async fn get_cache_stats(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "settings.view").await?;
 
     let stats = axiom_cache::CacheEngine::stats();
     Ok(Json(json!({
@@ -1067,13 +996,7 @@ pub async fn get_cache_stats(
 pub async fn flush_cache(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "settings.manage").await?;
 
     axiom_cache::CacheEngine::flush().await;
 
@@ -1109,13 +1032,7 @@ pub async fn get_audit_log(
     Extension(auth): Extension<AuthContext>,
     Query(query): Query<AuditQuery>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "audit.view").await?;
 
     let limit = query.limit.unwrap_or(50).clamp(1, 500);
     let offset = query.offset.unwrap_or(0);
@@ -1175,13 +1092,7 @@ pub async fn get_metrics(
     headers: axum::http::HeaderMap,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "settings.view").await?;
 
     let is_json = query.format.as_deref() == Some("json")
         || headers
@@ -1237,13 +1148,7 @@ pub async fn get_metrics(
 pub async fn get_admin_health(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "settings.view").await?;
 
     let snapshot = axiom_metadata::snapshot::get_snapshot();
 
@@ -1417,12 +1322,10 @@ pub async fn test_database_url(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<TestUrlRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
+    if !MetadataStore::has_users().await.unwrap_or(false) {
+        // Setup in progress, allow connectivity test
+    } else {
+        check_permission(&auth, "databases.view").await?;
     }
 
     let effective_url = resolve_and_sanitize_db_url(
@@ -1794,6 +1697,8 @@ pub async fn login_handler(
         .as_secs() as i64
         + LOGIN_SESSION_TTL_SECS;
 
+    let user_record = MetadataStore::get_user_by_username(&canonical_user).await.ok().flatten();
+
     Ok((
         headers_map,
         Json(json!({
@@ -1802,11 +1707,37 @@ pub async fn login_handler(
                 "token": session_id,
                 "session_token": session_id,
                 "username": canonical_user,
+                "user": user_record,
                 "expires_at": expires_at
             },
             "error": Value::Null
         })),
     ))
+}
+
+/// Returns the authenticated caller's user record and effective permissions.
+pub async fn get_me_handler(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin session required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    let user = MetadataStore::get_user_by_username(actor)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
+        .ok_or_else(|| AxiomError::new("NOT_FOUND", "User record not found", StatusCode::NOT_FOUND))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": user,
+        "error": Value::Null
+    })))
 }
 
 /// Revokes an active administrative session.
@@ -1859,19 +1790,12 @@ pub async fn logout_handler(
 
 /// Lists all registered administrative accounts.
 /// CONTRACT:
-///  - Invariant: Password hashes are redacted.
-///  - Invariant: User listing is the only HTTP administrative user endpoint.
-///    Account creation, updates, and removals must be performed directly on the host server via CLI (`axiom user`).
+///  - Invariant: Password hashes are redacted from UserRecord.
+///  - Idempotent: Yes.
 pub async fn list_users_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "users.view").await?;
 
     let users = MetadataStore::list_users().await.map_err(|e| {
         AxiomError::new("USERS_FETCH_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
@@ -1880,6 +1804,218 @@ pub async fn list_users_handler(
     Ok(Json(json!({
         "success": true,
         "data": users,
+        "error": Value::Null
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub password: String,
+    pub email: Option<String>,
+    pub permissions: Option<UserPermissionSet>,
+}
+
+/// Creates a new administrator account with granular custom permissions or super-admin status.
+pub async fn create_user_handler(
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<CreateUserRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    check_permission(&auth, "users.create").await?;
+
+    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    let username = payload.username.trim();
+    if username.is_empty() {
+        return Err(AxiomError::new(
+            "INVALID_USERNAME",
+            "Username cannot be empty",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    if payload.password.len() < 8 {
+        return Err(AxiomError::new(
+            "WEAK_PASSWORD",
+            "Password must be at least 8 characters long",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let perms = payload.permissions.unwrap_or_default();
+
+    // Invariant: Non-root accounts can NEVER be super-admin.
+    let created = MetadataStore::create_user_with_permissions(
+        username,
+        payload.email.as_deref(),
+        &payload.password,
+        None,
+        Some(perms),
+    )
+    .await
+    .map_err(|e| AxiomError::new("USER_CREATION_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    let _ = MetadataStore::record_audit(
+        actor,
+        "user.create",
+        &created.username,
+        Some(&format!("Created user id={} (super_admin={})", created.id, created.is_super_admin)),
+    )
+    .await;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "data": created,
+            "error": Value::Null
+        })),
+    ))
+}
+
+/// Retrieves a single administrator account by internal ID.
+pub async fn get_user_handler(
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<i64>,
+) -> Result<impl IntoResponse, AxiomError> {
+    check_permission(&auth, "users.view").await?;
+
+    let user = MetadataStore::get_user_by_id(id)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    match user {
+        Some(u) => Ok(Json(json!({
+            "success": true,
+            "data": u,
+            "error": Value::Null
+        }))),
+        None => Err(AxiomError::new(
+            "NOT_FOUND",
+            "User does not exist",
+            StatusCode::NOT_FOUND,
+        )),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserRequest {
+    pub email: Option<String>,
+    pub password: Option<String>,
+    pub permissions: Option<UserPermissionSet>,
+}
+
+/// Updates an existing administrator's credentials or custom permission set.
+/// CONTRACT:
+///  - Invariant: Root administrator (id = 1) cannot be demoted to non-super-admin.
+pub async fn update_user_handler(
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<i64>,
+    Json(payload): Json<UpdateUserRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    check_permission(&auth, "users.update").await?;
+
+    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+
+    if let Some(ref pwd) = payload.password {
+        if pwd.len() < 8 {
+            return Err(AxiomError::new(
+                "WEAK_PASSWORD",
+                "Password must be at least 8 characters long",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
+    let email_arg = payload.email.as_deref().map(Some);
+    MetadataStore::update_user_by_id(
+        id,
+        email_arg,
+        payload.password.as_deref(),
+        None,
+        payload.permissions,
+    )
+    .await
+    .map_err(|e| {
+        if e.contains("cannot be demoted") {
+            AxiomError::new("ROOT_ACCOUNT_PROTECTED", &e, StatusCode::FORBIDDEN)
+        } else if e.contains("not found") {
+            AxiomError::new("NOT_FOUND", &e, StatusCode::NOT_FOUND)
+        } else {
+            AxiomError::new("USER_UPDATE_FAILED", &e, StatusCode::BAD_REQUEST)
+        }
+    })?;
+
+    let updated = MetadataStore::get_user_by_id(id)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
+        .ok_or_else(|| {
+            AxiomError::new(
+                "NOT_FOUND",
+                "User not found after update",
+                StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    let _ = MetadataStore::record_audit(
+        actor,
+        "user.update",
+        &updated.username,
+        Some(&format!("Updated user id={}", updated.id)),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": updated,
+        "error": Value::Null
+    })))
+}
+
+/// Deletes an administrator account.
+/// CONTRACT:
+///  - Invariant: Root administrator (id = 1) cannot be deleted under any circumstances.
+///  - Invariant: An administrator cannot delete their own active session account.
+pub async fn delete_user_handler(
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<i64>,
+) -> Result<impl IntoResponse, AxiomError> {
+    check_permission(&auth, "users.delete").await?;
+
+    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    if let Ok(Some(target_user)) = MetadataStore::get_user_by_id(id).await {
+        if target_user.username == actor {
+            return Err(AxiomError::new(
+                "FORBIDDEN",
+                "Cannot delete your own active administrator account",
+                StatusCode::FORBIDDEN,
+            ));
+        }
+    }
+
+    MetadataStore::delete_user_by_id(id).await.map_err(|e| {
+        if e.contains("cannot be deleted") {
+            AxiomError::new("ROOT_ACCOUNT_PROTECTED", &e, StatusCode::FORBIDDEN)
+        } else if e.contains("not found") {
+            AxiomError::new("NOT_FOUND", &e, StatusCode::NOT_FOUND)
+        } else {
+            AxiomError::new("USER_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    })?;
+
+    let _ = MetadataStore::record_audit(
+        actor,
+        "user.delete",
+        &format!("user_id:{}", id),
+        Some("Deleted administrator user account"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "id": id,
+            "message": "User successfully deleted"
+        },
         "error": Value::Null
     })))
 }
@@ -1903,13 +2039,7 @@ pub struct UpdateMonikerRequest {
 pub async fn get_cluster_status(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "cluster.view").await?;
 
     let identity = MetadataStore::get_or_create_cluster_identity()
         .await
@@ -1940,13 +2070,7 @@ pub async fn get_cluster_status(
 pub async fn list_cluster_peers(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "cluster.view").await?;
 
     let peers = MetadataStore::list_peers()
         .await
@@ -1966,13 +2090,7 @@ pub async fn connect_cluster_peer(
     Extension(auth): Extension<AuthContext>,
     Json(req): Json<ConnectPeerRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "cluster.connect").await?;
 
     let target_url = req.url.trim().trim_end_matches('/').to_string();
     if !target_url.starts_with("http://") && !target_url.starts_with("https://") {
@@ -2089,13 +2207,7 @@ pub async fn remove_cluster_peer(
     Extension(auth): Extension<AuthContext>,
     Path(node_id): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "cluster.manage").await?;
 
     MetadataStore::remove_peer(&node_id)
         .await
@@ -2123,13 +2235,7 @@ pub async fn update_cluster_peer(
     Path(node_id): Path<String>,
     Json(req): Json<UpdatePeerRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "cluster.manage").await?;
 
     let mut peer = MetadataStore::get_peer(&node_id)
         .await
@@ -2179,13 +2285,7 @@ pub async fn ping_cluster_peer(
     Extension(auth): Extension<AuthContext>,
     Path(node_id): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "cluster.view").await?;
 
     let mut peer = MetadataStore::get_peer(&node_id)
         .await
@@ -2257,13 +2357,7 @@ pub async fn update_cluster_moniker(
     Extension(auth): Extension<AuthContext>,
     Json(req): Json<UpdateMonikerRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "cluster.manage").await?;
 
     let moniker = req.moniker.trim();
     if moniker.is_empty() {

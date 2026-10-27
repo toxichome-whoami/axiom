@@ -45,10 +45,16 @@ pub fn get_router() -> Router {
         .route("/health", get(get_admin_health))
         .route("/setup/database", post(setup_database))
         .route("/setup/complete", post(setup_complete))
+        .route("/auth/me", get(get_me_handler))
         .route("/auth/logout", post(logout_handler))
-        // Admin Accounts (Read-only over HTTP API for safety; additions, updates, and removals
-        // must be performed directly on the host server via CLI: `axiom user <add|update|remove>`)
-        .route("/users", get(list_users_handler))
+        // Administrator User Accounts and Granular Capabilities
+        .route("/users", get(list_users_handler).post(create_user_handler))
+        .route(
+            "/users/:id",
+            get(get_user_handler)
+                .patch(update_user_handler)
+                .delete(delete_user_handler),
+        )
         .route("/cluster/status", get(get_cluster_status))
         .route(
             "/cluster/peers",

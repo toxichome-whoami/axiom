@@ -25,6 +25,9 @@ const Storage = lazy(() =>
 const Cluster = lazy(() =>
   import("./pages/Cluster").then((m) => ({ default: m.Cluster })),
 );
+const Users = lazy(() =>
+  import("./pages/Users").then((m) => ({ default: m.Users })),
+);
 const Keys = lazy(() =>
   import("./pages/Keys").then((m) => ({ default: m.Keys })),
 );
@@ -86,6 +89,8 @@ export function App() {
     if (p === "/storage" || p === "/blobs") p = "/system/storage";
     if (p === "/cluster" || p === "/mesh" || p === "/nodes")
       p = "/system/cluster";
+    if (p === "/users" || p === "/admins" || p === "/administrators")
+      p = "/system/users";
     if (p === "/keys") p = "/system/keys";
     if (p === "/roles") p = "/system/roles";
     if (p === "/audit" || p === "/logs" || p === "/audit-log")
@@ -98,6 +103,7 @@ export function App() {
       "/system/tables",
       "/system/storage",
       "/system/cluster",
+      "/system/users",
       "/system/keys",
       "/system/roles",
       "/system/audit",
@@ -218,6 +224,8 @@ export function App() {
         return { title: "Native Blob Storage", component: <Storage /> };
       case "/system/cluster":
         return { title: "Cluster Mesh", component: <Cluster /> };
+      case "/system/users":
+        return { title: "Administrators & Access", component: <Users /> };
 
       case "/system/keys":
         return { title: "API Keys", component: <Keys /> };
