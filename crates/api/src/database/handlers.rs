@@ -1346,11 +1346,16 @@ pub async fn list_tables(
                 }
             }
 
+            let filtered_tables: Vec<_> = tables
+                .into_iter()
+                .filter(|t| PolicyEngine::can_access_table(&auth, &db_name, &t.name))
+                .collect();
+
             Ok(axum::Json(serde_json::json!({
                 "success": true,
                 "data": {
                     "database": db_name,
-                    "tables": tables,
+                    "tables": filtered_tables,
                 },
                 "pagination": {
                     "limit": limit,

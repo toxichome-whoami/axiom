@@ -21,6 +21,7 @@ use axiom_core::{AuthContext, AxiomError};
 use axiom_db::DatabasePoolManager;
 use axiom_metadata::models::{PermissionRecord, UserPermissionSet};
 use axiom_metadata::store::MetadataStore;
+use axiom_policy::PolicyEngine;
 
 pub const SETUP_SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60; // 30 days initial admin setup session
 pub const LOGIN_SESSION_TTL_SECS: i64 = 7 * 24 * 60 * 60; // 7 days standard admin login session
@@ -544,16 +545,33 @@ pub async fn update_key(
 pub async fn list_databases(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    check_permission(&auth, "databases.view").await?;
+    let is_super = auth.role.as_deref() == Some("admin");
+    let has_view_perm = check_permission(&auth, "databases.view").await.is_ok();
+    let has_granular_db = auth.permissions.iter().any(|p| !p.database.starts_with("blob:"));
+
+    if !is_super && !has_view_perm && !has_granular_db {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Insufficient privileges: databases.view permission required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
 
     let databases = MetadataStore::list_databases()
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
+    let aliases: Vec<String> = databases.iter().map(|d| d.alias.clone()).collect();
+    let allowed_aliases = PolicyEngine::filter_databases(&auth, &aliases);
+    let filtered_dbs: Vec<_> = databases
+        .into_iter()
+        .filter(|d| allowed_aliases.iter().any(|a| a.eq_ignore_ascii_case(&d.alias)))
+        .collect();
+
     Ok(Json(json!({
         "success": true,
         "data": {
-            "databases": databases
+            "databases": filtered_dbs
         },
         "error": Value::Null
     })))

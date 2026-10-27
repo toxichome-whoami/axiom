@@ -12,6 +12,7 @@ import { AlertDialog, showAlertDialog } from "../components/ui/AlertDialog";
 import { SlideOver } from "../components/ui/SlideOver";
 import { ColumnInfoApi } from "../types";
 import { api } from "../api/client";
+import { hasDatabaseAccess } from "../api/session";
 import { mapSqlTypeToFormValue, exportTableData } from "./table/format";
 import {
   InlineCellEditorPopover,
@@ -370,6 +371,12 @@ export function TableEditor() {
     },
   });
 
+  // User database & table PBAC permissions
+  const canInsert = hasDatabaseAccess(selectedDb, "INSERT", selectedTable);
+  const canUpdate = hasDatabaseAccess(selectedDb, "UPDATE", selectedTable);
+  const canDelete = hasDatabaseAccess(selectedDb, "DELETE", selectedTable);
+  const canDdl = hasDatabaseAccess(selectedDb, "DDL", selectedTable);
+
   // SQL Workspace Layout mode ('side-by-side' | 'stacked' | 'editor-only' | 'results-only')
   const [sqlLayoutMode, setSqlLayoutMode] = useState<
     "side-by-side" | "stacked" | "editor-only" | "results-only"
@@ -713,40 +720,53 @@ export function TableEditor() {
         setTableSearch={setTableSearch}
         isTablesLoading={isTablesLoading}
         onRefreshTables={() => fetchTables(selectedDb)}
-        onCreateTable={() => {
-          setEditingTableTarget("");
-          setIsTableEditOpen(true);
-        }}
-        onEditTable={async (tableName) => {
-          if (tableName !== selectedTable) {
-            setSelectedTable(tableName);
-            const dbTableKey = `${selectedDb}:${tableName}`;
-            if (
-              !schemaCacheRef.current[dbTableKey] &&
-              !allDbTablesSchema[tableName]
-            ) {
-              try {
-                const schema = await api.getTableSchema(selectedDb, tableName);
-                const entry = {
-                  columns: schema.columns,
-                  foreign_keys: schema.foreign_keys,
-                };
-                schemaCacheRef.current[dbTableKey] = entry;
-                setAllDbTablesSchema((prev) => ({
-                  ...prev,
-                  [tableName]: entry,
-                }));
-              } catch (e) {
-                console.error(e);
+        onCreateTable={
+          canDdl
+            ? () => {
+                setEditingTableTarget("");
+                setIsTableEditOpen(true);
               }
-            }
-          }
-          setEditingTableTarget(tableName);
-          setIsTableEditOpen(true);
-        }}
-        onDeleteTable={(tableName) => {
-          setDeleteTableTarget(tableName);
-        }}
+            : undefined
+        }
+        onEditTable={
+          canDdl
+            ? async (tableName) => {
+                if (tableName !== selectedTable) {
+                  setSelectedTable(tableName);
+                  const dbTableKey = `${selectedDb}:${tableName}`;
+                  if (
+                    !schemaCacheRef.current[dbTableKey] &&
+                    !allDbTablesSchema[tableName]
+                  ) {
+                    try {
+                      const schema = await api.getTableSchema(selectedDb, tableName);
+                      const entry = {
+                        columns: schema.columns,
+                        foreign_keys: schema.foreign_keys,
+                      };
+                      schemaCacheRef.current[dbTableKey] = entry;
+                      setAllDbTablesSchema((prev) => ({
+                        ...prev,
+                        [tableName]: entry,
+                      }));
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }
+                }
+                setEditingTableTarget(tableName);
+                setIsTableEditOpen(true);
+              }
+            : undefined
+        }
+        onDeleteTable={
+          canDdl
+            ? (tableName) => {
+                setDeleteTableTarget(tableName);
+              }
+            : undefined
+        }
+        canDdl={canDdl}
       />
 
       {/* ─── PANE 2: MAIN WORKSPACE CANVAS ─── */}
@@ -765,7 +785,7 @@ export function TableEditor() {
           selectedTable={selectedTable}
           columns={columns}
           selectedCount={selectedRowIndices.size}
-          onDeleteSelected={() => setIsDeleteBatchConfirmOpen(true)}
+          onDeleteSelected={canDelete ? () => setIsDeleteBatchConfirmOpen(true) : undefined}
           onExportSelected={(format) => {
             const rowsToExport =
               selectedRowIndices.size > 0
@@ -777,6 +797,8 @@ export function TableEditor() {
           }}
           onOpenInsertRow={handleOpenInsertRow}
           onOpenAddColumn={openAddColumn}
+          canInsert={canInsert}
+          canDdl={canDdl}
           activeFilter={activeFilter}
           setActiveFilter={setActiveFilter}
           filterCol={filterCol}
@@ -938,7 +960,7 @@ export function TableEditor() {
             onStartCellEdit={(rowIndex, colName, cellEl) =>
               handleStartCellEdit(rowIndex, colName, cellEl)
             }
-            isColReadOnly={(col) => isColReadOnly(col)}
+            isColReadOnly={(col) => !canUpdate || isColReadOnly(col)}
             onCellContextMenu={(e, rowIndex, colName, rawValue, isReadOnly) => {
               setGridContextMenu({
                 x: e.clientX,
@@ -1064,7 +1086,10 @@ export function TableEditor() {
         handleInsertRowFromPanel={handleInsertRowFromPanel}
         onRequestDeleteRow={(row) => setDeleteRowTarget(row)}
         onOpenFkPicker={(target) => setFkPickerTarget(target)}
-        isColReadOnly={(col) => isColReadOnly(col)}
+        isColReadOnly={(col) => !canUpdate || isColReadOnly(col)}
+        canInsert={canInsert}
+        canUpdate={canUpdate}
+        canDelete={canDelete}
       />
 
       {/* ─── Discard Row Changes Confirm Dialog ─── */}

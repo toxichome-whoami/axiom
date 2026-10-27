@@ -51,6 +51,8 @@ export interface TableToolbarProps {
   // Insert actions
   onOpenInsertRow: () => void;
   onOpenAddColumn: () => void;
+  canInsert?: boolean;
+  canDdl?: boolean;
 
   // Filter state
   activeFilter: { col: string; op: string; val: unknown } | null;
@@ -127,6 +129,8 @@ export function TableToolbar({
   columns,
   onOpenInsertRow,
   onOpenAddColumn,
+  canInsert = true,
+  canDdl = true,
   activeFilter,
   setActiveFilter,
   filterCol,
@@ -372,8 +376,8 @@ export function TableToolbar({
               <button
                 type="button"
                 onClick={onOpenInsertRow}
-                disabled={!selectedTable}
-                title="Insert row"
+                disabled={!selectedTable || !canInsert}
+                title={!canInsert ? "Insert row (insufficient privileges)" : "Insert row"}
                 className="flex items-center gap-1.5 h-8 px-2.5 rounded-l-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer select-none"
               >
                 <Plus className="w-3.5 h-3.5 text-blue-400" />
@@ -382,7 +386,7 @@ export function TableToolbar({
               <button
                 type="button"
                 onClick={() => setIsInsertDropdownOpen(!isInsertDropdownOpen)}
-                disabled={!selectedTable}
+                disabled={!selectedTable || (!canInsert && !canDdl)}
                 title="More insert options"
                 aria-label="More insert options"
                 className="flex items-center justify-center h-8 px-1.5 rounded-r-[6px] border-y border-r border-[#242424] hover:border-[#383838] bg-[#141414] hover:bg-[#1a1a1a] disabled:opacity-40 text-[#888888] hover:text-white transition-colors cursor-pointer select-none"
@@ -404,29 +408,33 @@ export function TableToolbar({
                       style={{ top: `${top}px`, left: `${left}px` }}
                       className="fixed w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsInsertDropdownOpen(false);
-                          onOpenInsertRow();
-                        }}
-                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-[#888888]" />
-                        <span>Insert row</span>
-                      </button>
+                      {canInsert && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsInsertDropdownOpen(false);
+                            onOpenInsertRow();
+                          }}
+                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-[#888888]" />
+                          <span>Insert row</span>
+                        </button>
+                      )}
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsInsertDropdownOpen(false);
-                          onOpenAddColumn();
-                        }}
-                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
-                      >
-                        <Columns className="w-3.5 h-3.5 text-[#888888]" />
-                        <span>Insert column</span>
-                      </button>
+                      {canDdl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsInsertDropdownOpen(false);
+                            onOpenAddColumn();
+                          }}
+                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                        >
+                          <Columns className="w-3.5 h-3.5 text-[#888888]" />
+                          <span>Insert column</span>
+                        </button>
+                      )}
                     </div>
                   );
                 })()}

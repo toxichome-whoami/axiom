@@ -321,6 +321,11 @@ export function Keys() {
   const [isRotating, setIsRotating] = useState(false);
   const [rotateError, setRotateError] = useState<string | null>(null);
 
+  const canCreateKey = hasPermission("keys.create");
+  const canUpdateKey = hasPermission("keys.update");
+  const canRotateKey = hasPermission("keys.rotate");
+  const canDeleteKey = hasPermission("keys.delete");
+
   // Secret Rotation Dialog State
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
   const [newlyRotatedSecret, setNewlyRotatedSecret] = useState<string | null>(
@@ -1245,28 +1250,32 @@ export function Keys() {
             >
               <span>Settings</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setManageTab("rotate")}
-              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === "rotate"
-                  ? "bg-[#161616] text-white border-[#333333]"
-                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
-              }`}
-            >
-              <span>Rotate Secret</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setManageTab("danger")}
-              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === "danger"
-                  ? "bg-[#161616] text-white border-[#333333]"
-                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
-              }`}
-            >
-              <span>Danger</span>
-            </button>
+            {canRotateKey && (
+              <button
+                type="button"
+                onClick={() => setManageTab("rotate")}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  manageTab === "rotate"
+                    ? "bg-[#161616] text-white border-[#333333]"
+                    : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
+                }`}
+              >
+                <span>Rotate Secret</span>
+              </button>
+            )}
+            {canDeleteKey && (
+              <button
+                type="button"
+                onClick={() => setManageTab("danger")}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  manageTab === "danger"
+                    ? "bg-[#161616] text-white border-[#333333]"
+                    : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
+                }`}
+              >
+                <span>Danger</span>
+              </button>
+            )}
           </div>
         </div>
 

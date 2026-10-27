@@ -34,6 +34,7 @@ export interface TableSidebarProps {
   onCreateTable?: () => void;
   onEditTable?: (tableName: string) => void;
   onDeleteTable?: (tableName: string) => void;
+  canDdl?: boolean;
 }
 
 export function TableSidebar({
@@ -50,6 +51,7 @@ export function TableSidebar({
   onCreateTable,
   onEditTable,
   onDeleteTable,
+  canDdl = true,
 }: TableSidebarProps) {
   const [isDbDropdownOpen, setIsDbDropdownOpen] = React.useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -240,7 +242,7 @@ export function TableSidebar({
             className="w-full h-8 pl-8 pr-2.5 bg-[#141414] border border-[#242424] focus:border-[#383838] rounded-[6px] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
           />
         </div>
-        {onCreateTable && (
+        {onCreateTable && canDdl !== false && (
           <button
             type="button"
             onClick={onCreateTable}
@@ -342,33 +344,39 @@ export function TableSidebar({
           className="fixed z-50 bg-[#141414] border border-[#262626] rounded-[6px] shadow-2xl p-1 text-[13px] text-[#cccccc] animate-in fade-in zoom-in-95 duration-100 select-none font-sans"
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={() => {
-              const target = tableMenuState.tableName;
-              setTableMenuState(null);
-              onEditTable?.(target);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] hover:bg-[#1f1f1f] hover:text-white transition-colors cursor-pointer text-left"
-          >
-            <Pencil className="w-3.5 h-3.5 text-[#888888]" />
-            <span>Edit Table</span>
-          </button>
+          {canDdl !== false && onEditTable && (
+            <button
+              type="button"
+              onClick={() => {
+                const target = tableMenuState.tableName;
+                setTableMenuState(null);
+                onEditTable(target);
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] hover:bg-[#1f1f1f] hover:text-white transition-colors cursor-pointer text-left"
+            >
+              <Pencil className="w-3.5 h-3.5 text-[#888888]" />
+              <span>Edit Table</span>
+            </button>
+          )}
 
-          <div className="my-1 -mx-1 border-t border-[#222222]" />
+          {canDdl !== false && onEditTable && onDeleteTable && (
+            <div className="my-1 -mx-1 border-t border-[#222222]" />
+          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              const target = tableMenuState.tableName;
-              setTableMenuState(null);
-              onDeleteTable?.(target);
-            }}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-rose-400 hover:bg-rose-950/30 hover:text-rose-300 transition-colors cursor-pointer text-left"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete Table</span>
-          </button>
+          {canDdl !== false && onDeleteTable && (
+            <button
+              type="button"
+              onClick={() => {
+                const target = tableMenuState.tableName;
+                setTableMenuState(null);
+                onDeleteTable(target);
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-rose-400 hover:bg-rose-950/30 hover:text-rose-300 transition-colors cursor-pointer text-left"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Table</span>
+            </button>
+          )}
         </div>
       )}
     </aside>

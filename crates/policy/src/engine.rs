@@ -225,6 +225,42 @@ impl PolicyEngine {
             .collect()
     }
 
+    /// Checks whether the caller is authorized to view or access a specific table within a database.
+    pub fn can_access_table(auth: &AuthContext, database: &str, table: &str) -> bool {
+        if auth.is_session && auth.role.as_deref() != Some("custom") {
+            return true;
+        }
+
+        if !auth.permissions.is_empty() {
+            auth.permissions.iter().any(|p| {
+                let db_match = p.database == "*" || p.database.eq_ignore_ascii_case(database);
+                if !db_match {
+                    return false;
+                }
+                p.table_name == "*" || p.table_name.eq_ignore_ascii_case(table)
+            })
+        } else if auth.is_session {
+            false
+        } else {
+            auth.db_scope
+                .iter()
+                .any(|s| s == "*" || s.eq_ignore_ascii_case(database))
+        }
+    }
+
+    /// Filters a list of table names to only those accessible to the current identity.
+    pub fn filter_tables(auth: &AuthContext, database: &str, tables: &[String]) -> Vec<String> {
+        if auth.is_session && auth.role.as_deref() != Some("custom") {
+            return tables.to_vec();
+        }
+
+        tables
+            .iter()
+            .filter(|tbl| Self::can_access_table(auth, database, tbl))
+            .cloned()
+            .collect()
+    }
+
     /// Filters a list of blob namespaces to only those accessible to the current identity for READ.
     /// CONTRACT:
     ///  - Returns vector of namespace strings authorized for the caller.
@@ -777,5 +813,56 @@ mod tests {
             &["photos".to_string(), "secret_docs".to_string()],
         );
         assert_eq!(filtered_admin.len(), 2);
+    }
+
+    #[test]
+    fn test_custom_session_database_and_table_filtering() {
+        use axiom_core::PermissionSnapshot;
+
+        let custom_user_ctx = AuthContext {
+            api_key_name: "user:analyst".to_string(),
+            is_session: true,
+            role: Some("custom".to_string()),
+            permissions: vec![
+                PermissionSnapshot {
+                    database: "analytics".to_string(),
+                    table_name: "events".to_string(),
+                    operations: vec!["SELECT".to_string()],
+                    rls_filter: None,
+                },
+                PermissionSnapshot {
+                    database: "analytics".to_string(),
+                    table_name: "metrics".to_string(),
+                    operations: vec!["SELECT".to_string()],
+                    rls_filter: None,
+                },
+            ],
+            ..Default::default()
+        };
+
+        // Filter databases
+        let all_dbs = vec!["analytics".to_string(), "finance".to_string(), "users_db".to_string()];
+        let allowed_dbs = PolicyEngine::filter_databases(&custom_user_ctx, &all_dbs);
+        assert_eq!(allowed_dbs, vec!["analytics".to_string()]);
+
+        // Filter tables in analytics
+        let all_tables = vec!["events".to_string(), "metrics".to_string(), "salary_secrets".to_string()];
+        let allowed_tables = PolicyEngine::filter_tables(&custom_user_ctx, "analytics", &all_tables);
+        assert_eq!(allowed_tables, vec!["events".to_string(), "metrics".to_string()]);
+
+        // Filter tables in unauthorized db
+        let unauthorized_db_tables = PolicyEngine::filter_tables(&custom_user_ctx, "finance", &all_tables);
+        assert!(unauthorized_db_tables.is_empty());
+
+        // Unprivileged custom session user
+        let empty_ctx = AuthContext {
+            api_key_name: "user:stranger".to_string(),
+            is_session: true,
+            role: Some("custom".to_string()),
+            permissions: vec![],
+            ..Default::default()
+        };
+        assert!(PolicyEngine::filter_databases(&empty_ctx, &all_dbs).is_empty());
+        assert!(PolicyEngine::filter_tables(&empty_ctx, "analytics", &all_tables).is_empty());
     }
 }

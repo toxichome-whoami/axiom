@@ -243,6 +243,7 @@ export function Cluster() {
 
   const canConnectPeer = Boolean(
     !isConnecting &&
+    hasPermission("cluster.connect") &&
     peerUrl.trim().length > 0 &&
     isPeerUrlValid &&
     peerSecret.trim().length > 0 &&
@@ -1424,17 +1425,19 @@ export function Cluster() {
             >
               <span>Connection</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setPeerTab("danger")}
-              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                peerTab === "danger"
-                  ? "bg-[#161616] text-white border-[#333333]"
-                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
-              }`}
-            >
-              <span>Danger</span>
-            </button>
+            {hasPermission("cluster.manage") && (
+              <button
+                type="button"
+                onClick={() => setPeerTab("danger")}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  peerTab === "danger"
+                    ? "bg-[#161616] text-white border-[#333333]"
+                    : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
+                }`}
+              >
+                <span>Danger</span>
+              </button>
+            )}
           </div>
         </div>
 
