@@ -7,18 +7,13 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { AdminUser } from "../types";
-import { DataTable, Column } from "../components/shared/DataTable";
-import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
 import {
   RefreshCw,
-  Terminal,
-  Shield,
   Copy,
   Check,
   Server,
-  Users,
+  Shield,
   Info,
   Code2,
   Cpu,
@@ -35,7 +30,6 @@ import {
   api,
   SystemStatusData,
   HealthData,
-  UserRecordApi,
 } from "../api/client";
 import { hasPermission } from "../api/session";
 
@@ -47,15 +41,11 @@ export interface ApiRouteItem {
 }
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<
-    "server" | "admins" | "routes" | "about"
-  >("server");
-  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [activeTab, setActiveTab] = useState<"server" | "routes" | "about">("server");
   const [statusData, setStatusData] = useState<SystemStatusData | null>(null);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [isReloading, setIsReloading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [copiedCli, setCopiedCli] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [endpointCategory, setEndpointCategory] = useState<
     "all" | "database" | "storage" | "admin" | "cluster" | "mcp"
@@ -76,27 +66,12 @@ export function Settings() {
   const loadLiveSettings = async () => {
     const curGen = ++fetchGenRef.current;
     try {
-      const fetchUsers = hasPermission("users.view");
-      const [statusRes, healthRes, usersRes] = await Promise.allSettled([
+      const [statusRes, healthRes] = await Promise.allSettled([
         api.getStatus(),
         api.getHealth(),
-        fetchUsers ? api.listUsers() : Promise.resolve([]),
       ]);
 
       if (curGen !== fetchGenRef.current) return;
-
-      if (fetchUsers && usersRes.status === "fulfilled") {
-        const userList: UserRecordApi[] = usersRes.value;
-        setAdmins(
-          userList.map((u) => ({
-            username: u.username,
-            email: `${u.username}@axiom.local`,
-            createdAt: new Date(u.created_at * 1000)
-              .toISOString()
-              .split("T")[0],
-          })),
-        );
-      }
 
       if (statusRes.status === "fulfilled") {
         setStatusData(statusRes.value);
@@ -129,47 +104,6 @@ export function Settings() {
       setIsReloading(false);
     }
   }
-
-  const adminColumns: Column<AdminUser>[] = [
-    {
-      id: "username",
-      header: "Username",
-      accessorKey: "username",
-      width: 240,
-      cell: (row) => (
-        <div className="flex items-center gap-2.5">
-          <Shield className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-          <span className="font-medium text-white text-[13px]">
-            {row.username}
-          </span>
-        </div>
-      ),
-    },
-    {
-      id: "email",
-      header: "Email",
-      accessorKey: "email",
-      isFlex: true,
-      className: "px-3",
-      cell: (row) => (
-        <span className="text-[13px] text-[#8c8c8c] font-normal">
-          {row.email}
-        </span>
-      ),
-    },
-    {
-      id: "createdAt",
-      header: "Created Date",
-      accessorKey: "createdAt",
-      width: 180,
-      className: "px-3",
-      cell: (row) => (
-        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
-          {row.createdAt}
-        </span>
-      ),
-    },
-  ];
 
   const databaseEndpoints: ApiRouteItem[] = [
     {
@@ -677,7 +611,7 @@ export function Settings() {
             Settings
           </h1>
           <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-            Gateway runtime environment, administrator users, and operational
+            Gateway runtime environment, API endpoints, and operational
             configuration
           </p>
         </div>
@@ -714,22 +648,6 @@ export function Settings() {
         >
           <Server className="w-3.5 h-3.5 shrink-0" />
           <span>Server Info</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("admins")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
-            activeTab === "admins"
-              ? "bg-[#161616] text-white border border-[#333333]"
-              : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
-          }`}
-        >
-          <Users className="w-3.5 h-3.5 shrink-0" />
-          <span>Admins</span>
-          <span className="ml-1 text-[11px] font-sans px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
-            {admins.length}
-          </span>
         </button>
 
         <button
@@ -963,74 +881,7 @@ export function Settings() {
         </div>
       )}
 
-      {/* TAB 2: ADMINS */}
-      {activeTab === "admins" && (
-        <div className="space-y-5">
-          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-[#222222]">
-              <h2 className="text-[14px] font-medium text-white tracking-tight">
-                Administrator Accounts
-              </h2>
-              <p className="text-[13px] text-[#8c8c8c] font-normal mt-0.5">
-                Human operators authorized to access this dashboard. Accounts
-                are managed exclusively via host CLI.
-              </p>
-            </div>
-
-            <div className="p-4">
-              <DataTable
-                columns={adminColumns}
-                data={admins}
-                isLoading={isLoading}
-                ariaLabel="Admin Users Table"
-              />
-            </div>
-          </div>
-
-          {/* CLI Management Callout Banner */}
-          <div className="rounded-[8px] border border-[#262626] bg-[#0e0e0e] p-4 text-[13px] text-[#8c8c8c] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="text-white font-medium flex items-center gap-2 text-[13px]">
-                <Terminal className="w-4 h-4 text-[#3b82f6]" />
-                <span>Host CLI Zero-Trust Policy</span>
-              </div>
-              <p className="text-[#8c8c8c] text-[13px] font-normal leading-relaxed">
-                To prevent web backdoors, administrator accounts cannot be
-                created or deleted via the UI.
-              </p>
-              <code className="text-[#60a5fa] font-mono text-[12px] block mt-1.5 bg-[#141414] px-2.5 py-1 rounded-[4px] border border-[#262626] w-fit select-all">
-                axiom user add &lt;username&gt; --email &lt;email&gt;
-              </code>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(
-                    "axiom user add <username> --email <email>",
-                  );
-                  setCopiedCli(true);
-                  setTimeout(() => setCopiedCli(false), 2000);
-                } catch {
-                  // Clipboard access error
-                }
-              }}
-            >
-              {copiedCli ? (
-                <Check className="w-3.5 h-3.5 text-[#30a46c]" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-              <span className="text-[13px]">
-                {copiedCli ? "Copied" : "Copy CLI"}
-              </span>
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: REST API ROUTES */}
+      {/* TAB 2: REST API ROUTES */}
       {activeTab === "routes" && (
         <div className="space-y-4">
           <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">

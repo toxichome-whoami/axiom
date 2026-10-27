@@ -857,9 +857,7 @@ pub async fn verify_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        PolicyEngine::evaluate_blob(&auth, &namespace, &key, "READ")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, &namespace, &key, "READ")?;
 
     let engine = get_blob_engine()?;
     let valid = engine
@@ -912,10 +910,8 @@ pub async fn copy_blob_handler(
     })?;
     let dest_ns = payload.dest_namespace.as_deref().unwrap_or(src_ns);
 
-    if !auth.is_session {
-        PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "READ")?;
-        PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "READ")?;
+    PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
 
     let engine = get_blob_engine()?;
 
@@ -995,10 +991,8 @@ pub async fn move_blob_handler(
     })?;
     let dest_ns = payload.dest_namespace.as_deref().unwrap_or(src_ns);
 
-    if !auth.is_session {
-        PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "WRITE")?;
-        PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "DELETE")?;
+    PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
 
     let engine = get_blob_engine()?;
 
@@ -1102,9 +1096,7 @@ pub async fn delete_prefix_handler(
         )
     })?;
 
-    if !auth.is_session {
-        PolicyEngine::evaluate_blob(&auth, ns, &payload.prefix, "WRITE")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, ns, &payload.prefix, "DELETE")?;
 
     let engine = get_blob_engine()?;
     let count = engine
@@ -1256,9 +1248,7 @@ pub async fn create_upload_link_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateUploadLinkRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, "WRITE")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, "WRITE")?;
 
     let secret = axiom_blob::tickets::get_ticket_secret();
     let ttl = payload
@@ -1411,9 +1401,7 @@ pub async fn list_namespace_tickets_handler(
     Query(query): Query<ListTicketsQuery>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
 
     let key = query.key.as_deref();
     let include_expired = query.all.unwrap_or(true);
@@ -1665,9 +1653,7 @@ pub async fn revoke_ticket_scoped_handler(
     Path((namespace, signature_or_id)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
 
     let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
         .await
@@ -1733,9 +1719,7 @@ pub async fn enable_ticket_scoped_handler(
     Path((namespace, signature_or_id)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
 
     let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
         .await
@@ -1795,9 +1779,7 @@ pub async fn delete_ticket_scoped_handler(
     Path((namespace, signature_or_id)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
-    }
+    PolicyEngine::evaluate_blob(&auth, &namespace, "*", "DELETE")?;
 
     let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
         .await
@@ -2947,9 +2929,10 @@ pub async fn batch_delete_blobs_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<BatchDeleteBlobsPayload>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    // S3 semantics: evaluate permissions per key. If user has wildcard '*' permission,
+    // S3 semantics: evaluate permissions per key. If user has wildcard '*' permission or super-admin session,
     // all keys can be deleted immediately. Otherwise, partition into permitted vs unauthorized keys.
-    let (keys_to_delete, denied_errors) = if auth.is_session
+    let is_super_admin = auth.is_session && auth.role.as_deref() != Some("custom");
+    let (keys_to_delete, denied_errors) = if is_super_admin
         || PolicyEngine::evaluate_blob(&auth, &namespace, "*", "DELETE").is_ok()
     {
         (payload.keys, Vec::new())
@@ -2984,7 +2967,7 @@ pub async fn batch_delete_blobs_handler(
     let mut prefix_deleted_count = 0;
     if let Some(ref pfx) = payload.prefix {
         if !pfx.is_empty() {
-            let can_delete_prefix = auth.is_session
+            let can_delete_prefix = is_super_admin
                 || PolicyEngine::evaluate_blob(&auth, &namespace, "*", "DELETE").is_ok()
                 || PolicyEngine::evaluate_blob(&auth, &namespace, pfx, "DELETE").is_ok();
 

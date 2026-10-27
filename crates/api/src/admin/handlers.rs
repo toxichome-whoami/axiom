@@ -2055,6 +2055,9 @@ pub async fn update_user_handler(
     )
     .await;
 
+    // Instantly invalidate RAM session caches so updated permissions take effect immediately
+    axiom_cache::CacheEngine::invalidate_prefix("sess:");
+
     Ok(Json(json!({
         "success": true,
         "data": updated,
@@ -2110,6 +2113,9 @@ pub async fn delete_user_handler(
         Some("Deleted administrator user account"),
     )
     .await;
+
+    // Purge cached sessions on user deletion
+    axiom_cache::CacheEngine::invalidate_prefix("sess:");
 
     Ok(Json(json!({
         "success": true,

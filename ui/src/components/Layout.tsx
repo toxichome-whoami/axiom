@@ -9,7 +9,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "../utils/cn";
 import { api } from "../api/client";
-import { getOperatorUser, clearSession, hasPermission, setCurrentUser } from "../api/session";
+import {
+  getOperatorUser,
+  clearSession,
+  hasPermission,
+  setCurrentUser,
+  hasBlobAccess,
+  hasDatabaseAccess,
+} from "../api/session";
 // MobileTabBar removed
 import {
   LayoutDashboard,
@@ -75,12 +82,16 @@ export function Layout({
     document.title = title ? `${title} — Axiom Gateway` : "Axiom Gateway";
   }, [title]);
 
+  const [, setPermissionRev] = useState(0);
+
   useEffect(() => {
-    api.getMe().then((user) => {
-      if (user) {
-        setCurrentUser(user);
-      }
-    }).catch(() => {});
+    function handleUserUpdated() {
+      setPermissionRev((r) => r + 1);
+    }
+    window.addEventListener("axiom:user_updated", handleUserUpdated);
+    return () => {
+      window.removeEventListener("axiom:user_updated", handleUserUpdated);
+    };
   }, []);
 
   const itemPermissions: Record<string, string> = {
@@ -93,6 +104,17 @@ export function Layout({
     "/system/roles": "roles.view",
     "/system/audit": "audit.view",
     "/system/settings": "settings.view",
+  };
+
+  const canAccessPath = (path: string): boolean => {
+    if (path === "/system/databases" || path === "/system/tables") {
+      return hasDatabaseAccess();
+    }
+    if (path === "/system/storage") {
+      return hasBlobAccess();
+    }
+    const perm = itemPermissions[path];
+    return !perm || hasPermission(perm);
   };
 
   const searchItems = [
@@ -162,7 +184,7 @@ export function Layout({
       icon: Settings,
       category: "Configuration",
     },
-  ].filter((item) => !itemPermissions[item.path] || hasPermission(itemPermissions[item.path]));
+  ].filter((item) => canAccessPath(item.path));
 
   const filteredSearchItems = searchItems.filter(
     (item) =>
@@ -328,9 +350,7 @@ export function Layout({
   ]
     .map((section) => ({
       ...section,
-      items: section.items.filter(
-        (item) => !itemPermissions[item.path] || hasPermission(itemPermissions[item.path]),
-      ),
+      items: section.items.filter((item) => canAccessPath(item.path)),
     }))
     .filter((section) => section.items.length > 0);
 

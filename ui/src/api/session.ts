@@ -52,6 +52,13 @@ export function setCurrentUser(user: UserRecordApi | null): void {
   } else {
     localStorage.removeItem("axiom_current_user");
   }
+
+  // Reactive notification: broadcast user profile/permission change across the application
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("axiom:user_updated", { detail: user }),
+    );
+  }
 }
 
 /**

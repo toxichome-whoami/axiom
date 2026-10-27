@@ -1,6 +1,15 @@
 import React, { useState, useEffect, Suspense, lazy } from "react";
 import { Layout, NavPath } from "./components/Layout";
-import { setSession, clearSession, hasActiveSession, setCurrentUser, hasPermission } from "./api/session";
+import {
+  setSession,
+  clearSession,
+  hasActiveSession,
+  setCurrentUser,
+  getCurrentUser,
+  hasPermission,
+  hasBlobAccess,
+  hasDatabaseAccess,
+} from "./api/session";
 import { api } from "./api/client";
 import { GlobalAlertDialog } from "./components/ui/AlertDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
@@ -178,6 +187,37 @@ export function App() {
     return hasActiveSession();
   });
 
+  const [, setCurrentUserState] = useState(() => getCurrentUser());
+
+  useEffect(() => {
+    function handleUserUpdated(e: Event) {
+      const customEvt = e as CustomEvent;
+      setCurrentUserState(customEvt.detail);
+    }
+    window.addEventListener("axiom:user_updated", handleUserUpdated);
+    return () => {
+      window.removeEventListener("axiom:user_updated", handleUserUpdated);
+    };
+  }, []);
+
+  // Background refresh on window focus ensures permissions are immediately updated without reload
+  useEffect(() => {
+    function onFocus() {
+      if (hasActiveSession()) {
+        api
+          .getMe()
+          .then((user) => {
+            setCurrentUser(user);
+          })
+          .catch(() => {});
+      }
+    }
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
   useEffect(() => {
     function handlePopState() {
       setCurrentPath(normalizePath(window.location.pathname));
@@ -278,12 +318,23 @@ export function App() {
 
   function getPageDetails(): { title: string; component: React.ReactNode } {
     const requiredPermission = ROUTE_PERMISSIONS[currentPath];
-    if (requiredPermission && !hasPermission(requiredPermission)) {
+    let isAllowed = false;
+    if (currentPath === "/system/databases" || currentPath === "/system/tables") {
+      isAllowed = hasDatabaseAccess();
+    } else if (currentPath === "/system/storage") {
+      isAllowed = hasBlobAccess();
+    } else if (requiredPermission) {
+      isAllowed = hasPermission(requiredPermission);
+    } else {
+      isAllowed = true;
+    }
+
+    if (!isAllowed) {
       return {
         title: "Access Restricted",
         component: (
           <AccessRestricted
-            required={requiredPermission}
+            required={requiredPermission || "access"}
             onBack={() => handleNavigate("/system")}
           />
         ),

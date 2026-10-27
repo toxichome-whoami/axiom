@@ -335,6 +335,11 @@ impl CacheEngine {
         });
     }
 
+    /// Invalidates all entries matching a specific prefix from L1 memory.
+    pub fn invalidate_prefix(prefix: &str) {
+        L1_CACHE.retain(|k, _| !k.starts_with(prefix));
+    }
+
     /// Hard wipe of all entries across L1 and L2 regardless of namespace.
     pub async fn flush_all() {
         L1_CACHE.clear();

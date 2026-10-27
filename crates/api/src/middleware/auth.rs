@@ -293,7 +293,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         if let Ok(Some(username)) =
             axiom_metadata::store::MetadataStore::validate_session(session_id).await
         {
-            let mut is_super = true;
+            let mut is_super = false;
             let mut permissions = Vec::new();
 
             if let Ok(Some(user_rec)) =
@@ -301,21 +301,103 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             {
                 is_super = user_rec.is_super_admin;
                 if !is_super {
-                    for db_perm in user_rec.permissions.databases {
+                    // 1. Granular Database permissions
+                    for db_perm in &user_rec.permissions.databases {
                         permissions.push(axiom_core::PermissionSnapshot {
-                            database: db_perm.database,
-                            table_name: db_perm.table_name,
-                            operations: db_perm.operations,
+                            database: db_perm.database.clone(),
+                            table_name: db_perm.table_name.clone(),
+                            operations: db_perm.operations.clone(),
                             rls_filter: None,
                         });
                     }
-                    for blob_perm in user_rec.permissions.blobs {
+
+                    // 2. Granular Blob permissions
+                    for blob_perm in &user_rec.permissions.blobs {
                         permissions.push(axiom_core::PermissionSnapshot {
                             database: format!("blob:{}", blob_perm.namespace),
                             table_name: "*".to_string(),
-                            operations: blob_perm.operations,
+                            operations: blob_perm.operations.clone(),
                             rls_filter: None,
                         });
+                    }
+
+                    // 3. System capabilities synthesis for blobs and databases
+                    if user_rec.permissions.has_system_permission("*") {
+                        permissions.push(axiom_core::PermissionSnapshot {
+                            database: "*".to_string(),
+                            table_name: "*".to_string(),
+                            operations: vec!["*".to_string()],
+                            rls_filter: None,
+                        });
+                        permissions.push(axiom_core::PermissionSnapshot {
+                            database: "blob:*".to_string(),
+                            table_name: "*".to_string(),
+                            operations: vec!["*".to_string()],
+                            rls_filter: None,
+                        });
+                    } else {
+                        // Blob system permissions
+                        if user_rec.permissions.has_system_permission("blobs.*") {
+                            permissions.push(axiom_core::PermissionSnapshot {
+                                database: "blob:*".to_string(),
+                                table_name: "*".to_string(),
+                                operations: vec!["*".to_string()],
+                                rls_filter: None,
+                            });
+                        } else {
+                            let mut blob_ops = Vec::new();
+                            if user_rec.permissions.has_system_permission("blobs.view") {
+                                blob_ops.push("READ".to_string());
+                            }
+                            if user_rec.permissions.has_system_permission("blobs.create")
+                                || user_rec.permissions.has_system_permission("blobs.update")
+                            {
+                                blob_ops.push("WRITE".to_string());
+                            }
+                            if user_rec.permissions.has_system_permission("blobs.delete") {
+                                blob_ops.push("DELETE".to_string());
+                            }
+                            if !blob_ops.is_empty() {
+                                permissions.push(axiom_core::PermissionSnapshot {
+                                    database: "blob:*".to_string(),
+                                    table_name: "*".to_string(),
+                                    operations: blob_ops,
+                                    rls_filter: None,
+                                });
+                            }
+                        }
+
+                        // Database system permissions
+                        if user_rec.permissions.has_system_permission("databases.*") {
+                            permissions.push(axiom_core::PermissionSnapshot {
+                                database: "*".to_string(),
+                                table_name: "*".to_string(),
+                                operations: vec!["*".to_string()],
+                                rls_filter: None,
+                            });
+                        } else {
+                            let mut db_ops = Vec::new();
+                            if user_rec.permissions.has_system_permission("databases.view") {
+                                db_ops.push("SELECT".to_string());
+                            }
+                            if user_rec.permissions.has_system_permission("databases.create")
+                                || user_rec.permissions.has_system_permission("databases.update")
+                            {
+                                db_ops.push("INSERT".to_string());
+                                db_ops.push("UPDATE".to_string());
+                            }
+                            if user_rec.permissions.has_system_permission("databases.delete") {
+                                db_ops.push("DELETE".to_string());
+                            }
+                            if !db_ops.is_empty() {
+                                permissions.push(axiom_core::PermissionSnapshot {
+                                    database: "*".to_string(),
+                                    table_name: "*".to_string(),
+                                    operations: db_ops,
+                                    rls_filter: None,
+                                });
+                            }
+                        }
                     }
                 }
             }

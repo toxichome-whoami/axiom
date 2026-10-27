@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { NavPath } from "../Layout";
 import { cn } from "../../utils/cn";
+import { hasDatabaseAccess, hasBlobAccess } from "../../api/session";
 
 interface MobileTabBarProps {
   currentPath: NavPath;
@@ -54,13 +55,20 @@ export function MobileTabBar({
     },
   ];
 
+  const visibleTabs = tabs.filter((tab) => {
+    if (tab.path === "/system/databases" || tab.path === "/system/tables")
+      return hasDatabaseAccess();
+    if (tab.path === "/system/storage") return hasBlobAccess();
+    return true;
+  });
+
   return (
     <nav
       aria-label="Mobile Bottom Navigation"
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#000000]/95 backdrop-blur-md border-t border-[#222222] pb-safe select-none"
     >
       <div className="flex items-center justify-around h-[54px] px-1">
-        {tabs.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button

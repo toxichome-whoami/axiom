@@ -75,6 +75,18 @@ impl PolicyEngine {
             ));
         }
 
+        // Session users with role=custom must NEVER fall through to legacy API key checks
+        if auth.is_session {
+            return Err(AxiomError::new(
+                "AUTH_FORBIDDEN",
+                &format!(
+                    "Operation '{}' on '{}.{}' denied by user policy: no permissions granted",
+                    operation, database, table
+                ),
+                StatusCode::FORBIDDEN,
+            ));
+        }
+
         // Backward compatibility fallback: evaluate legacy `db_scope` and `mode`
         let db_in_scope = auth
             .db_scope
@@ -201,6 +213,8 @@ impl PolicyEngine {
                     auth.permissions
                         .iter()
                         .any(|p| p.database == "*" || p.database.eq_ignore_ascii_case(db))
+                } else if auth.is_session {
+                    false
                 } else {
                     auth.db_scope
                         .iter()
@@ -237,6 +251,8 @@ impl PolicyEngine {
                                     || op.eq_ignore_ascii_case("BLOB_READ")
                             })
                     })
+                } else if auth.is_session {
+                    false
                 } else {
                     let in_scope = auth
                         .db_scope
@@ -308,6 +324,18 @@ impl PolicyEngine {
                 "AUTH_FORBIDDEN",
                 &format!(
                     "Operation '{}' on blob '{}/{}' denied by role policy",
+                    operation, namespace, key
+                ),
+                StatusCode::FORBIDDEN,
+            ));
+        }
+
+        // Session users with role=custom must NEVER fall through to legacy API key checks
+        if auth.is_session {
+            return Err(AxiomError::new(
+                "AUTH_FORBIDDEN",
+                &format!(
+                    "Operation '{}' on blob '{}/{}' denied by user policy: no permissions granted",
                     operation, namespace, key
                 ),
                 StatusCode::FORBIDDEN,
@@ -673,5 +701,81 @@ mod tests {
         // Denied access on other database
         let other_db_res = PolicyEngine::evaluate(&custom_ctx, "finance_db", "invoices", "SELECT");
         assert!(other_db_res.is_err());
+    }
+
+    #[test]
+    fn test_custom_session_blob_permissions_enforcement() {
+        use axiom_core::PermissionSnapshot;
+
+        // 1. Custom session with zero permissions
+        let unprivileged_ctx = AuthContext {
+            api_key_name: "user:bob".to_string(),
+            is_session: true,
+            role: Some("custom".to_string()),
+            permissions: vec![],
+            ..Default::default()
+        };
+        assert!(PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "READ").is_err());
+        assert!(PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "WRITE").is_err());
+        assert!(PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "DELETE").is_err());
+        let filtered_empty = PolicyEngine::filter_blob_namespaces(
+            &unprivileged_ctx,
+            &["photos".to_string(), "backups".to_string()],
+        );
+        assert!(filtered_empty.is_empty());
+
+        // 2. Custom session with only database permissions
+        let db_only_ctx = AuthContext {
+            api_key_name: "user:charlie".to_string(),
+            is_session: true,
+            role: Some("custom".to_string()),
+            permissions: vec![PermissionSnapshot {
+                database: "db1".to_string(),
+                table_name: "*".to_string(),
+                operations: vec!["SELECT".to_string()],
+                rls_filter: None,
+            }],
+            ..Default::default()
+        };
+        assert!(PolicyEngine::evaluate_blob(&db_only_ctx, "photos", "avatar.png", "READ").is_err());
+        assert!(PolicyEngine::filter_blob_namespaces(&db_only_ctx, &["photos".to_string()]).is_empty());
+
+        // 3. Custom session with granular READ on namespace 'photos'
+        let blob_reader_ctx = AuthContext {
+            api_key_name: "user:david".to_string(),
+            is_session: true,
+            role: Some("custom".to_string()),
+            permissions: vec![PermissionSnapshot {
+                database: "blob:photos".to_string(),
+                table_name: "*".to_string(),
+                operations: vec!["READ".to_string()],
+                rls_filter: None,
+            }],
+            ..Default::default()
+        };
+        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "READ").is_ok());
+        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "WRITE").is_err());
+        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "DELETE").is_err());
+        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "secret_docs", "file.pdf", "READ").is_err());
+        let filtered_reader = PolicyEngine::filter_blob_namespaces(
+            &blob_reader_ctx,
+            &["photos".to_string(), "secret_docs".to_string()],
+        );
+        assert_eq!(filtered_reader, vec!["photos".to_string()]);
+
+        // 4. Super-administrator session bypasses evaluation
+        let admin_ctx = AuthContext {
+            api_key_name: "user:superadmin".to_string(),
+            is_session: true,
+            role: Some("admin".to_string()),
+            permissions: vec![],
+            ..Default::default()
+        };
+        assert!(PolicyEngine::evaluate_blob(&admin_ctx, "photos", "avatar.png", "DELETE").is_ok());
+        let filtered_admin = PolicyEngine::filter_blob_namespaces(
+            &admin_ctx,
+            &["photos".to_string(), "secret_docs".to_string()],
+        );
+        assert_eq!(filtered_admin.len(), 2);
     }
 }

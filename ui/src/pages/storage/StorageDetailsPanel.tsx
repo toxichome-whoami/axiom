@@ -41,9 +41,9 @@ export interface StorageDetailsPanelProps {
   onShare?: (item: StorageItem) => void;
   activeTicketCount?: number;
   onCopyPublicUrl?: (item: StorageItem) => void;
-  onOpenMove: (item: StorageItem) => void;
+  onOpenMove?: (item: StorageItem) => void;
   onOpenCopy?: (item: StorageItem) => void;
-  onDelete: (item: StorageItem) => void;
+  onDelete?: (item: StorageItem) => void;
   onVerifyBlob: (key: string) => Promise<void>;
   verifyStatus: "verifying" | "valid" | "invalid" | undefined;
   onCopyText: (text: string, id: string) => void;
@@ -191,14 +191,16 @@ export function StorageDetailsPanel({
                     </button>
                   )}
 
-                <button
-                  type="button"
-                  onClick={() => onOpenMove(selectedItem)}
-                  className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
-                >
-                  <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
-                  <span className="truncate">Move</span>
-                </button>
+                {onOpenMove && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenMove(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                    <span className="truncate">Move</span>
+                  </button>
+                )}
 
                 {onOpenCopy && (
                   <button
@@ -211,14 +213,16 @@ export function StorageDetailsPanel({
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => onDelete(selectedItem)}
-                  className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#f87171] hover:text-white bg-[#1a1213] hover:bg-[#281417] border border-[#3e1a1e] hover:border-[#5c2229] transition-colors cursor-pointer min-w-0"
-                >
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Delete</span>
-                </button>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#f87171] hover:text-white bg-[#1a1213] hover:bg-[#281417] border border-[#3e1a1e] hover:border-[#5c2229] transition-colors cursor-pointer min-w-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Delete</span>
+                  </button>
+                )}
               </div>
             </div>
 

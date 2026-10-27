@@ -28,7 +28,7 @@ import {
   StorageItem,
 } from "./types";
 import { NamespaceUsage } from "../../types";
-import { hasPermission } from "../../api/session";
+import { hasPermission, hasBlobAccess } from "../../api/session";
 import { formatBytes } from "./format";
 
 export interface StorageToolbarProps {
@@ -493,7 +493,7 @@ export function StorageToolbar({
         {selectedFileItem &&
           selectedFileItem.type === "file" &&
           onShareClick &&
-          hasPermission("blobs.update") && (
+          (hasPermission("blobs.update") || hasBlobAccess(activeNamespace, "WRITE")) && (
             <button
               type="button"
               onClick={() => onShareClick(selectedFileItem)}
@@ -506,7 +506,7 @@ export function StorageToolbar({
           )}
 
         {/* Direct Upload CTA Button with Dropdown for Folder & Multi-file Upload */}
-        {hasPermission("blobs.create") && (
+        {(hasPermission("blobs.create") || hasBlobAccess(activeNamespace, "WRITE")) && (
           <div
             className="relative inline-flex items-center shrink-0"
             ref={uploadMenuRef}

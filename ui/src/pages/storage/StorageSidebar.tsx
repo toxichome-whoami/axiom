@@ -11,7 +11,7 @@ import { StorageItem } from "./types";
 import { FileTree } from "./FileTree";
 import { formatBytes } from "./format";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { hasPermission } from "../../api/session";
+import { hasPermission, hasBlobAccess } from "../../api/session";
 
 export interface StorageSidebarProps {
   width?: number;
@@ -244,7 +244,11 @@ export function StorageSidebar({
 
         {/* Action icons: Settings & Create Namespace + Mobile Collapse Toggle */}
         <div className="flex items-center gap-1 shrink-0">
-          {activeNamespace && (hasPermission("blobs.update") || hasPermission("blobs.delete")) && (
+          {activeNamespace &&
+            (hasPermission("blobs.update") ||
+              hasPermission("blobs.delete") ||
+              hasBlobAccess(activeNamespace, "WRITE") ||
+              hasBlobAccess(activeNamespace, "DELETE")) && (
             <button
               type="button"
               onClick={onOpenManageNamespace}

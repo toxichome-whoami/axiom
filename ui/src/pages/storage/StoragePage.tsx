@@ -68,7 +68,7 @@ import {
   ConflictingFile,
   ConflictResolution,
 } from "./FileConflictModal";
-import { hasPermission } from "../../api/session";
+import { hasPermission, hasBlobAccess } from "../../api/session";
 
 /**
  * Recovers persisted storage navigation parameters from URL or localStorage.
@@ -276,6 +276,13 @@ export function StoragePage() {
   const [activeNamespace, setActiveNamespace] = useState<string>(
     initialStorage.ns,
   );
+
+  const canCreateBlob =
+    hasPermission("blobs.create") || hasBlobAccess(activeNamespace, "WRITE");
+  const canUpdateBlob =
+    hasPermission("blobs.update") || hasBlobAccess(activeNamespace, "WRITE");
+  const canDeleteBlob =
+    hasPermission("blobs.delete") || hasBlobAccess(activeNamespace, "DELETE");
   const [blobs, setBlobs] = useState<BlobEntry[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -1323,7 +1330,8 @@ export function StoragePage() {
     if (
       !files ||
       (Array.isArray(files) ? files.length === 0 : files.length === 0) ||
-      !activeNamespace
+      !activeNamespace ||
+      !canCreateBlob
     )
       return;
 
@@ -1432,7 +1440,7 @@ export function StoragePage() {
   // Check if an item (or batch of items) can legally be dropped onto target folder
   const canDropOnFolder = useCallback(
     (dragged: StorageItem | null, targetFolderKey: string): boolean => {
-      if (!dragged) return false;
+      if (!dragged || !canUpdateBlob) return false;
 
       const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : "";
 
@@ -1475,7 +1483,7 @@ export function StoragePage() {
     droppedItem?: StorageItem,
   ) => {
     const item = droppedItem || draggedItemRef.current;
-    if (!item || !activeNamespace) return;
+    if (!item || !activeNamespace || !canUpdateBlob) return;
 
     if (!canDropOnFolder(item, targetFolderKey)) {
       return;
@@ -1518,7 +1526,7 @@ export function StoragePage() {
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (draggedItemRef.current) return;
+    if (draggedItemRef.current || !canCreateBlob) return;
     dragCounterRef.current += 1;
     if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
       setIsDraggingOver(true);
@@ -1528,7 +1536,7 @@ export function StoragePage() {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (draggedItemRef.current) return;
+    if (draggedItemRef.current || !canCreateBlob) return;
     e.dataTransfer.dropEffect = "copy";
   };
 
@@ -1549,7 +1557,7 @@ export function StoragePage() {
     setIsDraggingOver(false);
     dragCounterRef.current = 0;
 
-    if (draggedItemRef.current) {
+    if (draggedItemRef.current || !canCreateBlob) {
       return;
     }
 
@@ -1597,6 +1605,7 @@ export function StoragePage() {
   // Create new folder
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canCreateBlob) return;
     const err = validateName(newFolderName);
     if (err) {
       alert(err);
@@ -1623,7 +1632,7 @@ export function StoragePage() {
 
   // Move item handler
   const handleMove = async (destNs: string, destKey: string) => {
-    if (!itemToMove) return;
+    if (!itemToMove || !canUpdateBlob) return;
     const isFolder = itemToMove.type === "folder";
     await api.moveBlob(
       activeNamespace,
@@ -1650,7 +1659,7 @@ export function StoragePage() {
     targetFolder: string,
     items: StorageItem[],
   ) => {
-    if (!activeNamespace || items.length === 0) return;
+    if (!activeNamespace || items.length === 0 || !canUpdateBlob) return;
     const cleanDir = sanitizeFolder(targetFolder);
     for (const it of items) {
       const isFolder = it.type === "folder";
@@ -1669,7 +1678,7 @@ export function StoragePage() {
 
   // Copy single item handler
   const handleCopy = async (destNs: string, destKey: string) => {
-    if (!itemToCopy) return;
+    if (!itemToCopy || !canCreateBlob) return;
     const isFolder = itemToCopy.type === "folder";
     await api.copyBlob(
       activeNamespace,
@@ -1688,7 +1697,7 @@ export function StoragePage() {
     targetFolder: string,
     items: StorageItem[],
   ) => {
-    if (!activeNamespace || items.length === 0) return;
+    if (!activeNamespace || items.length === 0 || !canCreateBlob) return;
     const cleanDir = sanitizeFolder(targetFolder);
     for (const it of items) {
       const isFolder = it.type === "folder";
@@ -1708,7 +1717,7 @@ export function StoragePage() {
   // Rename item handler
   const handleRename = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemToRename) return;
+    if (!itemToRename || !canUpdateBlob) return;
     const err = validateName(renameInput);
     if (err) {
       setRenameError(err);
@@ -1760,7 +1769,7 @@ export function StoragePage() {
 
   // Delete item handler
   const handleDeleteItem = async () => {
-    if (!itemToDelete) return;
+    if (!itemToDelete || !canDeleteBlob) return;
     const deleted = itemToDelete;
     setIsDeleting(true);
     try {
@@ -1820,7 +1829,7 @@ export function StoragePage() {
 
   // Batch Delete handler
   const handleConfirmBatchDelete = async () => {
-    if (!activeNamespace || selectedKeys.size === 0) return;
+    if (!activeNamespace || selectedKeys.size === 0 || !canDeleteBlob) return;
     setIsBatchDeleting(true);
     try {
       const folderItemsToDelete = selectedItemsList.filter(
@@ -2456,37 +2465,43 @@ export function StoragePage() {
             </button>
 
             {/* Action: Move */}
-            <button
-              type="button"
-              onClick={() => setIsBatchMoveOpen(true)}
-              title="Move selected items"
-              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
-            >
-              <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
-              <span>Move</span>
-            </button>
+            {canUpdateBlob && (
+              <button
+                type="button"
+                onClick={() => setIsBatchMoveOpen(true)}
+                title="Move selected items"
+                className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+              >
+                <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                <span>Move</span>
+              </button>
+            )}
 
             {/* Action: Copy */}
-            <button
-              type="button"
-              onClick={() => setIsBatchCopyOpen(true)}
-              title="Copy selected items"
-              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
-            >
-              <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
-              <span>Copy</span>
-            </button>
+            {canCreateBlob && (
+              <button
+                type="button"
+                onClick={() => setIsBatchCopyOpen(true)}
+                title="Copy selected items"
+                className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                <span>Copy</span>
+              </button>
+            )}
 
             {/* Action: Delete */}
-            <button
-              type="button"
-              onClick={() => setIsBatchDeleteOpen(true)}
-              title="Delete selected items"
-              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete</span>
-            </button>
+            {canDeleteBlob && (
+              <button
+                type="button"
+                onClick={() => setIsBatchDeleteOpen(true)}
+                title="Delete selected items"
+                className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            )}
 
             {/* Clear Selection */}
             <button
@@ -2520,15 +2535,23 @@ export function StoragePage() {
             : 0
         }
         onCopyPublicUrl={handleCopyPublicUrl}
-        onOpenMove={(item) => {
-          setItemToMove(item);
-          setIsMoveOpen(true);
-        }}
-        onOpenCopy={(item) => {
-          setItemToCopy(item);
-          setIsCopyOpen(true);
-        }}
-        onDelete={(item) => setItemToDelete(item)}
+        onOpenMove={
+          canUpdateBlob
+            ? (item) => {
+                setItemToMove(item);
+                setIsMoveOpen(true);
+              }
+            : undefined
+        }
+        onOpenCopy={
+          canCreateBlob
+            ? (item) => {
+                setItemToCopy(item);
+                setIsCopyOpen(true);
+              }
+            : undefined
+        }
+        onDelete={canDeleteBlob ? (item) => setItemToDelete(item) : undefined}
         onVerifyBlob={handleVerifyBlob}
         verifyStatus={
           inspectorItem
@@ -3166,35 +3189,51 @@ export function StoragePage() {
         onShare={handleOpenShare}
         onCopyPublicUrl={handleCopyPublicUrl}
         isPublicNamespace={Boolean(currentNsInfo?.is_public)}
-        onMove={(item) => {
-          setItemToMove(item);
-          setIsMoveOpen(true);
-        }}
-        onRename={(item) => {
-          setItemToRename(item);
-          setRenameInput(item.name);
-          setRenameError(null);
-          setIsRenameOpen(true);
-        }}
-        onCopy={(item) => {
-          if (selectedKeys.has(item.fullKey) && selectedItemsList.length > 1) {
-            setIsBatchCopyOpen(true);
-          } else {
-            setItemToCopy(item);
-            setIsCopyOpen(true);
-          }
-        }}
-        onDelete={(item) => setItemToDelete(item)}
+        onMove={
+          canUpdateBlob
+            ? (item) => {
+                setItemToMove(item);
+                setIsMoveOpen(true);
+              }
+            : undefined
+        }
+        onRename={
+          canUpdateBlob
+            ? (item) => {
+                setItemToRename(item);
+                setRenameInput(item.name);
+                setRenameError(null);
+                setIsRenameOpen(true);
+              }
+            : undefined
+        }
+        onCopy={
+          canCreateBlob
+            ? (item) => {
+                if (selectedKeys.has(item.fullKey) && selectedItemsList.length > 1) {
+                  setIsBatchCopyOpen(true);
+                } else {
+                  setItemToCopy(item);
+                  setIsCopyOpen(true);
+                }
+              }
+            : undefined
+        }
+        onDelete={canDeleteBlob ? (item) => setItemToDelete(item) : undefined}
         onViewDetails={(item) => {
           setSelectedItem(item);
           setIsDetailsOpen(true);
         }}
-        onNewFolder={() => {
-          setNewFolderName("");
-          setIsNewFolderOpen(true);
-        }}
-        onUpload={() => fileInputRef.current?.click()}
-        onPaste={handlePaste}
+        onNewFolder={
+          canCreateBlob
+            ? () => {
+                setNewFolderName("");
+                setIsNewFolderOpen(true);
+              }
+            : undefined
+        }
+        onUpload={canCreateBlob ? () => fileInputRef.current?.click() : undefined}
+        onPaste={canCreateBlob ? handlePaste : undefined}
         onRefresh={loadData}
       />
 
