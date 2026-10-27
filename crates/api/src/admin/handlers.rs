@@ -1824,6 +1824,9 @@ pub async fn create_user_handler(
     check_permission(&auth, "users.create").await?;
 
     let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    let caller_user = MetadataStore::get_user_by_username(actor).await.ok().flatten();
+    let is_caller_super = caller_user.as_ref().map(|u| u.is_super_admin || u.id == 1).unwrap_or(false);
+
     let username = payload.username.trim();
     if username.is_empty() {
         return Err(AxiomError::new(
@@ -1842,6 +1845,22 @@ pub async fn create_user_handler(
     }
 
     let perms = payload.permissions.unwrap_or_default();
+
+    // Security Invariant (Anti-Privilege-Escalation):
+    // A non-root administrator cannot grant any privilege that they do not personally hold.
+    if !is_caller_super {
+        if let Some(ref caller) = caller_user {
+            caller.permissions.subsumes(&perms).map_err(|e| {
+                AxiomError::new("PRIVILEGE_ESCALATION_BLOCKED", &e, StatusCode::FORBIDDEN)
+            })?;
+        } else {
+            return Err(AxiomError::new(
+                "FORBIDDEN",
+                "Unauthorized identity cannot provision permissions",
+                StatusCode::FORBIDDEN,
+            ));
+        }
+    }
 
     // Invariant: Non-root accounts can NEVER be super-admin.
     let created = MetadataStore::create_user_with_permissions(
@@ -1899,6 +1918,7 @@ pub async fn get_user_handler(
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserRequest {
+    pub username: Option<String>,
     pub email: Option<String>,
     pub password: Option<String>,
     pub permissions: Option<UserPermissionSet>,
@@ -1907,6 +1927,7 @@ pub struct UpdateUserRequest {
 /// Updates an existing administrator's credentials or custom permission set.
 /// CONTRACT:
 ///  - Invariant: Root administrator (id = 1) cannot be demoted to non-super-admin.
+///  - Invariant: Root administrator credentials can only be modified by the root administrator themselves.
 pub async fn update_user_handler(
     Extension(auth): Extension<AuthContext>,
     Path(id): Path<i64>,
@@ -1916,8 +1937,57 @@ pub async fn update_user_handler(
 
     let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
 
+    // Resolve caller identity and privileges
+    let caller_user = MetadataStore::get_user_by_username(actor)
+        .await
+        .ok()
+        .flatten();
+    let is_caller_root = caller_user
+        .as_ref()
+        .map(|u| u.id == 1 || u.is_super_admin)
+        .unwrap_or(false);
+
+    // Verify target existence and protect root account from modification by secondary accounts
+    let target_user = MetadataStore::get_user_by_id(id)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
+        .ok_or_else(|| {
+            AxiomError::new(
+                "NOT_FOUND",
+                &format!("User with id {} not found", id),
+                StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    let is_target_root = target_user.id == 1 || target_user.is_super_admin;
+    if is_target_root && !is_caller_root {
+        return Err(AxiomError::new(
+            "ROOT_ACCOUNT_PROTECTED",
+            "Root super-administrator account credentials can only be updated by the root administrator account itself",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    // Security Invariant (Anti-Privilege-Escalation):
+    // A non-root administrator cannot grant any privilege that they do not personally hold.
+    if let Some(ref req_perms) = payload.permissions {
+        if !is_caller_root {
+            if let Some(ref caller) = caller_user {
+                caller.permissions.subsumes(req_perms).map_err(|e| {
+                    AxiomError::new("PRIVILEGE_ESCALATION_BLOCKED", &e, StatusCode::FORBIDDEN)
+                })?;
+            } else {
+                return Err(AxiomError::new(
+                    "FORBIDDEN",
+                    "Unauthorized identity cannot update user permissions",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+        }
+    }
+
     if let Some(ref pwd) = payload.password {
-        if pwd.len() < 8 {
+        if !pwd.is_empty() && pwd.len() < 8 {
             return Err(AxiomError::new(
                 "WEAK_PASSWORD",
                 "Password must be at least 8 characters long",
@@ -1926,9 +1996,28 @@ pub async fn update_user_handler(
         }
     }
 
+    if let Some(ref u) = payload.username {
+        let clean = u.trim();
+        if clean.is_empty() {
+            return Err(AxiomError::new(
+                "INVALID_USERNAME",
+                "Username cannot be empty",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        if clean.len() < 3 {
+            return Err(AxiomError::new(
+                "INVALID_USERNAME",
+                "Username must be at least 3 characters long",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
     let email_arg = payload.email.as_deref().map(Some);
     MetadataStore::update_user_by_id(
         id,
+        payload.username.as_deref(),
         email_arg,
         payload.password.as_deref(),
         None,
@@ -1938,6 +2027,8 @@ pub async fn update_user_handler(
     .map_err(|e| {
         if e.contains("cannot be demoted") {
             AxiomError::new("ROOT_ACCOUNT_PROTECTED", &e, StatusCode::FORBIDDEN)
+        } else if e.contains("already taken") {
+            AxiomError::new("USERNAME_TAKEN", &e, StatusCode::CONFLICT)
         } else if e.contains("not found") {
             AxiomError::new("NOT_FOUND", &e, StatusCode::NOT_FOUND)
         } else {

@@ -18,7 +18,13 @@ import {
   api,
   DatabaseRecordApi,
 } from "../api/client";
-import { hasPermission } from "../api/session";
+import {
+  hasPermission,
+  getCurrentUser,
+  setCurrentUser,
+  setSession,
+  getSessionToken,
+} from "../api/session";
 import { DataTable, Column } from "../components/shared/DataTable";
 import { SlideOver } from "../components/ui/SlideOver";
 import { Button } from "../components/ui/Button";
@@ -130,7 +136,7 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
 
 const ALL_SYSTEM_PERMS = CAPABILITY_GROUPS.flatMap((g) => g.permissions.map((p) => p.id));
 
-const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE", "DDL"];
+const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE"];
 const BLOB_OPERATIONS = ["READ", "WRITE", "DELETE", "MANAGE_NS"];
 
 const filterFieldOptions = [
@@ -197,6 +203,59 @@ function resolveDependencies(perms: UserPermissionSet): UserPermissionSet {
     ...perms,
     system: Array.from(sys),
   };
+}
+
+interface InitialUserFormState {
+  username: string;
+  email: string;
+  permissions: UserPermissionSet;
+}
+
+function arePermsEqual(a?: UserPermissionSet | null, b?: UserPermissionSet | null): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+
+  const aSys = [...(a.system || [])].sort();
+  const bSys = [...(b.system || [])].sort();
+  if (aSys.length !== bSys.length || !aSys.every((v, i) => v === bSys[i])) {
+    return false;
+  }
+
+  const aDbs = [...(a.databases || [])]
+    .map((d) => ({
+      database: d.database || "",
+      table_name: d.table_name || "",
+      operations: [...(d.operations || [])].sort(),
+    }))
+    .sort((x, y) => (x.database + ":" + x.table_name).localeCompare(y.database + ":" + y.table_name));
+
+  const bDbs = [...(b.databases || [])]
+    .map((d) => ({
+      database: d.database || "",
+      table_name: d.table_name || "",
+      operations: [...(d.operations || [])].sort(),
+    }))
+    .sort((x, y) => (x.database + ":" + x.table_name).localeCompare(y.database + ":" + y.table_name));
+
+  if (JSON.stringify(aDbs) !== JSON.stringify(bDbs)) {
+    return false;
+  }
+
+  const aBlobs = [...(a.blobs || [])]
+    .map((b) => ({
+      namespace: b.namespace || "",
+      operations: [...(b.operations || [])].sort(),
+    }))
+    .sort((x, y) => x.namespace.localeCompare(y.namespace));
+
+  const bBlobs = [...(b.blobs || [])]
+    .map((b) => ({
+      namespace: b.namespace || "",
+      operations: [...(b.operations || [])].sort(),
+    }))
+    .sort((x, y) => x.namespace.localeCompare(y.namespace));
+
+  return JSON.stringify(aBlobs) === JSON.stringify(bBlobs);
 }
 
 export function Users() {
@@ -296,6 +355,60 @@ export function Users() {
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRecordApi | null>(null);
   const [drawerTab, setDrawerTab] = useState<"edit" | "danger">("edit");
+
+  // Protection & Permissions Evaluation
+  const currentUser = getCurrentUser();
+  const isEditingRoot = Boolean(
+    editingUser && (editingUser.id === 1 || editingUser.is_super_admin),
+  );
+  const isCurrentOperatorRoot = Boolean(
+    currentUser?.is_super_admin || currentUser?.id === 1,
+  );
+  // Non-root operators cannot modify the Root Super-Administrator
+  const isTargetRootProtected = isEditingRoot && !isCurrentOperatorRoot;
+
+  // Anti-Privilege-Escalation Guards: Operators can only delegate privileges they personally hold
+  const isHeldByCurrentOperator = useCallback(
+    (permId: string) => {
+      if (isCurrentOperatorRoot) return true;
+      if (!currentUser) return false;
+      const sys = currentUser.permissions?.system || [];
+      if (sys.includes("*")) return true;
+      if (sys.includes(permId)) return true;
+      const resource = permId.split(".")[0];
+      if (resource && sys.includes(`${resource}.*`)) return true;
+      return false;
+    },
+    [isCurrentOperatorRoot, currentUser],
+  );
+
+  const isDbOpGrantable = useCallback(
+    (dbAlias: string, op: string) => {
+      if (isCurrentOperatorRoot) return true;
+      if (!currentUser) return false;
+      if (currentUser.permissions?.system?.includes("*")) return true;
+      return (currentUser.permissions?.databases || []).some((d) => {
+        const dbMatch = d.database === "*" || d.database.toLowerCase() === dbAlias.toLowerCase();
+        const opMatch = d.operations.some((o) => o === "*" || o.toUpperCase() === op.toUpperCase());
+        return dbMatch && opMatch;
+      });
+    },
+    [isCurrentOperatorRoot, currentUser],
+  );
+
+  const isBlobOpGrantable = useCallback(
+    (ns: string, op: string) => {
+      if (isCurrentOperatorRoot) return true;
+      if (!currentUser) return false;
+      if (currentUser.permissions?.system?.includes("*")) return true;
+      return (currentUser.permissions?.blobs || []).some((b) => {
+        const nsMatch = b.namespace === "*" || b.namespace.toLowerCase() === ns.toLowerCase();
+        const opMatch = b.operations.some((o) => o === "*" || o.toUpperCase() === op.toUpperCase());
+        return nsMatch && opMatch;
+      });
+    },
+    [isCurrentOperatorRoot, currentUser],
+  );
   const [formUsername, setFormUsername] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
@@ -306,6 +419,61 @@ export function Users() {
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Initial State Tracking for Dirty Detection
+  const initialFormStateRef = useRef<InitialUserFormState | null>(null);
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+
+  const isDirty = useMemo(() => {
+    if (!initialFormStateRef.current) return false;
+    const initial = initialFormStateRef.current;
+
+    const currentCleanUser = formUsername.trim().toLowerCase().replace(/\s+/g, "_");
+    const initCleanUser = initial.username.trim().toLowerCase().replace(/\s+/g, "_");
+    if (currentCleanUser !== initCleanUser) return true;
+
+    if (formEmail.trim() !== initial.email.trim()) return true;
+
+    if (formPassword.length > 0) return true;
+
+    if (!arePermsEqual(formPermissions, initial.permissions)) return true;
+
+    return false;
+  }, [formUsername, formEmail, formPassword, formPermissions]);
+
+  const isSaveDisabled = useMemo(() => {
+    if (isSubmitting) return true;
+    if (isTargetRootProtected) return true;
+    const cleanUsername = formUsername.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!cleanUsername) return true;
+
+    if (editingUser) {
+      if (!isDirty) return true;
+      if (formPassword.length > 0 && formPassword.length < 8) return true;
+      return false;
+    } else {
+      // Create mode requires non-empty username, valid 8+ char password, and is disabled if nothing changed
+      if (formPassword.length < 8) return true;
+      return false;
+    }
+  }, [isSubmitting, isTargetRootProtected, formUsername, editingUser, isDirty, formPassword]);
+
+  const requestCloseDrawer = () => {
+    if (isDirty && !isTargetRootProtected) {
+      setConfirmDiscardOpen(true);
+    } else {
+      forceCloseDrawer();
+    }
+  };
+
+  const forceCloseDrawer = () => {
+    setConfirmDiscardOpen(false);
+    setSlideOverOpen(false);
+    setEditingUser(null);
+    setDrawerTab("edit");
+    setFormError(null);
+    initialFormStateRef.current = null;
+  };
 
   // Options for Dropdown Selectors
   const dbOptions = useMemo(() => {
@@ -382,12 +550,7 @@ export function Users() {
 
   // Open Create Drawer
   const handleOpenCreate = () => {
-    setEditingUser(null);
-    setDrawerTab("edit");
-    setFormUsername("");
-    setFormEmail("");
-    setFormPassword("");
-    setFormPermissions({
+    const defaultPerms: UserPermissionSet = {
       system: [
         "cluster.view",
         "db.view",
@@ -398,28 +561,43 @@ export function Users() {
         "users.view",
         "audit.view",
         "settings.view",
-      ],
+      ].filter((p) => isHeldByCurrentOperator(p)),
       databases: [],
       blobs: [],
-    });
+    };
+    setEditingUser(null);
+    setDrawerTab("edit");
+    setFormUsername("");
+    setFormEmail("");
+    setFormPassword("");
+    setFormPermissions(defaultPerms);
+    initialFormStateRef.current = {
+      username: "",
+      email: "",
+      permissions: JSON.parse(JSON.stringify(defaultPerms)),
+    };
     setFormError(null);
     setSlideOverOpen(true);
   };
 
   // Open Edit Drawer
   const handleOpenEdit = (user: UserRecordApi) => {
+    const initialPerms = resolveDependencies({
+      system: user.permissions?.system || [],
+      databases: user.permissions?.databases ? JSON.parse(JSON.stringify(user.permissions.databases)) : [],
+      blobs: user.permissions?.blobs ? JSON.parse(JSON.stringify(user.permissions.blobs)) : [],
+    });
     setEditingUser(user);
     setDrawerTab("edit");
     setFormUsername(user.username);
     setFormEmail(user.email || "");
     setFormPassword("");
-    setFormPermissions(
-      resolveDependencies({
-        system: user.permissions?.system || [],
-        databases: user.permissions?.databases ? JSON.parse(JSON.stringify(user.permissions.databases)) : [],
-        blobs: user.permissions?.blobs ? JSON.parse(JSON.stringify(user.permissions.blobs)) : [],
-      }),
-    );
+    setFormPermissions(initialPerms);
+    initialFormStateRef.current = {
+      username: user.username,
+      email: user.email || "",
+      permissions: JSON.parse(JSON.stringify(initialPerms)),
+    };
     setFormError(null);
     setSlideOverOpen(true);
   };
@@ -429,12 +607,18 @@ export function Users() {
     e.preventDefault();
     setFormError(null);
 
-    const isEdit = Boolean(editingUser);
+    if (isTargetRootProtected) {
+      forceCloseDrawer();
+      return;
+    }
 
-    if (!isEdit && !formUsername.trim()) {
+    const cleanUsername = formUsername.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!cleanUsername) {
       setFormError("Username is required");
       return;
     }
+
+    const isEdit = Boolean(editingUser);
 
     if (!isEdit && (!formPassword || formPassword.length < 8)) {
       setFormError("Password must be at least 8 characters");
@@ -450,21 +634,37 @@ export function Users() {
     try {
       const sanitizedPerms = resolveDependencies(formPermissions);
       if (isEdit && editingUser) {
-        await api.updateUser(editingUser.id, {
+        const payload: {
+          username?: string;
+          email?: string;
+          password?: string;
+          permissions?: UserPermissionSet;
+        } = {
           email: formEmail.trim() || undefined,
           password: formPassword || undefined,
           permissions: editingUser.id === 1 ? undefined : sanitizedPerms,
-        });
+        };
+        if (cleanUsername !== editingUser.username) {
+          payload.username = cleanUsername;
+        }
+        const updated = await api.updateUser(editingUser.id, payload);
+
+        // Synchronize local session if operator updated their own profile
+        const activeOp = getCurrentUser();
+        if (activeOp && activeOp.id === editingUser.id) {
+          setCurrentUser(updated);
+          setSession(getSessionToken() || "", undefined, updated.username);
+        }
       } else {
         await api.createUser({
-          username: formUsername.trim(),
+          username: cleanUsername,
           email: formEmail.trim() || undefined,
           password: formPassword,
           permissions: sanitizedPerms,
         });
       }
 
-      setSlideOverOpen(false);
+      forceCloseDrawer();
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to save administrator account";
@@ -481,7 +681,7 @@ export function Users() {
     try {
       await api.deleteUser(deleteTarget.id);
       setDeleteTarget(null);
-      setSlideOverOpen(false);
+      forceCloseDrawer();
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to delete user account";
@@ -493,6 +693,7 @@ export function Users() {
 
   // Toggle Single Permission with Dependency Resolution
   const togglePermission = (permId: string) => {
+    if (!isHeldByCurrentOperator(permId)) return;
     setFormPermissions((prev) => {
       const current = prev.system || [];
       const has = current.includes(permId);
@@ -555,10 +756,13 @@ export function Users() {
   const toggleGroup = (group: CapabilityGroup) => {
     setFormPermissions((prev) => {
       const current = prev.system || [];
-      const groupPermIds = group.permissions.map((p) => p.id);
-      const allSelected = groupPermIds.every((id) => current.includes(id));
+      const grantablePermIds = group.permissions
+        .map((p) => p.id)
+        .filter((id) => isHeldByCurrentOperator(id));
+      if (grantablePermIds.length === 0) return prev;
+      const allSelected = grantablePermIds.every((id) => current.includes(id));
       if (allSelected) {
-        const nextSystem = current.filter((id) => !groupPermIds.includes(id));
+        const nextSystem = current.filter((id) => !grantablePermIds.includes(id));
         if (group.id === "databases") {
           return {
             ...prev,
@@ -577,7 +781,7 @@ export function Users() {
       } else {
         return resolveDependencies({
           ...prev,
-          system: Array.from(new Set([...current, ...groupPermIds])),
+          system: Array.from(new Set([...current, ...grantablePermIds])),
         });
       }
     });
@@ -793,8 +997,6 @@ export function Users() {
           u.permissions.system.some((p) => p.startsWith("blob.")))
     ).length;
   }, [users]);
-
-  const isEditingRoot = editingUser?.id === 1;
 
   // Helper to extract categorized permissions for popover
   const getPopoverCategories = (user: UserRecordApi) => {
@@ -1451,7 +1653,7 @@ export function Users() {
       {/* SlideOver Drawer for Create / Edit */}
       <SlideOver
         isOpen={slideOverOpen}
-        onClose={() => setSlideOverOpen(false)}
+        onClose={requestCloseDrawer}
         title={editingUser ? `Manage User: ${editingUser.username}` : "New User"}
         subtitle="Configure credentials and granular PBAC capabilities"
         width="w-[640px] max-w-full"
@@ -1531,6 +1733,21 @@ export function Users() {
                 </div>
               )}
 
+              {/* Warning Banner when non-root attempts to manage Root Super-Admin */}
+              {isTargetRootProtected && (
+                <div className="flex items-start gap-2.5 p-3.5 rounded-[8px] bg-[#1a1205] border border-[#543b0c] text-[#f59e0b] text-[13px] leading-relaxed">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-[#f59e0b] mt-0.5" />
+                  <div>
+                    <span className="font-medium text-white block mb-0.5">
+                      Root Account Protected
+                    </span>
+                    <span>
+                      Only the Root Super-Administrator can modify this account's credentials, email, or password.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Account Credentials */}
               <div className="space-y-3.5">
                 <div>
@@ -1550,7 +1767,7 @@ export function Users() {
                       <input
                         type="text"
                         required
-                        disabled={Boolean(editingUser)}
+                        disabled={isTargetRootProtected}
                         value={formUsername}
                         onChange={(e) =>
                           setFormUsername(e.target.value.toLowerCase().replace(/\s+/g, "_"))
@@ -1565,10 +1782,11 @@ export function Users() {
                       </label>
                       <input
                         type="email"
+                        disabled={isTargetRootProtected}
                         value={formEmail}
                         onChange={(e) => setFormEmail(e.target.value)}
                         placeholder="e.g. operator@company.com"
-                        className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans"
+                        className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
@@ -1585,11 +1803,12 @@ export function Users() {
                     </label>
                     <input
                       type="password"
+                      disabled={isTargetRootProtected}
                       required={!editingUser}
                       value={formPassword}
                       onChange={(e) => setFormPassword(e.target.value)}
                       placeholder={editingUser ? "••••••••••••" : "Minimum 8 characters"}
-                      className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans"
+                      className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -1655,36 +1874,52 @@ export function Users() {
                                 const isLockedDependency =
                                   (perm.id === "db.view" && formPermissions.databases.length > 0) ||
                                   (perm.id === "blob.view" && formPermissions.blobs.length > 0);
+                                const isGrantable = isHeldByCurrentOperator(perm.id);
 
                                 return (
                                   <div
                                     key={perm.id}
-                                    onClick={() => togglePermission(perm.id)}
-                                    className={`p-2.5 rounded-[6px] border transition-all cursor-pointer flex items-start gap-2.5 select-none ${
-                                      isChecked
-                                        ? "bg-[#18181b] border-[#444444] text-white"
-                                        : "bg-[#141414] border-[#222222] text-[#8c8c8c] hover:border-[#383838]"
+                                    onClick={() => {
+                                      if (isGrantable) togglePermission(perm.id);
+                                    }}
+                                    title={!isGrantable ? "You cannot grant privileges you do not possess" : perm.description}
+                                    className={`p-2.5 rounded-[6px] border transition-all flex items-start gap-2.5 select-none ${
+                                      !isGrantable
+                                        ? "opacity-35 cursor-not-allowed bg-[#101010] border-[#1e1e1e] text-[#666666]"
+                                        : isChecked
+                                        ? "bg-[#18181b] border-[#444444] text-white cursor-pointer"
+                                        : "bg-[#141414] border-[#222222] text-[#8c8c8c] hover:border-[#383838] cursor-pointer"
                                     }`}
                                   >
-                                    <div
-                                      className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 border transition-colors ${
-                                        isChecked
-                                          ? "bg-white border-white text-black"
-                                          : "border-[#404040] bg-[#1a1a1a]"
-                                      }`}
-                                    >
-                                      {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                                    </div>
+                                    {isGrantable ? (
+                                      <div
+                                        className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 border transition-colors ${
+                                          isChecked
+                                            ? "bg-white border-white text-black"
+                                            : "border-[#404040] bg-[#1a1a1a]"
+                                        }`}
+                                      >
+                                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                      </div>
+                                    ) : (
+                                      <div className="w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 text-[#666666]">
+                                        <Lock className="w-3 h-3" />
+                                      </div>
+                                    )}
                                     <div className="space-y-0.5 min-w-0 flex-1">
                                       <div className="flex items-center justify-between gap-1">
                                         <span className="text-[13px] font-medium text-white truncate">
                                           {perm.label}
                                         </span>
-                                        {isLockedDependency && (
+                                        {isLockedDependency ? (
                                           <span className="text-[10px] text-[#8c8c8c] bg-[#222222] px-1.5 py-0.2 rounded font-sans">
                                             auto
                                           </span>
-                                        )}
+                                        ) : !isGrantable ? (
+                                          <span className="text-[10px] text-[#71717a] bg-[#18181b] px-1.5 py-0.2 rounded font-sans">
+                                            locked
+                                          </span>
+                                        ) : null}
                                       </div>
                                       <p className="text-[11px] text-[#737373] leading-snug">
                                         {perm.description}
@@ -1790,15 +2025,22 @@ export function Users() {
                               <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
                               {DB_OPERATIONS.map((op) => {
                                 const isAllowed = rule.operations?.includes(op);
+                                const isGrantable = isDbOpGrantable(rule.database, op);
                                 return (
                                   <button
                                     key={op}
                                     type="button"
-                                    onClick={() => toggleDbOperation(idx, op)}
-                                    className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors cursor-pointer border ${
-                                      isAllowed
-                                        ? "bg-[#222222] text-white border-[#444444]"
-                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838]"
+                                    disabled={!isGrantable}
+                                    title={!isGrantable ? "You do not possess permission for this operation" : undefined}
+                                    onClick={() => {
+                                      if (isGrantable) toggleDbOperation(idx, op);
+                                    }}
+                                    className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors border ${
+                                      !isGrantable
+                                        ? "opacity-30 cursor-not-allowed bg-[#141414] text-[#555555] border-[#222222]"
+                                        : isAllowed
+                                        ? "bg-[#222222] text-white border-[#444444] cursor-pointer"
+                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838] cursor-pointer"
                                     }`}
                                   >
                                     {op}
@@ -1886,15 +2128,22 @@ export function Users() {
                               <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
                               {BLOB_OPERATIONS.map((op) => {
                                 const isAllowed = rule.operations?.includes(op);
+                                const isGrantable = isBlobOpGrantable(rule.namespace, op);
                                 return (
                                   <button
                                     key={op}
                                     type="button"
-                                    onClick={() => toggleBlobOperation(idx, op)}
-                                    className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors cursor-pointer border ${
-                                      isAllowed
-                                        ? "bg-[#222222] text-white border-[#444444]"
-                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838]"
+                                    disabled={!isGrantable}
+                                    title={!isGrantable ? "You do not possess permission for this operation" : undefined}
+                                    onClick={() => {
+                                      if (isGrantable) toggleBlobOperation(idx, op);
+                                    }}
+                                    className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors border ${
+                                      !isGrantable
+                                        ? "opacity-30 cursor-not-allowed bg-[#141414] text-[#555555] border-[#222222]"
+                                        : isAllowed
+                                        ? "bg-[#222222] text-white border-[#444444] cursor-pointer"
+                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838] cursor-pointer"
                                     }`}
                                   >
                                     {op}
@@ -1916,26 +2165,44 @@ export function Users() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setSlideOverOpen(false)}
+                onClick={requestCloseDrawer}
               >
-                Cancel
+                {isTargetRootProtected ? "Close" : "Cancel"}
               </Button>
-              <Button type="submit" variant="primary" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  </div>
-                ) : editingUser ? (
-                  "Save Changes"
-                ) : (
-                  "Create User"
-                )}
-              </Button>
+              {!isTargetRootProtected && (
+                <Button type="submit" variant="primary" disabled={isSaveDisabled}>
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </div>
+                  ) : editingUser ? (
+                    "Save Changes"
+                  ) : (
+                    "Create User"
+                  )}
+                </Button>
+              )}
             </div>
           </form>
         )}
       </SlideOver>
+
+      {/* Discard Unsaved Changes Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardOpen}
+        title="Discard Unsaved Changes"
+        description={
+          editingUser
+            ? "You have unsaved changes to this user account. Are you sure you want to discard them?"
+            : "You have unsaved user configuration. Are you sure you want to discard your changes?"
+        }
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
+        onConfirm={forceCloseDrawer}
+        onClose={() => setConfirmDiscardOpen(false)}
+      />
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
@@ -2010,7 +2277,7 @@ export function Users() {
                           <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Databases
                         </div>
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
-                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Table DDL
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> SQL Queries
                         </div>
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
                           <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Blob Storage

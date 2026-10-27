@@ -156,6 +156,7 @@ export interface CreateUserPayload {
 }
 
 export interface UpdateUserPayload {
+  username?: string;
   email?: string;
   password?: string;
   permissions?: UserPermissionSet;

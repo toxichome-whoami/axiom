@@ -1537,6 +1537,7 @@ impl MetadataStore {
     /// Updates an existing administrative user by ID.
     pub async fn update_user_by_id(
         id: i64,
+        username: Option<&str>,
         email: Option<Option<&str>>,
         password: Option<&str>,
         is_super_admin: Option<bool>,
@@ -1552,7 +1553,7 @@ impl MetadataStore {
             .await
             .map_err(|e| format!("Database query error: {}", e))?;
 
-        let (username, existing_email, existing_pass, _existing_super, existing_perms) = match rows.next().await.map_err(|e| e.to_string())? {
+        let (existing_username, existing_email, existing_pass, _existing_super, existing_perms) = match rows.next().await.map_err(|e| e.to_string())? {
             Some(row) => {
                 let u: String = row.get(0).map_err(|e| e.to_string())?;
                 let e: Option<String> = row.get(1).ok();
@@ -1582,6 +1583,30 @@ impl MetadataStore {
         if !is_root && is_super_admin == Some(true) {
             return Err("Super administrator status cannot be granted to secondary accounts".to_string());
         }
+
+        let new_username = match username {
+            Some(u) => {
+                let clean = u.trim().to_lowercase();
+                if clean.is_empty() {
+                    return Err("Username cannot be empty".to_string());
+                }
+                if clean != existing_username {
+                    let mut check_rows = conn
+                        .query(
+                            "SELECT id FROM users WHERE username = ?1 AND id != ?2",
+                            libsql::params![clean.as_str(), id],
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    if check_rows.next().await.map_err(|e| e.to_string())?.is_some() {
+                        return Err(format!("Username '{}' is already taken", clean));
+                    }
+                }
+                Some(clean)
+            }
+            None => None,
+        };
+        let final_username = new_username.as_deref().unwrap_or(&existing_username);
 
         let new_email = match email {
             Some(opt) => opt
@@ -1615,8 +1640,9 @@ impl MetadataStore {
             .as_secs() as i64;
 
         conn.execute(
-            "UPDATE users SET email = ?1, password_hash = ?2, is_super_admin = ?3, permissions = ?4, updated_at = ?5 WHERE id = ?6",
+            "UPDATE users SET username = ?1, email = ?2, password_hash = ?3, is_super_admin = ?4, permissions = ?5, updated_at = ?6 WHERE id = ?7",
             libsql::params![
+                final_username,
                 new_email,
                 new_pass_hash.as_str(),
                 super_admin_int,
@@ -1628,11 +1654,20 @@ impl MetadataStore {
         .await
         .map_err(|e| format!("Failed to update user: {}", e))?;
 
+        if final_username != existing_username.as_str() {
+            let _ = conn
+                .execute(
+                    "UPDATE sessions SET username = ?1 WHERE username = ?2",
+                    libsql::params![final_username, existing_username.as_str()],
+                )
+                .await;
+        }
+
         let _ = conn
             .execute(
                 "INSERT INTO audit_log (timestamp, actor, action, target, details) \
                  VALUES (?1, 'admin', 'user.update', ?2, NULL)",
-                libsql::params![now_unix, username],
+                libsql::params![now_unix, final_username],
             )
             .await;
 
@@ -1658,7 +1693,7 @@ impl MetadataStore {
             None => return Ok(false),
         };
 
-        Self::update_user_by_id(user_id, email, password, None, None).await
+        Self::update_user_by_id(user_id, None, email, password, None, None).await
     }
 
     // ─── Session Management ────────────────────────────────────────────────
@@ -3485,5 +3520,58 @@ mod tests {
         };
         assert!(admin_perms.has_system_permission("users.delete"));
         assert!(admin_perms.has_system_permission("anything.any_action"));
+    }
+
+    #[tokio::test]
+    async fn test_update_user_username_and_uniqueness() {
+        let db = Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // Create user 1 and user 2
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('user_alpha', 'hash1', 'alpha@axiom.io', 1, '{}', ?1, ?2)",
+            libsql::params![now, now],
+        ).await.unwrap();
+
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('user_beta', 'hash2', 'beta@axiom.io', 0, '{}', ?1, ?2)",
+            libsql::params![now, now],
+        ).await.unwrap();
+
+        // Check renaming user_beta to user_beta_renamed
+        let mut check_existing = conn
+            .query("SELECT id FROM users WHERE username = ?1 AND id != 2", ["user_beta_renamed"])
+            .await
+            .unwrap();
+        assert!(check_existing.next().await.unwrap().is_none());
+
+        // Update username
+        conn.execute(
+            "UPDATE users SET username = ?1, updated_at = ?2 WHERE id = 2",
+            libsql::params!["user_beta_renamed", now],
+        ).await.unwrap();
+
+        // Verify updated username in table
+        let mut row_check = conn.query("SELECT username FROM users WHERE id = 2", ()).await.unwrap();
+        let updated_u: String = row_check.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(updated_u, "user_beta_renamed");
+
+        // Attempting to rename user_beta_renamed to existing 'user_alpha' must collide
+        let mut collision_check = conn
+            .query("SELECT id FROM users WHERE username = ?1 AND id != 2", ["user_alpha"])
+            .await
+            .unwrap();
+        assert!(collision_check.next().await.unwrap().is_some());
     }
 }

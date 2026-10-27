@@ -71,6 +71,87 @@ impl UserPermissionSet {
             false
         })
     }
+
+    /// Checks whether this permission set satisfies the requested database operation.
+    pub fn has_db_permission(&self, db: &str, table: &str, operation: &str) -> bool {
+        if self.system.iter().any(|p| p == "*") {
+            return true;
+        }
+        self.databases.iter().any(|d| {
+            let db_match = d.database == "*" || d.database.eq_ignore_ascii_case(db);
+            let tbl_match = d.table_name == "*"
+                || d.table_name.is_empty()
+                || table == "*"
+                || d.table_name.eq_ignore_ascii_case(table);
+            let op_match = d
+                .operations
+                .iter()
+                .any(|o| o == "*" || o.eq_ignore_ascii_case(operation));
+            db_match && tbl_match && op_match
+        })
+    }
+
+    /// Checks whether this permission set satisfies the requested blob operation.
+    pub fn has_blob_permission(&self, namespace: &str, operation: &str) -> bool {
+        if self.system.iter().any(|p| p == "*") {
+            return true;
+        }
+        self.blobs.iter().any(|b| {
+            let ns_match = b.namespace == "*"
+                || namespace == "*"
+                || b.namespace.eq_ignore_ascii_case(namespace);
+            let op_match = b
+                .operations
+                .iter()
+                .any(|o| o == "*" || o.eq_ignore_ascii_case(operation));
+            ns_match && op_match
+        })
+    }
+
+    /// Enforces the Anti-Privilege-Escalation invariant:
+    /// A user cannot grant or delegate any capability they do not already possess.
+    pub fn subsumes(&self, requested: &UserPermissionSet) -> Result<(), String> {
+        // If caller has global wildcard, all permissions are subsumed
+        if self.system.iter().any(|p| p == "*") {
+            return Ok(());
+        }
+
+        // 1. Verify system capabilities
+        for perm in &requested.system {
+            if !self.has_system_permission(perm) {
+                return Err(format!(
+                    "Cannot grant system capability '{}' which you do not possess",
+                    perm
+                ));
+            }
+        }
+
+        // 2. Verify database scopes and operations
+        for req_db in &requested.databases {
+            for op in &req_db.operations {
+                if !self.has_db_permission(&req_db.database, &req_db.table_name, op) {
+                    return Err(format!(
+                        "Cannot grant database operation '{}' on '{}.{}' which you do not possess",
+                        op, req_db.database, req_db.table_name
+                    ));
+                }
+            }
+        }
+
+        // 3. Verify blob scopes and operations
+        for req_blob in &requested.blobs {
+            for op in &req_blob.operations {
+                if !self.has_blob_permission(&req_blob.namespace, op) {
+                    return Err(format!(
+                        "Cannot grant blob operation '{}' on namespace '{}' which you do not possess",
+                        op, req_blob.namespace
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -290,5 +371,74 @@ mod tests {
         let decoded: AuditRecord = from_value(val).unwrap();
         assert_eq!(decoded.id, 1);
         assert_eq!(decoded.actor, "user1");
+    }
+
+    #[test]
+    fn test_anti_privilege_escalation_subsumes() {
+        use super::{UserBlobPermission, UserDbPermission};
+
+        // Caller only has user view and create
+        let caller_perms = UserPermissionSet {
+            system: vec!["users.view".to_string(), "users.create".to_string()],
+            databases: vec![UserDbPermission {
+                database: "db1".to_string(),
+                table_name: "orders".to_string(),
+                operations: vec!["SELECT".to_string()],
+            }],
+            blobs: vec![],
+        };
+
+        // Target request with same or subset: OK
+        let valid_target = UserPermissionSet {
+            system: vec!["users.view".to_string()],
+            databases: vec![UserDbPermission {
+                database: "db1".to_string(),
+                table_name: "orders".to_string(),
+                operations: vec!["SELECT".to_string()],
+            }],
+            blobs: vec![],
+        };
+        assert!(caller_perms.subsumes(&valid_target).is_ok());
+
+        // Target requests users.delete which caller lacks: MUST FAIL
+        let escalating_target = UserPermissionSet {
+            system: vec!["users.delete".to_string()],
+            databases: vec![],
+            blobs: vec![],
+        };
+        assert!(caller_perms.subsumes(&escalating_target).is_err());
+
+        // Target requests INSERT on orders which caller lacks: MUST FAIL
+        let escalating_db = UserPermissionSet {
+            system: vec!["users.view".to_string()],
+            databases: vec![UserDbPermission {
+                database: "db1".to_string(),
+                table_name: "orders".to_string(),
+                operations: vec!["SELECT".to_string(), "INSERT".to_string()],
+            }],
+            blobs: vec![],
+        };
+        assert!(caller_perms.subsumes(&escalating_db).is_err());
+
+        // Target requests blob access which caller lacks: MUST FAIL
+        let escalating_blob = UserPermissionSet {
+            system: vec![],
+            databases: vec![],
+            blobs: vec![UserBlobPermission {
+                namespace: "assets".to_string(),
+                operations: vec!["READ".to_string()],
+            }],
+        };
+        assert!(caller_perms.subsumes(&escalating_blob).is_err());
+
+        // Root wildcard caller subsumes all requests
+        let root_caller = UserPermissionSet {
+            system: vec!["*".to_string()],
+            databases: vec![],
+            blobs: vec![],
+        };
+        assert!(root_caller.subsumes(&escalating_target).is_ok());
+        assert!(root_caller.subsumes(&escalating_db).is_ok());
+        assert!(root_caller.subsumes(&escalating_blob).is_ok());
     }
 }
