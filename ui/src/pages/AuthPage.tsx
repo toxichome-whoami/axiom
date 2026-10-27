@@ -241,6 +241,9 @@ export function AuthPage({
       const token = res.session_token || res.token || "";
       localStorage.setItem("axiom_session_token", token);
       localStorage.setItem("axiom_operator_user", res.username);
+      if (res.user) {
+        setCurrentUser(res.user);
+      }
       setCurrentStep(3);
     } catch (err: unknown) {
       const msg =

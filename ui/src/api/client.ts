@@ -554,7 +554,7 @@ export const api = {
     password: string;
   }) => {
     const res = await request<{
-      user?: { username: string };
+      user?: UserRecordApi;
       username?: string;
       session_token?: string;
       token?: string;
@@ -570,6 +570,7 @@ export const api = {
       token,
       session_token: token,
       expires_at: res.expires_at || 0,
+      user: res.user,
     };
   },
   setupDatabase: (data: {

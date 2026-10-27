@@ -1311,6 +1311,8 @@ pub async fn setup_account(
         session_id, SETUP_SESSION_TTL_SECS, secure_flag
     );
 
+    let user_record = MetadataStore::get_user_by_username(&payload.username).await.ok().flatten();
+
     Ok((
         [(axum::http::header::SET_COOKIE, cookie_header)],
         Json(json!({
@@ -1318,7 +1320,8 @@ pub async fn setup_account(
             "data": {
                 "token": session_id,
                 "session_token": session_id,
-                "username": payload.username
+                "username": payload.username,
+                "user": user_record
             },
             "error": Value::Null
         })),

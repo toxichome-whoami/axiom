@@ -8,12 +8,13 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "../utils/cn";
-import { api } from "../api/client";
+import { api, type UserRecordApi } from "../api/client";
 import {
   getOperatorUser,
   clearSession,
   hasPermission,
   setCurrentUser,
+  getCurrentUser,
   hasBlobAccess,
   hasDatabaseAccess,
 } from "../api/session";
@@ -83,12 +84,36 @@ export function Layout({
   }, [title]);
 
   const [, setPermissionRev] = useState(0);
+  const [currentUser, setCurrentUserLocal] = useState<UserRecordApi | null>(() =>
+    getCurrentUser(),
+  );
 
   useEffect(() => {
-    function handleUserUpdated() {
+    function handleUserUpdated(e: Event) {
       setPermissionRev((r) => r + 1);
+      const customEvent = e as CustomEvent<UserRecordApi | null>;
+      if (customEvent && customEvent.detail) {
+        setCurrentUserLocal(customEvent.detail);
+      } else {
+        setCurrentUserLocal(getCurrentUser());
+      }
     }
     window.addEventListener("axiom:user_updated", handleUserUpdated);
+
+    // Hydrate current user profile if not yet in state
+    const existing = getCurrentUser();
+    if (!existing) {
+      api
+        .getMe()
+        .then((user) => {
+          setCurrentUser(user);
+          setCurrentUserLocal(user);
+        })
+        .catch(() => {});
+    } else {
+      setCurrentUserLocal(existing);
+    }
+
     return () => {
       window.removeEventListener("axiom:user_updated", handleUserUpdated);
     };
@@ -650,14 +675,19 @@ export function Layout({
                   <div className="p-2.5 rounded-lg bg-[#141414] border border-[#1f1f1f] mb-1">
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-[14px] font-medium text-white truncate leading-tight font-mono">
-                        {getOperatorUser()}
+                        {currentUser?.username || getOperatorUser()}
                       </span>
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium text-[#8c8c8c] bg-[#1a1a1a] border border-[#262626] capitalize shrink-0">
-                        Operator
+                        {currentUser?.is_super_admin ? "Super Admin" : "Operator"}
                       </span>
                     </div>
-                    <p className="text-[13px] text-[#8c8c8c] truncate leading-tight mt-1 font-mono">
-                      {getOperatorUser()}@axiom.local
+                    <p
+                      className="text-[13px] text-[#8c8c8c] truncate leading-tight mt-1 font-mono"
+                      title={currentUser?.email || undefined}
+                    >
+                      {currentUser?.email && currentUser.email.trim().length > 0
+                        ? currentUser.email.trim()
+                        : `${currentUser?.username || getOperatorUser()}@axiom.local`}
                     </p>
                   </div>
 
