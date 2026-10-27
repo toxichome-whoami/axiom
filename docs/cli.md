@@ -16,7 +16,7 @@
 2. [Global Options](#2-global-options)
 3. [Command Index](#3-command-index)
 4. [User Management (`axiom user`)](#4-user-management-axiom-user)
-5. [Setup & Auth (`axiom setup`, `axiom login`)](#5-setup--auth-axiom-setup-axiom-login)
+5. [Authentication (`axiom login`, `axiom logout`)](#5-authentication-axiom-login-axiom-logout)
 6. [Databases (`axiom db`)](#6-databases-axiom-db)
 7. [Blob Storage (`axiom blob`)](#7-blob-storage-axiom-blob)
 8. [Access Control (`axiom key`, `axiom role`)](#8-access-control-axiom-key-axiom-role)
@@ -45,8 +45,8 @@ axiom db add main_db -c "postgres://postgres:postgres@localhost:5432/app_db"
 axiom role create app_role -p '[{"database":"main_db","table_name":"*","operations":["SELECT"]}]'
 axiom key create web_app -r app_role
 
-# 5. Upload blob
-axiom blob put docs guide.pdf -f ./guide.pdf
+# 5. Create blob storage namespace
+axiom blob ns create -n assets
 ```
 
 ---
@@ -74,18 +74,16 @@ Apply to all subcommands. Can be placed before or after the command.
 | **Daemon** | `axiom server` | `start`, `run` | Run the HTTP gateway and storage daemon |
 | **Security** | `axiom user` | | Admin human user accounts (direct SQLite access) |
 | | `axiom login` | | Authenticate against gateway and get bearer session |
+| | `axiom logout` | | Invalidate active administrative session |
 | | `axiom key` | | Scoped machine API keys and tokens |
 | | `axiom role` | | RBAC permission policies |
-| | `axiom audit` | | Query audit logs |
-| **Data** | `axiom db` | | Upstream SQL databases, queries, and schema reflection |
-| | `axiom blob` | | Object storage, streaming, tickets, and deduplication |
+| **Data** | `axiom db` | | Upstream SQL database connection pools and validation |
+| | `axiom blob` | | Storage namespaces, bitrot scrubbing, and verification |
 | | `axiom blob ns` | | Storage namespace quotas and lifecycle |
-| **Operations** | `axiom setup` | | Headless first-run configuration wizard |
-| | `axiom cluster` | | Distributed node mesh and latency pings |
+| **Operations** | `axiom cluster` | | Distributed node mesh and latency pings |
 | | `axiom doctor` | | Host environment and upstream connectivity checks |
 | | `axiom health` | `status` | Query live server health endpoint |
 | | `axiom metrics` | | Prometheus exposition metrics |
-| | `axiom benchmark` | `bench` | Built-in HTTP pipeline latency and throughput test |
 | | `axiom cache` | | Hit/miss telemetry and cache purge |
 | | `axiom reload` | | Force sync of metadata snapshots |
 | | `axiom config` | | Generate, inspect, or export `config.toml` |
@@ -127,20 +125,9 @@ axiom user rm -u bob
 
 ---
 
-## 5. Setup & Auth (`axiom setup`, `axiom login`)
+## 5. Authentication (`axiom login`, `axiom logout`)
 
-### Setup Wizard (`axiom setup`)
-
-Non-interactive bootstrapping sequence for CI/CD or headless servers:
-
-```bash
-axiom setup begin
-axiom setup account -u admin -e admin@example.com -p "Secret123!"
-axiom setup database -a main_db -c "postgres://postgres:postgres@localhost:5432/app"
-axiom setup role -n admin_role -p '[{"database":"*","table_name":"*","operations":["*"]}]'
-axiom setup key -n root_key -r admin_role
-axiom setup finish
-```
+Authenticate administrative sessions against the gateway daemon.
 
 ### Gateway Login (`axiom login`)
 
@@ -152,11 +139,19 @@ axiom login -u admin
 axiom login -u admin -p "Secret123!" -U http://127.0.0.1:4500
 ```
 
+### Gateway Logout (`axiom logout`)
+
+```bash
+# Invalidate administrative session and clear cached credentials
+axiom logout
+```
+
 ---
 
 ## 6. Databases (`axiom db`)
 
-Connect upstream SQL engines, run queries, introspect schema, and fetch rows.
+Register and configure upstream SQL engines, test connection health, and manage connection pools.
+*(Note: Ad-hoc query execution and schema browsing are available directly via the Web UI console and REST API).*
 
 ### Connections
 
@@ -191,103 +186,14 @@ axiom db remove old_db
 | `-M` | `--max`, `--pool-max` | | Max pool size |
 | `-n` | `--new-alias`, `--rename` | | Rename alias (`update` only) |
 
-### Queries & Rows
-
-```bash
-# Parameterized read query
-axiom db query main_db "SELECT id, name FROM users WHERE status = $1" -p '["active"]'
-
-# Execute modification (returns affected rows)
-axiom db exec main_db "UPDATE users SET active = false WHERE id = $1" -p '[42]'
-
-# Paginated row scan
-axiom db rows main_db users -l 20 -o 0 -s id -d desc -w '{"active":true}'
-```
-
-#### Flags (`db query`, `db exec`, `db rows`)
-
-| Flag | Long | Description |
-| :--- | :--- | :--- |
-| `-a` | `--alias` | Target database alias |
-| `-q` | `--query`, `--sql` | SQL query string |
-| `-p` | `--params` | JSON parameters array, e.g. `["val"]` |
-| `-t` | `--table` | Table name (`rows` only) |
-| `-l` | `--limit` | Row count limit (default: 50) |
-| `-o` | `--offset` | Pagination offset |
-| `-s` | `--sort` | Column name to sort by |
-| `-d` | `--order` | `asc` or `desc` |
-| `-w` | `--where` | JSON key-value filter conditions |
-
-### Schema Reflection
-
-```bash
-axiom db tables main_db               # List all tables
-axiom db schema main_db users         # Columns, types, nullability
-axiom db indexes main_db users        # Index definitions
-axiom db foreign-keys main_db orders  # Foreign key constraints
-axiom db primary-key main_db users    # Primary key columns
-```
-
 ---
 
 ## 7. Blob Storage (`axiom blob`)
 
-Content-addressable object storage with BLAKE3 dedup and pre-signed capability tickets.
+Storage namespace configuration, chunk integrity verification, and bitrot scrubbing.
+*(Note: Object uploads/downloads and pre-signed capability tickets are handled via the Web UI and REST/MCP APIs).*
 
-### Object Operations
-
-```bash
-# Upload file (or stdin via '-')
-axiom blob put docs report.pdf -f ./report.pdf -t "application/pdf"
-cat dump.sql | axiom blob put backups db.sql -f -
-
-# Download file (or stdout via '-')
-axiom blob get docs report.pdf -o ./downloaded.pdf
-axiom blob get docs report.pdf -o - > out.pdf
-
-# Inspect metadata (size, hash, headers)
-axiom blob head docs report.pdf
-
-# List objects with prefix
-axiom blob list docs -p "2026/" -l 50
-
-# Copy & Move (zero byte re-upload)
-axiom blob copy -n docs -k original.pdf -K copy.pdf
-axiom blob move -n docs -k old.pdf -N archive -K old.pdf
-
-# Delete objects
-axiom blob delete docs report.pdf
-axiom blob batch-delete -n docs file1.txt file2.txt file3.txt
-axiom blob delete-prefix -n logs -p "2025-"
-```
-
-#### Flags (`blob put`, `blob get`)
-
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-n` | `--ns`, `--namespace` | Yes (1st) | Storage namespace |
-| `-k` | `--key` | Yes (2nd) | Object key (path) |
-| `-f` | `--file`, `--input` | Yes (3rd) | Local file path (`-` for stdin, `put` only) |
-| `-o` | `--out`, `--output` | | Destination path (`-` for stdout, `get` only) |
-| `-t` | `--type`, `--content-type` | | MIME content type |
-| | `--ttl` | | Time-to-live in seconds |
-
-### Capability Tickets
-
-Time-limited, pre-signed tokens for direct download access without API keys.
-
-```bash
-# Generate ticket valid for 1 hour (3600 seconds)
-axiom blob ticket docs report.pdf --ttl 3600
-
-# Manage tickets
-axiom blob tickets            # List active tickets
-axiom blob revoke-ticket <SIG> # Revoke ticket
-axiom blob enable-ticket <SIG> # Re-enable ticket
-axiom blob delete-ticket <SIG> # Delete ticket permanently
-```
-
-### Maintenance
+### Maintenance & Integrity
 
 ```bash
 axiom blob stats   # Telemetry and byte usage
@@ -416,10 +322,6 @@ axiom health -U http://192.168.1.100:4500
 
 # Prometheus metrics
 axiom metrics
-
-# Built-in pipeline throughput & latency benchmark
-axiom benchmark -c 50 -d 10
-axiom benchmark -c 100 -d 30 --path "/api/v1/db/main/users/rows" --api-key "KEY"
 
 # Cache telemetry & purge
 axiom cache stats

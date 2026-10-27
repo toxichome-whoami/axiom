@@ -26,27 +26,24 @@ Usage:
   axiom [OPTIONS] [COMMAND]
 
 CORE WORKFLOWS:
-  setup        First-time setup wizard operations
-  server       Start the Axiom gateway daemon (alias: start)
+  server       Start the Axiom gateway daemon (alias: start, run)
   login        Authenticate administrative credentials and issue a session token
   logout       Invalidate administrative session
   status       Check server health, cluster state, and active auth context (alias: health)
 
 DATA & STORAGE:
-  db           Upstream database connections, migrations, and direct query execution
-  blob         Native blob storage management, object transfers, and namespaces
+  db           Upstream database connections and pool management
+  blob         Native blob storage maintenance, scrubbing, and namespaces
 
 SECURITY & ACCESS:
   user         Administrative user management (direct host metadata DB access)
   key          Machine API keys (rate limits, roles, secrets, tokens)
   role         RBAC roles and granular permission management
-  audit        Query administrative audit logs
 
 OPERATIONS & DIAGNOSTICS:
   doctor       Diagnose system environment, ports, and database reachability
   health       Check server health and status (alias: status)
   metrics      Dump Prometheus exposition metrics
-  benchmark    Run built-in HTTP pipeline latency and throughput benchmark (alias: bench)
   cache        Cache engine inspection and cache flush/purge (aliases: clear, purge)
   cluster      Cluster mesh topology, peer nodes, and latency ping
   reload       Force dynamic reload and synchronization of metadata snapshots
@@ -167,29 +164,10 @@ pub enum Commands {
     /// Invalidate administrative session
     Logout,
 
-    /// First-time setup wizard operations
-    Setup {
-        #[command(subcommand)]
-        command: Option<SetupCommands>,
-    },
-
     /// Cache engine inspection and management (via Admin API)
     Cache {
         #[command(subcommand)]
         command: CacheCommands,
-    },
-
-    /// Query administrative audit logs (via Admin API)
-    Audit {
-        #[arg(
-            short,
-            long,
-            help = "Number of audit entries to retrieve",
-            default_value = "50"
-        )]
-        limit: usize,
-        #[arg(short, long, help = "Offset for pagination", default_value = "0")]
-        offset: usize,
     },
 
     /// Force dynamic reload and synchronization of metadata snapshots
@@ -201,20 +179,6 @@ pub enum Commands {
 
     /// Dump Prometheus exposition metrics
     Metrics,
-
-    /// Run built-in HTTP pipeline latency and throughput benchmark
-    #[command(alias = "bench")]
-    Benchmark {
-        #[arg(
-            short,
-            long,
-            default_value = "200",
-            help = "Total number of benchmark requests"
-        )]
-        requests: usize,
-        #[arg(short, long, default_value = "10", help = "Concurrent worker tasks")]
-        concurrency: usize,
-    },
 
     /// Diagnose system environment and database reachability
     Doctor,
@@ -773,256 +737,6 @@ pub enum DbCommands {
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
     },
-    /// Execute a SQL query against an upstream database
-    Query {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "SQL",
-            help = "SQL query string (positional or via -q/--query)"
-        )]
-        sql: Option<String>,
-        #[arg(short = 'q', long = "query", alias = "sql", help = "SQL query string")]
-        query_flag: Option<String>,
-        #[arg(
-            short = 'p',
-            long = "params",
-            help = r#"JSON parameters array or object, e.g. '[1, "active"]'"#
-        )]
-        params: Option<String>,
-        #[arg(
-            short = 't',
-            long = "timeout",
-            help = "Query timeout in seconds",
-            default_value = "30"
-        )]
-        timeout: Option<u64>,
-    },
-    /// List tables in an upstream database
-    Tables {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            short = 'c',
-            long = "cursor",
-            help = "Offset cursor for pagination",
-            default_value = "0"
-        )]
-        cursor: Option<i64>,
-        #[arg(
-            short = 'l',
-            long = "limit",
-            help = "Maximum tables to return",
-            default_value = "100"
-        )]
-        limit: Option<usize>,
-    },
-    /// Describe schema and foreign keys for a database table
-    Schema {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "TABLE",
-            help = "Table name (positional or via -t/--table)"
-        )]
-        table: Option<String>,
-        #[arg(short = 't', long = "table", help = "Table name")]
-        table_flag: Option<String>,
-    },
-    /// Fetch and filter rows from a database table
-    Rows {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "TABLE",
-            help = "Table name (positional or via -t/--table)"
-        )]
-        table: Option<String>,
-        #[arg(short = 't', long = "table", help = "Table name")]
-        table_flag: Option<String>,
-        #[arg(
-            short = 'c',
-            long = "cursor",
-            help = "Pagination cursor (primary key value)"
-        )]
-        cursor: Option<String>,
-        #[arg(
-            short = 'l',
-            long = "limit",
-            help = "Maximum rows to return",
-            default_value = "100"
-        )]
-        limit: Option<usize>,
-        #[arg(short = 's', long = "sort", help = "Sort column")]
-        sort: Option<String>,
-        #[arg(
-            short = 'o',
-            long = "order",
-            help = "Sort order (asc or desc)",
-            default_value = "asc"
-        )]
-        order: Option<String>,
-        #[arg(
-            short = 'f',
-            long = "filter",
-            help = r#"JSON filter condition, e.g. '{"status":{"eq":"active"}}'"#
-        )]
-        filter: Option<String>,
-    },
-    /// Insert row(s) into a database table
-    Insert {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "TABLE",
-            help = "Table name (positional or via -t/--table)"
-        )]
-        table: Option<String>,
-        #[arg(short = 't', long = "table", help = "Table name")]
-        table_flag: Option<String>,
-        #[arg(help = r#"JSON object or array to insert, e.g. '{"name":"Alice"}'"#)]
-        data: Option<String>,
-        #[arg(short = 'r', long = "row", help = r#"JSON object for row to insert"#)]
-        row: Option<String>,
-        #[arg(short = 'R', long = "rows", help = r#"JSON array of rows to insert"#)]
-        rows: Option<String>,
-    },
-    /// Update row(s) matching filter in a database table
-    #[command(name = "update-rows", alias = "update_rows")]
-    UpdateRows {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "TABLE",
-            help = "Table name (positional or via -t/--table)"
-        )]
-        table: Option<String>,
-        #[arg(short = 't', long = "table", help = "Table name")]
-        table_flag: Option<String>,
-        #[arg(
-            value_name = "FILTER",
-            help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}' (positional or via -f/--filter)"#
-        )]
-        filter: Option<String>,
-        #[arg(short = 'f', long = "filter", help = "JSON filter condition")]
-        filter_flag: Option<String>,
-        #[arg(
-            value_name = "UPDATE",
-            help = r#"JSON update values, e.g. '{"status":"inactive"}' (positional or via -u/--update/--data)"#
-        )]
-        update: Option<String>,
-        #[arg(
-            short = 'u',
-            long = "update",
-            alias = "data",
-            help = "JSON update values"
-        )]
-        update_flag: Option<String>,
-    },
-    /// Delete row(s) matching filter in a database table
-    DeleteRows {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "TABLE",
-            help = "Table name (positional or via -t/--table)"
-        )]
-        table: Option<String>,
-        #[arg(short = 't', long = "table", help = "Table name")]
-        table_flag: Option<String>,
-        #[arg(
-            value_name = "FILTER",
-            help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}' (positional or via -f/--filter)"#
-        )]
-        filter: Option<String>,
-        #[arg(short = 'f', long = "filter", help = "JSON filter condition")]
-        filter_flag: Option<String>,
-    },
-    /// Add a new column to a database table
-    AddColumn {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "TABLE",
-            help = "Table name (positional or via -t/--table)"
-        )]
-        table: Option<String>,
-        #[arg(short = 't', long = "table", help = "Table name")]
-        table_flag: Option<String>,
-        #[arg(
-            value_name = "COLUMN",
-            help = "Column name (positional or via -c/--column)"
-        )]
-        column: Option<String>,
-        #[arg(short = 'c', long = "column", help = "Column name")]
-        column_flag: Option<String>,
-        #[arg(
-            value_name = "DATA_TYPE",
-            help = "Column data type (positional or via -d/--type)"
-        )]
-        data_type: Option<String>,
-        #[arg(
-            short = 'd',
-            long = "type",
-            alias = "data-type",
-            help = "Column data type (e.g. TEXT, INTEGER, VARCHAR(255))"
-        )]
-        data_type_flag: Option<String>,
-        #[arg(
-            short = 'N',
-            long = "null",
-            alias = "nullable",
-            help = "Allow null values"
-        )]
-        nullable: bool,
-        #[arg(
-            short = 'D',
-            long = "default",
-            alias = "default-val",
-            help = "Default value expression"
-        )]
-        default_val: Option<String>,
-    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -1037,280 +751,6 @@ pub enum BlobCommands {
     Ns {
         #[command(subcommand)]
         command: BlobNsCommands,
-    },
-    /// List objects in a namespace
-    #[command(alias = "ls")]
-    List {
-        #[arg(
-            value_name = "NAMESPACE",
-            help = "Storage namespace (positional or via -n/--ns)"
-        )]
-        namespace: Option<String>,
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace"
-        )]
-        namespace_flag: Option<String>,
-        #[arg(short, long, help = "Filter by key prefix")]
-        prefix: Option<String>,
-        #[arg(short, long, help = "Pagination cursor")]
-        cursor: Option<String>,
-        #[arg(short, long, help = "Maximum items to return", default_value = "100")]
-        limit: Option<usize>,
-    },
-    /// Upload a file or binary payload to a namespace
-    #[command(alias = "upload")]
-    Put {
-        #[arg(
-            value_name = "NAMESPACE",
-            help = "Storage namespace (positional or via -n/--ns)"
-        )]
-        namespace: Option<String>,
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace"
-        )]
-        namespace_flag: Option<String>,
-        #[arg(
-            value_name = "KEY",
-            help = "Object key/path (positional or via -k/--key)"
-        )]
-        object_key: Option<String>,
-        #[arg(short = 'k', long = "key", help = "Object key (path)")]
-        key_flag: Option<String>,
-        #[arg(
-            value_name = "FILE",
-            help = "Path to local file to upload, or '-' for stdin (positional or via -f/--file)"
-        )]
-        file: Option<String>,
-        #[arg(
-            short = 'f',
-            long = "file",
-            alias = "input",
-            help = "Path to local file to upload (or '-' for stdin)"
-        )]
-        file_flag: Option<String>,
-        #[arg(
-            short = 't',
-            long = "type",
-            alias = "content-type",
-            help = "MIME Content-Type (e.g. application/json, image/png)"
-        )]
-        content_type: Option<String>,
-        #[arg(short = 'T', long = "ttl", help = "Time-to-live expiration in seconds")]
-        ttl: Option<u64>,
-    },
-    /// Download an object from a namespace
-    #[command(alias = "download")]
-    Get {
-        #[arg(
-            value_name = "NAMESPACE",
-            help = "Storage namespace (positional or via -n/--ns)"
-        )]
-        namespace: Option<String>,
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace"
-        )]
-        namespace_flag: Option<String>,
-        #[arg(
-            value_name = "KEY",
-            help = "Object key/path (positional or via -k/--key)"
-        )]
-        object_key: Option<String>,
-        #[arg(short = 'k', long = "key", help = "Object key (path)")]
-        key_flag: Option<String>,
-        #[arg(
-            short,
-            long,
-            help = "Output file path (or '-' for stdout). Defaults to key filename"
-        )]
-        output: Option<String>,
-        #[arg(
-            short = 't',
-            long = "ticket",
-            help = "Capability ticket signature for pre-signed download"
-        )]
-        ticket: Option<String>,
-    },
-    /// Inspect object metadata (headers, size, BLAKE3 hash, TTL)
-    Head {
-        #[arg(
-            value_name = "NAMESPACE",
-            help = "Storage namespace (positional or via -n/--ns)"
-        )]
-        namespace: Option<String>,
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace"
-        )]
-        namespace_flag: Option<String>,
-        #[arg(
-            value_name = "KEY",
-            help = "Object key/path (positional or via -k/--key)"
-        )]
-        object_key: Option<String>,
-        #[arg(short = 'k', long = "key", help = "Object key (path)")]
-        key_flag: Option<String>,
-    },
-    /// Delete an object from a namespace
-    #[command(alias = "remove", alias = "rm")]
-    Delete {
-        #[arg(
-            value_name = "NAMESPACE",
-            help = "Storage namespace (positional or via -n/--ns)"
-        )]
-        namespace: Option<String>,
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace"
-        )]
-        namespace_flag: Option<String>,
-        #[arg(
-            value_name = "KEY",
-            help = "Object key/path (positional or via -k/--key)"
-        )]
-        object_key: Option<String>,
-        #[arg(short = 'k', long = "key", help = "Object key (path)")]
-        key_flag: Option<String>,
-    },
-    /// Copy an object or directory prefix
-    Copy {
-        #[arg(
-            value_name = "SRC_NAMESPACE",
-            help = "Source namespace (positional or via -s/--src-ns)"
-        )]
-        src_namespace: Option<String>,
-        #[arg(
-            short = 's',
-            long = "src-ns",
-            alias = "from-ns",
-            help = "Source namespace"
-        )]
-        src_ns_flag: Option<String>,
-        #[arg(
-            value_name = "SRC_KEY",
-            help = "Source key or prefix (positional or via -k/--src-key)"
-        )]
-        src_key: Option<String>,
-        #[arg(
-            short = 'k',
-            long = "src-key",
-            alias = "from-key",
-            help = "Source key (or prefix)"
-        )]
-        src_key_flag: Option<String>,
-        #[arg(
-            value_name = "DEST_KEY",
-            help = "Destination key or prefix (positional or via -K/--dest-key)"
-        )]
-        dest_key: Option<String>,
-        #[arg(
-            short = 'K',
-            long = "dest-key",
-            alias = "to-key",
-            help = "Destination key (or prefix)"
-        )]
-        dest_key_flag: Option<String>,
-        #[arg(
-            short = 'd',
-            long = "dest-ns",
-            alias = "to-ns",
-            alias = "dest-namespace",
-            help = "Destination namespace (defaults to source namespace)"
-        )]
-        dest_namespace: Option<String>,
-        #[arg(
-            short = 'p',
-            long = "prefix",
-            help = "Copy all objects with matching prefix"
-        )]
-        prefix: bool,
-    },
-    /// Move or rename an object or directory prefix
-    Move {
-        #[arg(
-            value_name = "SRC_NAMESPACE",
-            help = "Source namespace (positional or via -s/--src-ns)"
-        )]
-        src_namespace: Option<String>,
-        #[arg(
-            short = 's',
-            long = "src-ns",
-            alias = "from-ns",
-            help = "Source namespace"
-        )]
-        src_ns_flag: Option<String>,
-        #[arg(
-            value_name = "SRC_KEY",
-            help = "Source key or prefix (positional or via -k/--src-key)"
-        )]
-        src_key: Option<String>,
-        #[arg(
-            short = 'k',
-            long = "src-key",
-            alias = "from-key",
-            help = "Source key (or prefix)"
-        )]
-        src_key_flag: Option<String>,
-        #[arg(
-            value_name = "DEST_KEY",
-            help = "Destination key or prefix (positional or via -K/--dest-key)"
-        )]
-        dest_key: Option<String>,
-        #[arg(
-            short = 'K',
-            long = "dest-key",
-            alias = "to-key",
-            help = "Destination key (or prefix)"
-        )]
-        dest_key_flag: Option<String>,
-        #[arg(
-            short = 'd',
-            long = "dest-ns",
-            alias = "to-ns",
-            alias = "dest-namespace",
-            help = "Destination namespace (defaults to source namespace)"
-        )]
-        dest_namespace: Option<String>,
-        #[arg(
-            short = 'p',
-            long = "prefix",
-            help = "Move all objects with matching prefix"
-        )]
-        prefix: bool,
-    },
-    /// Delete all objects matching a prefix
-    DeletePrefix {
-        #[arg(
-            value_name = "NAMESPACE",
-            help = "Storage namespace (positional or via -n/--ns)"
-        )]
-        namespace: Option<String>,
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace"
-        )]
-        namespace_flag: Option<String>,
-        #[arg(
-            value_name = "PREFIX",
-            help = "Key prefix to delete (positional or via -p/--prefix)"
-        )]
-        prefix: Option<String>,
-        #[arg(short = 'p', long = "prefix", help = "Key prefix to delete")]
-        prefix_flag: Option<String>,
     },
     /// Cryptographically verify blob integrity on disk
     Verify {
@@ -1333,130 +773,6 @@ pub enum BlobCommands {
         object_key: Option<String>,
         #[arg(short = 'k', long = "key", help = "Object key (path)")]
         key_flag: Option<String>,
-    },
-    /// Generate a pre-signed capability download ticket URL
-    Ticket {
-        #[arg(
-            value_name = "NAMESPACE",
-            help = "Storage namespace (positional or via -n/--ns)"
-        )]
-        namespace: Option<String>,
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace"
-        )]
-        namespace_flag: Option<String>,
-        #[arg(
-            value_name = "KEY",
-            help = "Object key/path (positional or via -k/--key)"
-        )]
-        object_key: Option<String>,
-        #[arg(short = 'k', long = "key", help = "Object key (path)")]
-        key_flag: Option<String>,
-        #[arg(
-            short = 'o',
-            long = "operation",
-            alias = "op",
-            help = "Permitted operation (READ, WRITE)",
-            default_value = "READ"
-        )]
-        operation: Option<String>,
-        #[arg(
-            short = 't',
-            long = "ttl",
-            help = "Ticket time-to-live in seconds",
-            default_value = "3600"
-        )]
-        ttl: Option<u64>,
-    },
-    /// List capability download/upload tickets (via Admin API)
-    Tickets {
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Filter by namespace (defaults to all '*')"
-        )]
-        namespace: Option<String>,
-        #[arg(short = 'k', long = "key", help = "Filter by object key")]
-        key: Option<String>,
-        #[arg(
-            short = 'a',
-            long = "all",
-            help = "Include expired and revoked tickets",
-            default_value = "true"
-        )]
-        all: bool,
-        #[arg(
-            short,
-            long,
-            help = "Pagination cursor (opaque string from previous page)"
-        )]
-        cursor: Option<String>,
-        #[arg(short, long, help = "Maximum items to return (1-500, default: 100)")]
-        limit: Option<usize>,
-    },
-    /// Revoke a capability ticket by signature or ID
-    RevokeTicket {
-        #[arg(
-            value_name = "SIGNATURE",
-            help = "Capability ticket signature or ID to revoke (positional or via -s/--sig)"
-        )]
-        signature: Option<String>,
-        #[arg(
-            short = 's',
-            long = "sig",
-            alias = "ticket",
-            help = "Capability ticket signature or ID"
-        )]
-        signature_flag: Option<String>,
-    },
-    /// Batch delete multiple objects by key within a namespace
-    #[command(name = "batch-delete", alias = "batch_delete")]
-    BatchDelete {
-        #[arg(
-            short = 'n',
-            long = "ns",
-            alias = "namespace",
-            help = "Storage namespace (via -n/--ns or first positional argument)"
-        )]
-        namespace: Option<String>,
-        #[arg(help = "Namespace followed by object keys, or keys when using -n/--ns")]
-        keys: Vec<String>,
-    },
-    /// Re-enable a revoked capability ticket
-    #[command(name = "enable-ticket", alias = "enable_ticket")]
-    EnableTicket {
-        #[arg(
-            value_name = "SIGNATURE",
-            help = "Capability ticket signature to re-enable (positional or via -s/--sig)"
-        )]
-        signature: Option<String>,
-        #[arg(
-            short = 's',
-            long = "sig",
-            alias = "ticket",
-            help = "Capability ticket signature"
-        )]
-        signature_flag: Option<String>,
-    },
-    /// Permanently delete a capability ticket
-    #[command(name = "delete-ticket", alias = "delete_ticket")]
-    DeleteTicket {
-        #[arg(
-            value_name = "SIGNATURE",
-            help = "Capability ticket signature or ID to permanently delete (positional or via -s/--sig)"
-        )]
-        signature: Option<String>,
-        #[arg(
-            short = 's',
-            long = "sig",
-            alias = "ticket",
-            help = "Capability ticket signature or ID"
-        )]
-        signature_flag: Option<String>,
     },
 }
 
@@ -1586,67 +902,6 @@ pub enum McpCommands {
         )]
         stdio: bool,
     },
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum SetupCommands {
-    /// Check whether initial setup is required
-    Begin,
-    /// Create the primary admin account
-    Account {
-        #[arg(
-            value_name = "USERNAME",
-            help = "Admin username (positional or via -u/--user)"
-        )]
-        username: Option<String>,
-        #[arg(
-            short = 'u',
-            long = "user",
-            alias = "username",
-            help = "Admin username"
-        )]
-        user: Option<String>,
-        #[arg(short = 'e', long = "email", help = "Admin email address")]
-        email: Option<String>,
-        #[arg(
-            short = 'p',
-            long = "password",
-            alias = "pass",
-            help = "Admin password (if omitted, interactive prompt is used)"
-        )]
-        password: Option<String>,
-    },
-    /// Register the first upstream database during setup
-    Database {
-        #[arg(
-            value_name = "ALIAS",
-            help = "Database alias (positional or via -a/--alias)"
-        )]
-        alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
-        alias_flag: Option<String>,
-        #[arg(
-            value_name = "URL",
-            help = "Database connection URL (positional or via -c/--conn)"
-        )]
-        url: Option<String>,
-        #[arg(
-            short = 'c',
-            long = "conn",
-            alias = "connection-url",
-            help = "Database connection URL"
-        )]
-        url_flag: Option<String>,
-        #[arg(
-            short = 'e',
-            long = "engine",
-            alias = "dialect",
-            help = "Engine dialect"
-        )]
-        engine: Option<String>,
-    },
-    /// Finalize and permanently seal the setup wizard
-    Complete,
 }
 
 #[cfg(test)]
@@ -1851,35 +1106,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parse_benchmark() {
-        let args = ["axiom", "benchmark", "-r", "500", "-c", "25"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse benchmark");
-        match cli.command {
-            Some(Commands::Benchmark {
-                requests,
-                concurrency,
-            }) => {
-                assert_eq!(requests, 500);
-                assert_eq!(concurrency, 25);
-            }
-            _ => panic!("Expected Benchmark command"),
-        }
-    }
-
-    #[test]
-    fn test_cli_parse_audit() {
-        let args = ["axiom", "audit", "-l", "25", "-o", "5"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse audit");
-        match cli.command {
-            Some(Commands::Audit { limit, offset }) => {
-                assert_eq!(limit, 25);
-                assert_eq!(offset, 5);
-            }
-            _ => panic!("Expected Audit command"),
-        }
-    }
-
-    #[test]
     fn test_cli_parse_reload() {
         let args = ["axiom", "reload"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse reload");
@@ -1981,354 +1207,50 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parse_db_query() {
-        let args = [
-            "axiom",
-            "db",
-            "query",
-            "main_db",
-            "SELECT * FROM users",
-            "-p",
-            r#"["active"]"#,
-            "--timeout",
-            "45",
-        ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse db query");
-        match cli.command {
-            Some(Commands::Db {
-                command:
-                    DbCommands::Query {
-                        alias,
-                        alias_flag,
-                        sql,
-                        query_flag,
-                        params,
-                        timeout,
-                    },
-            }) => {
-                assert_eq!(alias.or(alias_flag).as_deref(), Some("main_db"));
-                assert_eq!(sql.or(query_flag).as_deref(), Some("SELECT * FROM users"));
-                assert_eq!(params.as_deref(), Some(r#"["active"]"#));
-                assert_eq!(timeout, Some(45));
-            }
-            _ => panic!("Expected Db Query command"),
-        }
-    }
-
-    #[test]
-    fn test_cli_parse_db_tables_and_schema() {
-        let args = ["axiom", "db", "tables", "analytics_db", "--limit", "50"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse db tables");
-        match cli.command {
-            Some(Commands::Db {
-                command:
-                    DbCommands::Tables {
-                        alias,
-                        alias_flag,
-                        limit,
-                        ..
-                    },
-            }) => {
-                assert_eq!(alias.or(alias_flag).as_deref(), Some("analytics_db"));
-                assert_eq!(limit, Some(50));
-            }
-            _ => panic!("Expected Db Tables command"),
-        }
-
-        let schema_args = ["axiom", "db", "schema", "analytics_db", "events"];
-        let schema_cli = Cli::try_parse_from(schema_args).expect("Failed to parse db schema");
-        match schema_cli.command {
-            Some(Commands::Db {
-                command:
-                    DbCommands::Schema {
-                        alias,
-                        alias_flag,
-                        table,
-                        table_flag,
-                    },
-            }) => {
-                assert_eq!(alias.or(alias_flag).as_deref(), Some("analytics_db"));
-                assert_eq!(table.or(table_flag).as_deref(), Some("events"));
-            }
-            _ => panic!("Expected Db Schema command"),
-        }
-    }
-
-    #[test]
-    fn test_cli_parse_db_rows() {
-        let args = [
-            "axiom",
-            "db",
-            "rows",
-            "main_db",
-            "users",
-            "--sort",
-            "id",
-            "--order",
-            "desc",
-            "--filter",
-            r#"{"status":{"eq":"active"}}"#,
-        ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse db rows");
-        match cli.command {
-            Some(Commands::Db {
-                command:
-                    DbCommands::Rows {
-                        alias,
-                        alias_flag,
-                        table,
-                        table_flag,
-                        sort,
-                        order,
-                        filter,
-                        ..
-                    },
-            }) => {
-                assert_eq!(alias.or(alias_flag).as_deref(), Some("main_db"));
-                assert_eq!(table.or(table_flag).as_deref(), Some("users"));
-                assert_eq!(sort.as_deref(), Some("id"));
-                assert_eq!(order.as_deref(), Some("desc"));
-                assert_eq!(filter.as_deref(), Some(r#"{"status":{"eq":"active"}}"#));
-            }
-            _ => panic!("Expected Db Rows command"),
-        }
-    }
-
-    #[test]
     fn test_cli_parse_blob_commands() {
-        let args = [
-            "axiom",
-            "blob",
-            "put",
-            "avatars",
-            "user1.png",
-            "./me.png",
-            "-t",
-            "image/png",
-            "--ttl",
-            "86400",
-        ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse blob put");
-        match cli.command {
+        let stats_args = ["axiom", "blob", "stats"];
+        let stats_cli = Cli::try_parse_from(stats_args).expect("Failed to parse blob stats");
+        assert!(matches!(
+            stats_cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Stats
+            })
+        ));
+
+        let scrub_args = ["axiom", "blob", "scrub"];
+        let scrub_cli = Cli::try_parse_from(scrub_args).expect("Failed to parse blob scrub");
+        assert!(matches!(
+            scrub_cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Scrub
+            })
+        ));
+
+        let sweep_args = ["axiom", "blob", "sweep"];
+        let sweep_cli = Cli::try_parse_from(sweep_args).expect("Failed to parse blob sweep");
+        assert!(matches!(
+            sweep_cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Sweep
+            })
+        ));
+
+        let verify_args = ["axiom", "blob", "verify", "assets", "report.pdf"];
+        let verify_cli = Cli::try_parse_from(verify_args).expect("Failed to parse blob verify");
+        match verify_cli.command {
             Some(Commands::Blob {
                 command:
-                    BlobCommands::Put {
+                    BlobCommands::Verify {
                         namespace,
                         namespace_flag,
                         object_key,
                         key_flag,
-                        file,
-                        file_flag,
-                        content_type,
-                        ttl,
                     },
             }) => {
-                assert_eq!(namespace.or(namespace_flag).as_deref(), Some("avatars"));
-                assert_eq!(object_key.or(key_flag).as_deref(), Some("user1.png"));
-                assert_eq!(file.or(file_flag).as_deref(), Some("./me.png"));
-                assert_eq!(content_type.as_deref(), Some("image/png"));
-                assert_eq!(ttl, Some(86400));
+                assert_eq!(namespace.or(namespace_flag).as_deref(), Some("assets"));
+                assert_eq!(object_key.or(key_flag).as_deref(), Some("report.pdf"));
             }
-            _ => panic!("Expected Blob Put command"),
-        }
-
-        let get_args = [
-            "axiom",
-            "blob",
-            "get",
-            "avatars",
-            "user1.png",
-            "-o",
-            "./download.png",
-            "--ticket",
-            "sig123",
-        ];
-        let get_cli = Cli::try_parse_from(get_args).expect("Failed to parse blob get");
-        match get_cli.command {
-            Some(Commands::Blob {
-                command:
-                    BlobCommands::Get {
-                        namespace,
-                        namespace_flag,
-                        object_key,
-                        key_flag,
-                        output,
-                        ticket,
-                    },
-            }) => {
-                assert_eq!(namespace.or(namespace_flag).as_deref(), Some("avatars"));
-                assert_eq!(object_key.or(key_flag).as_deref(), Some("user1.png"));
-                assert_eq!(output.as_deref(), Some("./download.png"));
-                assert_eq!(ticket.as_deref(), Some("sig123"));
-            }
-            _ => panic!("Expected Blob Get command"),
-        }
-
-        let copy_args = [
-            "axiom",
-            "blob",
-            "copy",
-            "raw",
-            "data/",
-            "backup/",
-            "--dest-namespace",
-            "archive",
-            "--prefix",
-        ];
-        let copy_cli = Cli::try_parse_from(copy_args).expect("Failed to parse blob copy");
-        match copy_cli.command {
-            Some(Commands::Blob {
-                command:
-                    BlobCommands::Copy {
-                        src_namespace,
-                        src_ns_flag,
-                        src_key,
-                        src_key_flag,
-                        dest_key,
-                        dest_key_flag,
-                        dest_namespace,
-                        prefix,
-                    },
-            }) => {
-                assert_eq!(src_namespace.or(src_ns_flag).as_deref(), Some("raw"));
-                assert_eq!(src_key.or(src_key_flag).as_deref(), Some("data/"));
-                assert_eq!(dest_key.or(dest_key_flag).as_deref(), Some("backup/"));
-                assert_eq!(dest_namespace.as_deref(), Some("archive"));
-                assert!(prefix);
-            }
-            _ => panic!("Expected Blob Copy command"),
-        }
-
-        // Tickets & RevokeTicket
-        let tickets_args = [
-            "axiom",
-            "blob",
-            "tickets",
-            "-n",
-            "assets",
-            "-k",
-            "report.pdf",
-            "--cursor",
-            "cur_123",
-            "--limit",
-            "50",
-        ];
-        let tickets_cli = Cli::try_parse_from(tickets_args).expect("Failed to parse blob tickets");
-        match tickets_cli.command {
-            Some(Commands::Blob {
-                command:
-                    BlobCommands::Tickets {
-                        namespace,
-                        key,
-                        all,
-                        cursor,
-                        limit,
-                    },
-            }) => {
-                assert_eq!(namespace, Some("assets".to_string()));
-                assert_eq!(key, Some("report.pdf".to_string()));
-                assert_eq!(cursor, Some("cur_123".to_string()));
-                assert_eq!(limit, Some(50));
-                assert!(all);
-            }
-            _ => panic!("Expected Blob Tickets command"),
-        }
-
-        let revoke_args = ["axiom", "blob", "revoke-ticket", "sig_xyz_123"];
-        let revoke_cli =
-            Cli::try_parse_from(revoke_args).expect("Failed to parse blob revoke-ticket");
-        match revoke_cli.command {
-            Some(Commands::Blob {
-                command:
-                    BlobCommands::RevokeTicket {
-                        signature,
-                        signature_flag,
-                    },
-            }) => {
-                assert_eq!(signature.or(signature_flag).as_deref(), Some("sig_xyz_123"));
-            }
-            _ => panic!("Expected Blob RevokeTicket command"),
-        }
-
-        // Batch delete and ticket enable/delete
-        let batch_del_args = [
-            "axiom",
-            "blob",
-            "batch-delete",
-            "assets",
-            "file1.png",
-            "file2.png",
-        ];
-        let batch_del_cli =
-            Cli::try_parse_from(batch_del_args).expect("Failed to parse blob batch-delete");
-        match batch_del_cli.command {
-            Some(Commands::Blob {
-                command: BlobCommands::BatchDelete { namespace, keys },
-            }) => {
-                assert!(namespace.is_none());
-                assert_eq!(
-                    keys,
-                    vec![
-                        "assets".to_string(),
-                        "file1.png".to_string(),
-                        "file2.png".to_string()
-                    ]
-                );
-            }
-            _ => panic!("Expected Blob BatchDelete command"),
-        }
-
-        let batch_del_flag_args = [
-            "axiom",
-            "blob",
-            "batch-delete",
-            "-n",
-            "assets",
-            "file1.png",
-            "file2.png",
-        ];
-        let batch_del_flag_cli = Cli::try_parse_from(batch_del_flag_args)
-            .expect("Failed to parse blob batch-delete with -n");
-        match batch_del_flag_cli.command {
-            Some(Commands::Blob {
-                command: BlobCommands::BatchDelete { namespace, keys },
-            }) => {
-                assert_eq!(namespace.as_deref(), Some("assets"));
-                assert_eq!(keys, vec!["file1.png".to_string(), "file2.png".to_string()]);
-            }
-            _ => panic!("Expected Blob BatchDelete command with -n"),
-        }
-
-        let enable_ticket_args = ["axiom", "blob", "enable-ticket", "sig_xyz_123"];
-        let enable_cli =
-            Cli::try_parse_from(enable_ticket_args).expect("Failed to parse enable-ticket");
-        match enable_cli.command {
-            Some(Commands::Blob {
-                command:
-                    BlobCommands::EnableTicket {
-                        signature,
-                        signature_flag,
-                    },
-            }) => {
-                assert_eq!(signature.or(signature_flag).as_deref(), Some("sig_xyz_123"));
-            }
-            _ => panic!("Expected Blob EnableTicket command"),
-        }
-
-        let delete_ticket_args = ["axiom", "blob", "delete-ticket", "sig_xyz_123"];
-        let del_cli =
-            Cli::try_parse_from(delete_ticket_args).expect("Failed to parse delete-ticket");
-        match del_cli.command {
-            Some(Commands::Blob {
-                command:
-                    BlobCommands::DeleteTicket {
-                        signature,
-                        signature_flag,
-                    },
-            }) => {
-                assert_eq!(signature.or(signature_flag).as_deref(), Some("sig_xyz_123"));
-            }
-            _ => panic!("Expected Blob DeleteTicket command"),
+            _ => panic!("Expected Blob Verify command"),
         }
 
         // Namespace commands: Create (with --public), Update, Get, Usage
@@ -2445,7 +1367,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parse_login_and_setup() {
+    fn test_cli_parse_login() {
         let login_args = ["axiom", "login", "admin", "-p", "mypassword123"];
         let login_cli = Cli::try_parse_from(login_args).expect("Failed to parse login");
         match login_cli.command {
@@ -2474,62 +1396,6 @@ mod tests {
                 assert_eq!(password, Some("pass123".to_string()));
             }
             _ => panic!("Expected Login command with -u"),
-        }
-
-        let setup_args = [
-            "axiom",
-            "setup",
-            "account",
-            "superadmin",
-            "-p",
-            "longsecretpass",
-        ];
-        let setup_cli = Cli::try_parse_from(setup_args).expect("Failed to parse setup account");
-        match setup_cli.command {
-            Some(Commands::Setup {
-                command:
-                    Some(SetupCommands::Account {
-                        username,
-                        user,
-                        email: _,
-                        password,
-                    }),
-            }) => {
-                assert_eq!(username.or(user), Some("superadmin".to_string()));
-                assert_eq!(password, Some("longsecretpass".to_string()));
-            }
-            _ => panic!("Expected Setup Account command"),
-        }
-
-        // Test setup account with -u and -e and -p
-        let setup_flag_args = [
-            "axiom",
-            "setup",
-            "account",
-            "-u",
-            "superadmin_flag",
-            "-e",
-            "super@axiom.local",
-            "-p",
-            "flagpass789",
-        ];
-        let setup_flag_cli =
-            Cli::try_parse_from(setup_flag_args).expect("Failed to parse setup account with flags");
-        match setup_flag_cli.command {
-            Some(Commands::Setup {
-                command:
-                    Some(SetupCommands::Account {
-                        username,
-                        user,
-                        email,
-                        password,
-                    }),
-            }) => {
-                assert_eq!(username.or(user), Some("superadmin_flag".to_string()));
-                assert_eq!(email, Some("super@axiom.local".to_string()));
-                assert_eq!(password, Some("flagpass789".to_string()));
-            }
-            _ => panic!("Expected Setup Account command with flags"),
         }
     }
 
@@ -2867,23 +1733,6 @@ mod tests {
                 command: DbCommands::Remove { .. }
             })
         ));
-
-        let args = [
-            "axiom",
-            "db",
-            "update-rows",
-            "main",
-            "users",
-            "{\"id\":1}",
-            "{\"active\":false}",
-        ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse db update-rows");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Db {
-                command: DbCommands::UpdateRows { .. }
-            })
-        ));
     }
 
     #[test]
@@ -2924,9 +1773,6 @@ mod tests {
         let cli = Cli::try_parse_from(["axiom", "status"]).expect("parse status");
         assert!(matches!(cli.command, Some(Commands::Health)));
 
-        let cli = Cli::try_parse_from(["axiom", "bench"]).expect("parse bench");
-        assert!(matches!(cli.command, Some(Commands::Benchmark { .. })));
-
         // User ls and rm
         let cli = Cli::try_parse_from(["axiom", "user", "ls"]).expect("parse user ls");
         assert!(matches!(
@@ -2958,42 +1804,6 @@ mod tests {
             cli.command,
             Some(Commands::Db {
                 command: DbCommands::Remove { .. }
-            })
-        ));
-
-        // Blob upload, download, ls, rm
-        let cli = Cli::try_parse_from(["axiom", "blob", "ls", "media"]).expect("parse blob ls");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Blob {
-                command: BlobCommands::List { .. }
-            })
-        ));
-
-        let cli = Cli::try_parse_from(["axiom", "blob", "upload", "media", "doc.pdf", "local.pdf"])
-            .expect("parse blob upload");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Blob {
-                command: BlobCommands::Put { .. }
-            })
-        ));
-
-        let cli = Cli::try_parse_from(["axiom", "blob", "download", "media", "doc.pdf"])
-            .expect("parse blob download");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Blob {
-                command: BlobCommands::Get { .. }
-            })
-        ));
-
-        let cli = Cli::try_parse_from(["axiom", "blob", "rm", "media", "doc.pdf"])
-            .expect("parse blob rm");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Blob {
-                command: BlobCommands::Delete { .. }
             })
         ));
 
