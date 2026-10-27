@@ -2064,7 +2064,7 @@ pub async fn update_user_handler(
 
 /// Deletes an administrator account.
 /// CONTRACT:
-///  - Invariant: Root administrator (id = 1) cannot be deleted under any circumstances.
+///  - Invariant: Root administrator (id = 1 or is_super_admin) cannot be deleted under any circumstances.
 ///  - Invariant: An administrator cannot delete their own active session account.
 pub async fn delete_user_handler(
     Extension(auth): Extension<AuthContext>,
@@ -2074,7 +2074,17 @@ pub async fn delete_user_handler(
 
     let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
     if let Ok(Some(target_user)) = MetadataStore::get_user_by_id(id).await {
-        if target_user.username == actor {
+        // Enforce root super administrator account protection
+        if target_user.id == 1 || target_user.is_super_admin {
+            return Err(AxiomError::new(
+                "ROOT_ACCOUNT_PROTECTED",
+                "Root super admin account cannot be deleted",
+                StatusCode::FORBIDDEN,
+            ));
+        }
+
+        // Enforce self-deletion prevention for active operator account
+        if target_user.username.eq_ignore_ascii_case(actor) {
             return Err(AxiomError::new(
                 "FORBIDDEN",
                 "Cannot delete your own active administrator account",
@@ -2607,5 +2617,39 @@ mod tests {
         let empty_pg = resolve_and_sanitize_db_url("pgdb", "", Some("postgres"), None);
         assert!(empty_pg.is_err());
         assert_eq!(empty_pg.unwrap_err().code, "INVALID_URL");
+    }
+
+    #[tokio::test]
+    async fn test_check_permission_enforcement() {
+        // 1. Non-session auth context must be rejected unconditionally
+        let non_session_ctx = AuthContext {
+            api_key_name: "test_key".to_string(),
+            role: Some("admin".to_string()),
+            is_session: false,
+            ..Default::default()
+        };
+        let res = check_permission(&non_session_ctx, "databases.create").await;
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code, "FORBIDDEN");
+
+        // 2. Superadmin session bypasses check_permission
+        let superadmin_ctx = AuthContext {
+            api_key_name: "user:root".to_string(),
+            role: Some("admin".to_string()),
+            is_session: true,
+            ..Default::default()
+        };
+        assert!(check_permission(&superadmin_ctx, "databases.create").await.is_ok());
+        assert!(check_permission(&superadmin_ctx, "blobs.delete").await.is_ok());
+        assert!(check_permission(&superadmin_ctx, "users.delete").await.is_ok());
+
+        // 3. Custom session user without privileges must be rejected
+        let custom_missing = AuthContext {
+            api_key_name: "user:ghost_operator".to_string(),
+            role: Some("custom".to_string()),
+            is_session: true,
+            ..Default::default()
+        };
+        assert!(check_permission(&custom_missing, "databases.create").await.is_err());
     }
 }

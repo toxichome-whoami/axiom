@@ -25,6 +25,13 @@ use base64::prelude::*;
 ///    or `AxiomError(AUTH_INVALID_KEY, 403)` if key identity is suspended.
 ///  - Side effects: Updates failure/success counters in BanList.
 ///  - Idempotent: Yes on success; increments failure bucket on invalid credentials.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedSession {
+    username: String,
+    is_super_admin: bool,
+    permissions: Vec<axiom_core::PermissionSnapshot>,
+}
+
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AxiomError> {
     let config = req
         .extensions()
@@ -266,11 +273,16 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         // Fast-path: Check RAM cache for active session before hitting SQLite
         let cache_key = format!("sess:{}", session_id);
         if let Some(user_bytes) = axiom_cache::CacheEngine::get(&cache_key).await {
-            if let Ok(username) = std::str::from_utf8(&user_bytes) {
+            if let Ok(cached) = serde_json::from_slice::<CachedSession>(&user_bytes) {
                 let ctx = AuthContext {
-                    api_key_name: format!("user:{}", username),
-                    role: Some("admin".to_string()),
+                    api_key_name: format!("user:{}", cached.username),
+                    role: if cached.is_super_admin {
+                        Some("admin".to_string())
+                    } else {
+                        Some("custom".to_string())
+                    },
                     is_session: true,
+                    permissions: cached.permissions,
                     ..Default::default()
                 };
                 req.extensions_mut().insert(ctx);
@@ -281,15 +293,6 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         if let Ok(Some(username)) =
             axiom_metadata::store::MetadataStore::validate_session(session_id).await
         {
-            // Cache active session in RAM for 60 seconds
-            axiom_cache::CacheEngine::set(
-                &cache_key,
-                bytes::Bytes::from(username.clone()),
-                60,
-                axiom_cache::Durability::MemoryOnly,
-            )
-            .await;
-
             let mut is_super = true;
             let mut permissions = Vec::new();
 
@@ -315,6 +318,22 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                         });
                     }
                 }
+            }
+
+            // Cache validated session and granular permissions in RAM for 60 seconds
+            let cached = CachedSession {
+                username: username.clone(),
+                is_super_admin: is_super,
+                permissions: permissions.clone(),
+            };
+            if let Ok(bytes) = serde_json::to_vec(&cached) {
+                axiom_cache::CacheEngine::set(
+                    &cache_key,
+                    bytes::Bytes::from(bytes),
+                    60,
+                    axiom_cache::Durability::MemoryOnly,
+                )
+                .await;
             }
 
             let ctx = AuthContext {

@@ -1281,12 +1281,14 @@ pub async fn get_db_config(
     db_name: &str,
     auth: &AuthContext,
 ) -> Result<DatabaseDefConfig, AxiomError> {
-    let allowed = if auth.is_session {
+    let allowed = if auth.is_session && auth.role.as_deref() != Some("custom") {
         true
     } else if !auth.permissions.is_empty() {
         auth.permissions
             .iter()
             .any(|p| p.database == "*" || p.database.eq_ignore_ascii_case(db_name))
+    } else if auth.is_session {
+        false
     } else {
         auth.db_scope
             .iter()

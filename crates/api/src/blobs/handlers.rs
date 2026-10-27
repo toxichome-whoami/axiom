@@ -6,6 +6,7 @@
  * Last structural change: Initial implementation of Phase 1-3 Blob Engine API.
  */
 
+use crate::admin::handlers::check_permission;
 use crate::blobs::get_blob_engine;
 use axiom_blob::{BlobData, BlobError};
 use axiom_core::{AuthContext, AxiomError};
@@ -641,13 +642,7 @@ pub async fn list_blobs_handler(
 pub async fn blob_stats_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required to view storage telemetry",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.view").await?;
 
     let engine = get_blob_engine()?;
     let stats = engine.stats().map_err(map_blob_error)?;
@@ -681,7 +676,10 @@ pub async fn list_namespaces_handler(
     let engine = get_blob_engine()?;
     let namespaces = engine.list_namespaces_info().map_err(map_blob_error)?;
 
-    let filtered = if auth.is_session || auth.role.as_deref() == Some("admin") {
+    let can_view_all = auth.role.as_deref() == Some("admin")
+        || check_permission(&auth, "blobs.view").await.is_ok();
+
+    let filtered = if can_view_all {
         namespaces
     } else {
         namespaces
@@ -705,7 +703,9 @@ pub async fn get_namespace_usage_handler(
     Path(namespace): Path<String>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+    let can_view_all = auth.role.as_deref() == Some("admin")
+        || check_permission(&auth, "blobs.view").await.is_ok();
+    if !can_view_all {
         PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
     }
 
@@ -755,7 +755,9 @@ pub async fn get_namespace_handler(
     Path(namespace): Path<String>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+    let can_view_all = auth.role.as_deref() == Some("admin")
+        || check_permission(&auth, "blobs.view").await.is_ok();
+    if !can_view_all {
         PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
     }
 
@@ -783,13 +785,7 @@ pub async fn create_namespace_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateNamespaceRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required to create storage namespaces",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.create").await?;
 
     let engine = get_blob_engine()?;
     let info = engine
@@ -816,13 +812,7 @@ pub async fn update_namespace_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<UpdateNamespaceRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required to update storage namespaces",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.update").await?;
 
     let engine = get_blob_engine()?;
     let info = engine
@@ -847,13 +837,7 @@ pub async fn delete_namespace_handler(
     Path(namespace): Path<String>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required to delete storage namespaces",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.delete").await?;
 
     let engine = get_blob_engine()?;
     let deleted_count = engine
@@ -1370,13 +1354,7 @@ pub async fn list_tickets_handler(
     Extension(auth): Extension<AuthContext>,
     Query(query): Query<ListTicketsQuery>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "AUTH_FORBIDDEN",
-            "Listing capability tickets requires administrative access",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.manage").await?;
 
     let ns = query.namespace.as_deref().unwrap_or("*");
     let key = query.key.as_deref();
@@ -1489,13 +1467,7 @@ pub async fn revoke_ticket_handler(
     Path(signature_or_id): Path<String>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "AUTH_FORBIDDEN",
-            "Revoking capability tickets requires administrative access",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.manage").await?;
 
     // Find the exact ticket signature before revoking in SQLite
     let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
@@ -1563,13 +1535,7 @@ pub async fn enable_ticket_handler(
     Path(signature_or_id): Path<String>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "AUTH_FORBIDDEN",
-            "Enabling capability tickets requires administrative access",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.manage").await?;
 
     // Find the exact ticket signature before enabling in SQLite
     let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
@@ -1631,13 +1597,7 @@ pub async fn delete_ticket_handler(
     Path(signature_or_id): Path<String>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "AUTH_FORBIDDEN",
-            "Deleting capability tickets requires administrative access",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.manage").await?;
 
     // Find the exact ticket signature before deleting from SQLite
     let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
@@ -2554,13 +2514,7 @@ pub async fn abort_upload_handler(
 pub async fn scrub_blobs_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin session required for integrity scrubbing",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.manage").await?;
 
     let engine = get_blob_engine()?;
     let (verified, corrupted) = engine.scrub_all().await.map_err(map_blob_error)?;
@@ -2579,13 +2533,7 @@ pub async fn scrub_blobs_handler(
 pub async fn sweep_expired_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin session required for TTL sweep",
-            StatusCode::FORBIDDEN,
-        ));
-    }
+    check_permission(&auth, "blobs.manage").await?;
 
     let engine = get_blob_engine()?;
     let count = engine.sweep_expired().await.map_err(map_blob_error)?;

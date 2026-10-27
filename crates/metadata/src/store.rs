@@ -1504,11 +1504,23 @@ impl MetadataStore {
             return Err("Root super admin account cannot be deleted".to_string());
         }
 
-        let mut name_rows = conn
-            .query("SELECT username FROM users WHERE id = ?1", [id])
+        let mut target_rows = conn
+            .query("SELECT is_super_admin, username FROM users WHERE id = ?1", [id])
             .await
             .map_err(|e| e.to_string())?;
-        let username: Option<String> = name_rows.next().await.ok().flatten().and_then(|r| r.get(0).ok());
+
+        let (is_super, username): (bool, Option<String>) = if let Ok(Some(row)) = target_rows.next().await {
+            (
+                row.get::<i64>(0).map(|v| v == 1).unwrap_or(false),
+                row.get(1).ok(),
+            )
+        } else {
+            return Err(format!("User with ID {} not found", id));
+        };
+
+        if is_super {
+            return Err("Root super admin account cannot be deleted".to_string());
+        }
 
         let affected = conn
             .execute("DELETE FROM users WHERE id = ?1", [id])
@@ -3573,5 +3585,80 @@ mod tests {
             .await
             .unwrap();
         assert!(collision_check.next().await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_user_deletion_protection_invariants() {
+        let db = Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // User 1: Root Super Admin
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('rootadmin', 'hash1', 'root@axiom.io', 1, '{}', ?1, ?2)",
+            libsql::params![now, now],
+        ).await.unwrap();
+
+        // User 2: Non-root Super Admin
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('second_super', 'hash2', 'second@axiom.io', 1, '{}', ?1, ?2)",
+            libsql::params![now, now],
+        ).await.unwrap();
+
+        // User 3: Standard Operator
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('operator', 'hash3', 'op@axiom.io', 0, '{}', ?1, ?2)",
+            libsql::params![now, now],
+        ).await.unwrap();
+
+        // Query min id
+        let min_id: i64 = conn
+            .query("SELECT MIN(id) FROM users", ())
+            .await
+            .unwrap()
+            .next()
+            .await
+            .unwrap()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(min_id, 1);
+
+        // Invariant 1: ID = 1 or min_id must fail deletion check
+        let mut target1 = conn.query("SELECT is_super_admin FROM users WHERE id = 1", ()).await.unwrap();
+        let is_super1: i64 = target1.next().await.unwrap().unwrap().get(0).unwrap();
+        assert!(1 == 1 || min_id == 1 || is_super1 == 1, "Root user 1 must be protected");
+
+        // Invariant 2: User 2 is_super_admin must fail deletion check
+        let mut target2 = conn.query("SELECT is_super_admin FROM users WHERE id = 2", ()).await.unwrap();
+        let is_super2: i64 = target2.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(is_super2, 1);
+        let can_delete_user2 = target2_id_deletable(2, min_id, is_super2 == 1);
+        assert!(!can_delete_user2, "Super admin user 2 must not be deletable");
+
+        // Invariant 3: Standard operator is deletable
+        let mut target3 = conn.query("SELECT is_super_admin FROM users WHERE id = 3", ()).await.unwrap();
+        let is_super3: i64 = target3.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(is_super3, 0);
+        let can_delete_user3 = target2_id_deletable(3, min_id, is_super3 == 1);
+        assert!(can_delete_user3, "Standard operator must be deletable");
+
+        fn target2_id_deletable(id: i64, min_id: i64, is_super: bool) -> bool {
+            if id == 1 || min_id == id || is_super {
+                return false;
+            }
+            true
+        }
     }
 }

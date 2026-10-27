@@ -28,6 +28,7 @@ import {
   StorageItem,
 } from "./types";
 import { NamespaceUsage } from "../../types";
+import { hasPermission } from "../../api/session";
 import { formatBytes } from "./format";
 
 export interface StorageToolbarProps {
@@ -491,7 +492,8 @@ export function StorageToolbar({
         {/* Quick Share Link CTA Button */}
         {selectedFileItem &&
           selectedFileItem.type === "file" &&
-          onShareClick && (
+          onShareClick &&
+          hasPermission("blobs.update") && (
             <button
               type="button"
               onClick={() => onShareClick(selectedFileItem)}
@@ -504,10 +506,11 @@ export function StorageToolbar({
           )}
 
         {/* Direct Upload CTA Button with Dropdown for Folder & Multi-file Upload */}
-        <div
-          className="relative inline-flex items-center shrink-0"
-          ref={uploadMenuRef}
-        >
+        {hasPermission("blobs.create") && (
+          <div
+            className="relative inline-flex items-center shrink-0"
+            ref={uploadMenuRef}
+          >
           <button
             type="button"
             onClick={onUploadClick}
@@ -588,7 +591,8 @@ export function StorageToolbar({
                 </div>
               );
             })()}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

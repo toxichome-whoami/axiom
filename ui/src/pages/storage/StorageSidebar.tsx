@@ -11,6 +11,7 @@ import { StorageItem } from "./types";
 import { FileTree } from "./FileTree";
 import { formatBytes } from "./format";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { hasPermission } from "../../api/session";
 
 export interface StorageSidebarProps {
   width?: number;
@@ -243,7 +244,7 @@ export function StorageSidebar({
 
         {/* Action icons: Settings & Create Namespace + Mobile Collapse Toggle */}
         <div className="flex items-center gap-1 shrink-0">
-          {activeNamespace && (
+          {activeNamespace && (hasPermission("blobs.update") || hasPermission("blobs.delete")) && (
             <button
               type="button"
               onClick={onOpenManageNamespace}
@@ -254,14 +255,16 @@ export function StorageSidebar({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onOpenNewNamespace}
-            title="Create new namespace"
-            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+          {hasPermission("blobs.create") && (
+            <button
+              type="button"
+              onClick={onOpenNewNamespace}
+              title="Create new namespace"
+              className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Mobile expand/collapse toggle for tree view */}
           <button

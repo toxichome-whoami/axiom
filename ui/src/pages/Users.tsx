@@ -72,6 +72,17 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     ],
   },
   {
+    id: "blobs",
+    name: "Native Blob Storage",
+    icon: HardDrive,
+    permissions: [
+      { id: "blobs.view", label: "View", description: "Inspect blob namespaces and storage usage" },
+      { id: "blobs.create", label: "Create", description: "Provision new storage namespaces" },
+      { id: "blobs.update", label: "Update", description: "Modify namespace quotas and settings" },
+      { id: "blobs.delete", label: "Delete", description: "Remove namespaces and permanently delete data" },
+    ],
+  },
+  {
     id: "keys",
     name: "API Keys",
     icon: Key,
@@ -165,18 +176,31 @@ function formatDate(epochSec?: number): string {
 function resolveDependencies(perms: UserPermissionSet): UserPermissionSet {
   const sys = new Set(perms.system || []);
 
-  // Database dependencies: any db rule or mutation requires db.view
+  // Database dependencies: any db rule or mutation requires databases.view
   const hasDbRules = Boolean(perms.databases && perms.databases.length > 0);
-  const hasDbOps = sys.has("db.create") || sys.has("db.update") || hasDbRules;
+  const hasDbOps =
+    sys.has("databases.create") ||
+    sys.has("databases.update") ||
+    sys.has("databases.delete") ||
+    sys.has("db.create") ||
+    sys.has("db.update") ||
+    sys.has("db.delete") ||
+    hasDbRules;
   if (hasDbOps) {
-    sys.add("db.view");
+    sys.add("databases.view");
   }
 
-  // Blob dependencies: any blob rule or mutation requires blob.view
+  // Blob dependencies: any blob rule or mutation requires blobs.view
   const hasBlobRules = Boolean(perms.blobs && perms.blobs.length > 0);
-  const hasBlobOps = sys.has("blob.create") || sys.has("blob.delete") || hasBlobRules;
+  const hasBlobOps =
+    sys.has("blobs.create") ||
+    sys.has("blobs.update") ||
+    sys.has("blobs.delete") ||
+    sys.has("blob.create") ||
+    sys.has("blob.delete") ||
+    hasBlobRules;
   if (hasBlobOps) {
-    sys.add("blob.view");
+    sys.add("blobs.view");
   }
 
   // Users module dependencies
@@ -190,13 +214,18 @@ function resolveDependencies(perms: UserPermissionSet): UserPermissionSet {
   }
 
   // Keys module dependencies
-  if (sys.has("keys.create") || sys.has("keys.update") || sys.has("keys.delete")) {
+  if (sys.has("keys.create") || sys.has("keys.update") || sys.has("keys.delete") || sys.has("keys.rotate")) {
     sys.add("keys.view");
   }
 
   // Cluster module dependencies
-  if (sys.has("cluster.manage")) {
+  if (sys.has("cluster.manage") || sys.has("cluster.connect")) {
     sys.add("cluster.view");
+  }
+
+  // Settings module dependencies
+  if (sys.has("settings.manage")) {
+    sys.add("settings.view");
   }
 
   return {
@@ -366,6 +395,14 @@ export function Users() {
   );
   // Non-root operators cannot modify the Root Super-Administrator
   const isTargetRootProtected = isEditingRoot && !isCurrentOperatorRoot;
+
+  // Active operator cannot delete their own account
+  const isEditingSelf = Boolean(
+    currentUser &&
+      editingUser &&
+      (currentUser.id === editingUser.id ||
+        currentUser.username.toLowerCase() === editingUser.username.toLowerCase()),
+  );
 
   // Anti-Privilege-Escalation Guards: Operators can only delegate privileges they personally hold
   const isHeldByCurrentOperator = useCallback(
@@ -677,6 +714,20 @@ export function Users() {
   // Delete User
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
+    if (deleteTarget.id === 1 || deleteTarget.is_super_admin) {
+      setErrorMessage("Root super admin account cannot be deleted");
+      setDeleteTarget(null);
+      return;
+    }
+    if (
+      currentUser &&
+      (deleteTarget.id === currentUser.id ||
+        deleteTarget.username.toLowerCase() === currentUser.username.toLowerCase())
+    ) {
+      setErrorMessage("Cannot delete your own active administrator account");
+      setDeleteTarget(null);
+      return;
+    }
     setIsDeleting(true);
     try {
       await api.deleteUser(deleteTarget.id);
@@ -1659,7 +1710,7 @@ export function Users() {
         width="w-[640px] max-w-full"
       >
         {/* Navigation Tabs (Only when editing non-root users) */}
-        {editingUser && editingUser.id !== 1 && canDelete && (
+        {editingUser && !isEditingRoot && canDelete && (
           <div className="border-b border-[#222222] px-5 py-2.5 bg-[#0e0e0e] shrink-0 font-sans">
             <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
               <button
@@ -1689,38 +1740,58 @@ export function Users() {
         )}
 
         {/* Danger Tab */}
-        {editingUser && editingUser.id !== 1 && drawerTab === "danger" ? (
+        {editingUser && !isEditingRoot && drawerTab === "danger" ? (
           <div className="flex-1 p-5 overflow-y-auto font-sans">
-            <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">
-                Delete User
+            {isEditingSelf ? (
+              <div className="rounded-[8px] border border-[#3a2a10] bg-[#141006] p-4">
+                <div className="flex items-center gap-2 text-[15px] font-medium text-[#f59e0b] tracking-tight mb-1.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-[#f59e0b]" />
+                  <span>Cannot Delete Own Account</span>
+                </div>
+                <div className="text-[13px] text-[#a1a1aa] leading-relaxed mb-4">
+                  You cannot delete your own active administrator account while signed in. Another administrator with user deletion privileges must perform this action.
+                </div>
+                <button
+                  type="button"
+                  disabled
+                  title="Cannot delete your own active account"
+                  className="flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-[#737373] bg-[#1e1e1e] border border-[#2a2a2a] cursor-not-allowed opacity-60 font-sans text-[13px]"
+                >
+                  Delete User (Disabled)
+                </button>
               </div>
-              <div className="text-[13px] text-[#8c8c8c] leading-relaxed mb-4">
-                Permanently delete user{" "}
-                <span className="text-white font-medium">
-                  {editingUser.username}
-                </span>
-                . All assigned capabilities and active sessions will be revoked.
-              </div>
-              <button
-                type="button"
-                disabled={!canDelete}
-                onClick={() => setDeleteTarget(editingUser)}
-                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
-              >
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-                />
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-                />
-                <span className="relative flex items-center gap-1.5 font-sans">
+            ) : (
+              <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+                <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">
                   Delete User
-                </span>
-              </button>
-            </div>
+                </div>
+                <div className="text-[13px] text-[#8c8c8c] leading-relaxed mb-4">
+                  Permanently delete user{" "}
+                  <span className="text-white font-medium">
+                    {editingUser.username}
+                  </span>
+                  . All assigned capabilities and active sessions will be revoked.
+                </div>
+                <button
+                  type="button"
+                  disabled={!canDelete}
+                  onClick={() => setDeleteTarget(editingUser)}
+                  className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                  />
+                  <span className="relative flex items-center gap-1.5 font-sans">
+                    Delete User
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           /* Configuration Tab Form */

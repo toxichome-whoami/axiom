@@ -37,6 +37,7 @@ import {
   HealthData,
   UserRecordApi,
 } from "../api/client";
+import { hasPermission } from "../api/session";
 
 export interface ApiRouteItem {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
@@ -75,15 +76,16 @@ export function Settings() {
   const loadLiveSettings = async () => {
     const curGen = ++fetchGenRef.current;
     try {
-      const [usersRes, statusRes, healthRes] = await Promise.allSettled([
-        api.listUsers(),
+      const fetchUsers = hasPermission("users.view");
+      const [statusRes, healthRes, usersRes] = await Promise.allSettled([
         api.getStatus(),
         api.getHealth(),
+        fetchUsers ? api.listUsers() : Promise.resolve([]),
       ]);
 
       if (curGen !== fetchGenRef.current) return;
 
-      if (usersRes.status === "fulfilled") {
+      if (fetchUsers && usersRes.status === "fulfilled") {
         const userList: UserRecordApi[] = usersRes.value;
         setAdmins(
           userList.map((u) => ({
@@ -682,9 +684,13 @@ export function Settings() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled={isReloading}
+            disabled={isReloading || !hasPermission("settings.manage")}
             onClick={handleReloadSnapshot}
-            title="Reload metadata snapshot"
+            title={
+              hasPermission("settings.manage")
+                ? "Reload metadata snapshot"
+                : "Requires settings.manage permission"
+            }
             aria-label="Reload metadata snapshot"
             className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
           >

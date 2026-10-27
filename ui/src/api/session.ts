@@ -84,7 +84,7 @@ export function getCurrentUser(): UserRecordApi | null {
 export function hasPermission(required: string): boolean {
   const user = getCurrentUser();
   if (!user) {
-    return true; // Optimistic initial render before getMe hydrates
+    return false; // Deny by default when unauthenticated or unhydrated
   }
   if (user.is_super_admin) {
     return true;
@@ -96,6 +96,25 @@ export function hasPermission(required: string): boolean {
   if (perms.includes(required)) {
     return true;
   }
+
+  // Dual aliasing for database permissions: databases.<action> <-> db.<action>
+  if (required.startsWith("databases.")) {
+    const action = required.slice("databases.".length);
+    if (perms.includes(`db.${action}`) || perms.includes("db.*")) return true;
+  } else if (required.startsWith("db.")) {
+    const action = required.slice("db.".length);
+    if (perms.includes(`databases.${action}`) || perms.includes("databases.*")) return true;
+  }
+
+  // Dual aliasing for blob permissions: blobs.<action> <-> blob.<action>
+  if (required.startsWith("blobs.")) {
+    const action = required.slice("blobs.".length);
+    if (perms.includes(`blob.${action}`) || perms.includes("blob.*")) return true;
+  } else if (required.startsWith("blob.")) {
+    const action = required.slice("blob.".length);
+    if (perms.includes(`blobs.${action}`) || perms.includes("blobs.*")) return true;
+  }
+
   const resource = required.split(".")[0];
   if (resource && perms.includes(`${resource}.*`)) {
     return true;
@@ -104,13 +123,54 @@ export function hasPermission(required: string): boolean {
   // Legacy capability token aliases
   if (required.startsWith("keys.") && perms.includes("manage_keys")) return true;
   if (required.startsWith("roles.") && perms.includes("manage_roles")) return true;
-  if (required.startsWith("databases.") && perms.includes("manage_databases")) return true;
+  if ((required.startsWith("databases.") || required.startsWith("db.")) && perms.includes("manage_databases")) return true;
   if (required.startsWith("users.") && perms.includes("manage_users")) return true;
   if (required.startsWith("audit.") && perms.includes("view_audit")) return true;
   if (required.startsWith("cluster.") && perms.includes("manage_cluster")) return true;
   if (required.startsWith("settings.") && perms.includes("manage_settings")) return true;
+  if ((required.startsWith("blobs.") || required.startsWith("blob.")) && perms.includes("manage_blobs")) return true;
 
   return false;
+}
+
+/**
+ * Checks whether the current operator has read or write access to a given database.
+ */
+export function hasDatabaseAccess(dbName?: string, requiredOp?: string): boolean {
+  const user = getCurrentUser();
+  if (!user) return false;
+  if (user.is_super_admin) return true;
+  if (hasPermission("databases.view") || hasPermission("databases.*")) return true;
+
+  const dbRules = user.permissions?.databases || [];
+  if (!dbName) return dbRules.length > 0;
+
+  return dbRules.some((rule) => {
+    const dbMatches = rule.database === "*" || rule.database === dbName;
+    if (!dbMatches) return false;
+    if (!requiredOp) return true;
+    return rule.operations.includes(requiredOp) || rule.operations.includes("*");
+  });
+}
+
+/**
+ * Checks whether the current operator has access to a blob namespace.
+ */
+export function hasBlobAccess(namespace?: string, requiredOp?: string): boolean {
+  const user = getCurrentUser();
+  if (!user) return false;
+  if (user.is_super_admin) return true;
+  if (hasPermission("blobs.view") || hasPermission("blobs.*")) return true;
+
+  const blobRules = user.permissions?.blobs || [];
+  if (!namespace) return blobRules.length > 0;
+
+  return blobRules.some((rule) => {
+    const nsMatches = rule.namespace === "*" || rule.namespace === namespace;
+    if (!nsMatches) return false;
+    if (!requiredOp) return true;
+    return rule.operations.includes(requiredOp) || rule.operations.includes("*");
+  });
 }
 
 /**

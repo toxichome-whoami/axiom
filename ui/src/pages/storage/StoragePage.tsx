@@ -68,6 +68,7 @@ import {
   ConflictingFile,
   ConflictResolution,
 } from "./FileConflictModal";
+import { hasPermission } from "../../api/session";
 
 /**
  * Recovers persisted storage navigation parameters from URL or localStorage.
@@ -2911,7 +2912,7 @@ export function StoragePage() {
                   variant="primary"
                   size="md"
                   type="submit"
-                  disabled={isCreatingNs || !newNsName.trim()}
+                  disabled={isCreatingNs || !newNsName.trim() || !hasPermission("blobs.create")}
                   isLoading={isCreatingNs}
                 >
                   {isCreatingNs ? "Creating..." : "Create Namespace"}
@@ -3081,7 +3082,7 @@ export function StoragePage() {
                     variant="primary"
                     size="md"
                     type="submit"
-                    disabled={isSavingNs || !editNsName.trim()}
+                    disabled={isSavingNs || !editNsName.trim() || !hasPermission("blobs.update")}
                     isLoading={isSavingNs}
                   >
                     {isSavingNs ? "Saving..." : "Save Changes"}
@@ -3115,6 +3116,7 @@ export function StoragePage() {
                     variant="danger"
                     size="md"
                     type="button"
+                    disabled={!hasPermission("blobs.delete")}
                     onClick={() => setNsToDelete(currentNsInfo)}
                   >
                     Delete Namespace

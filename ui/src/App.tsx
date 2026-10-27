@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from "react";
 import { Layout, NavPath } from "./components/Layout";
-import { setSession, clearSession, hasActiveSession } from "./api/session";
+import { setSession, clearSession, hasActiveSession, setCurrentUser, hasPermission } from "./api/session";
 import { api } from "./api/client";
 import { GlobalAlertDialog } from "./components/ui/AlertDialog";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
@@ -49,6 +49,63 @@ const ShareViewerPage = lazy(() =>
     default: m.ShareViewerPage,
   })),
 );
+
+const ROUTE_PERMISSIONS: Partial<Record<NavPath, string>> = {
+  "/system/databases": "databases.view",
+  "/system/tables": "databases.view",
+  "/system/storage": "blobs.view",
+  "/system/cluster": "cluster.view",
+  "/system/users": "users.view",
+  "/system/keys": "keys.view",
+  "/system/roles": "roles.view",
+  "/system/audit": "audit.view",
+  "/system/mcp": "settings.view",
+  "/system/settings": "settings.view",
+};
+
+function AccessRestricted({
+  required,
+  onBack,
+}: {
+  required: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center min-h-[420px] p-6 text-center">
+      <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4 text-red-400">
+        <svg
+          className="w-6 h-6"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+          />
+        </svg>
+      </div>
+      <h2 className="text-[17px] font-semibold text-white mb-2">
+        Access Restricted
+      </h2>
+      <p className="text-[13px] text-[#8c8c8c] max-w-md mb-6 leading-relaxed">
+        Your user account does not possess the required capability{" "}
+        <span className="font-mono text-[#d4d4d4] bg-[#1a1a1a] px-1.5 py-0.5 rounded border border-[#2e2e2e]">
+          {required}
+        </span>{" "}
+        to view this section. Contact your system administrator for access.
+      </p>
+      <button
+        onClick={onBack}
+        className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#262626] text-white text-[13px] font-medium border border-[#333333] transition-colors cursor-pointer"
+      >
+        Return to Overview
+      </button>
+    </div>
+  );
+}
 
 function PageFallback() {
   return (
@@ -142,12 +199,17 @@ export function App() {
     };
   }, []);
 
-  // Probe server status on mount to verify session validity with backend
+  // Probe session and hydrate effective permissions on mount
   useEffect(() => {
     if (isAuthenticated) {
-      api.getStatus().catch(() => {
-        handleLogout();
-      });
+      api
+        .getMe()
+        .then((user) => {
+          setCurrentUser(user);
+        })
+        .catch(() => {
+          handleLogout();
+        });
     }
   }, [isAuthenticated]);
 
@@ -215,6 +277,19 @@ export function App() {
   }
 
   function getPageDetails(): { title: string; component: React.ReactNode } {
+    const requiredPermission = ROUTE_PERMISSIONS[currentPath];
+    if (requiredPermission && !hasPermission(requiredPermission)) {
+      return {
+        title: "Access Restricted",
+        component: (
+          <AccessRestricted
+            required={requiredPermission}
+            onBack={() => handleNavigate("/system")}
+          />
+        ),
+      };
+    }
+
     switch (currentPath) {
       case "/system/databases":
         return { title: "Database Pools", component: <Databases /> };

@@ -40,9 +40,12 @@ impl UserPermissionSet {
                 return true;
             }
             if let Some((res, act)) = p.split_once('.') {
-                if res.eq_ignore_ascii_case(req_resource)
-                    && (act == "*" || act.eq_ignore_ascii_case(req_action))
-                {
+                let res_match = res.eq_ignore_ascii_case(req_resource)
+                    || (res.eq_ignore_ascii_case("db") && req_resource.eq_ignore_ascii_case("databases"))
+                    || (res.eq_ignore_ascii_case("databases") && req_resource.eq_ignore_ascii_case("db"))
+                    || (res.eq_ignore_ascii_case("blob") && req_resource.eq_ignore_ascii_case("blobs"))
+                    || (res.eq_ignore_ascii_case("blobs") && req_resource.eq_ignore_ascii_case("blob"));
+                if res_match && (act == "*" || act.eq_ignore_ascii_case(req_action)) {
                     return true;
                 }
             }
@@ -59,7 +62,10 @@ impl UserPermissionSet {
             if (required.starts_with("settings.")) && p == "manage_settings" {
                 return true;
             }
-            if (required.starts_with("databases.")) && p == "manage_databases" {
+            if (required.starts_with("databases.") || required.starts_with("db.")) && p == "manage_databases" {
+                return true;
+            }
+            if (required.starts_with("blobs.") || required.starts_with("blob.")) && p == "manage_blobs" {
                 return true;
             }
             if required == "audit.view" && (p == "view_audit" || p == "audit.view") {
@@ -440,5 +446,57 @@ mod tests {
         assert!(root_caller.subsumes(&escalating_target).is_ok());
         assert!(root_caller.subsumes(&escalating_db).is_ok());
         assert!(root_caller.subsumes(&escalating_blob).is_ok());
+    }
+
+    #[test]
+    fn test_has_system_permission_aliasing_and_enforcement() {
+        // 1. Dual alias matching: db.view <-> databases.view
+        let db_set = UserPermissionSet {
+            system: vec!["db.view".to_string()],
+            databases: vec![],
+            blobs: vec![],
+        };
+        assert!(db_set.has_system_permission("databases.view"));
+        assert!(db_set.has_system_permission("db.view"));
+        assert!(!db_set.has_system_permission("databases.create"));
+        assert!(!db_set.has_system_permission("blobs.view"));
+
+        // 2. Dual alias matching: blobs.view <-> blob.view
+        let blob_set = UserPermissionSet {
+            system: vec!["blobs.create".to_string(), "blob.view".to_string()],
+            databases: vec![],
+            blobs: vec![],
+        };
+        assert!(blob_set.has_system_permission("blob.create"));
+        assert!(blob_set.has_system_permission("blobs.create"));
+        assert!(blob_set.has_system_permission("blobs.view"));
+        assert!(blob_set.has_system_permission("blob.view"));
+        assert!(!blob_set.has_system_permission("blobs.delete"));
+
+        // 3. Resource wildcard matching
+        let wildcard_set = UserPermissionSet {
+            system: vec!["databases.*".to_string()],
+            databases: vec![],
+            blobs: vec![],
+        };
+        assert!(wildcard_set.has_system_permission("databases.view"));
+        assert!(wildcard_set.has_system_permission("databases.create"));
+        assert!(wildcard_set.has_system_permission("db.delete"));
+        assert!(!wildcard_set.has_system_permission("users.view"));
+
+        // 4. Global wildcard matching
+        let global_set = UserPermissionSet {
+            system: vec!["*".to_string()],
+            databases: vec![],
+            blobs: vec![],
+        };
+        assert!(global_set.has_system_permission("anything.view"));
+        assert!(global_set.has_system_permission("users.delete"));
+
+        // 5. Empty permissions reject everything
+        let empty_set = UserPermissionSet::default();
+        assert!(!empty_set.has_system_permission("databases.view"));
+        assert!(!empty_set.has_system_permission("users.view"));
+        assert!(!empty_set.has_system_permission("blobs.view"));
     }
 }
