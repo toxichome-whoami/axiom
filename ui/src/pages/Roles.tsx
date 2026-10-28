@@ -66,35 +66,59 @@ const ROLE_PRESETS: RolePreset[] = [
     label: "DB Read-Only",
     name: "db_readonly",
     description: "Read-only SELECT access across all relational databases",
-    dbRules: [{ database: "*", table_name: "*", operations: ["SELECT"], rls_filter: "" }],
+    dbRules: [
+      {
+        database: "*",
+        table_name: "*",
+        operations: ["SELECT"],
+        rls_filter: "",
+      },
+    ],
     blobRules: [],
   },
   {
     label: "DB Read-Write",
     name: "db_readwrite",
     description: "Full CRUD mutations across all relational databases",
-    dbRules: [{ database: "*", table_name: "*", operations: ["SELECT", "INSERT", "UPDATE", "DELETE"], rls_filter: "" }],
+    dbRules: [
+      {
+        database: "*",
+        table_name: "*",
+        operations: ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        rls_filter: "",
+      },
+    ],
     blobRules: [],
   },
   {
     label: "Blob Read-Only",
     name: "blob_viewer",
-    description: "Download, range stream, and view objects across all blob namespaces",
+    description:
+      "Download, range stream, and view objects across all blob namespaces",
     dbRules: [],
     blobRules: [{ namespace: "*", operations: ["READ"] }],
   },
   {
     label: "Blob Full Access",
     name: "blob_manager",
-    description: "Upload, multipart, range stream, and delete blob storage objects",
+    description:
+      "Upload, multipart, range stream, and delete blob storage objects",
     dbRules: [],
     blobRules: [{ namespace: "*", operations: ["READ", "WRITE", "DELETE"] }],
   },
   {
     label: "Universal Admin",
     name: "universal_admin",
-    description: "Full administrative access to both SQL databases and native blob storage",
-    dbRules: [{ database: "*", table_name: "*", operations: ["SELECT", "INSERT", "UPDATE", "DELETE"], rls_filter: "" }],
+    description:
+      "Full administrative access to both SQL databases and native blob storage",
+    dbRules: [
+      {
+        database: "*",
+        table_name: "*",
+        operations: ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        rls_filter: "",
+      },
+    ],
     blobRules: [{ namespace: "*", operations: ["READ", "WRITE", "DELETE"] }],
   },
 ];
@@ -108,17 +132,22 @@ function isBlobPermission(database: string, operations: string[]): boolean {
   );
 }
 
-function areRoleDbRulesEqual(a: RoleDatabaseRule[], b: RoleDatabaseRule[]): boolean {
+function areRoleDbRulesEqual(
+  a: RoleDatabaseRule[],
+  b: RoleDatabaseRule[],
+): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     const rA = a[i];
     const rB = b[i];
     if (rA.database.trim() !== rB.database.trim()) return false;
     if (rA.table_name.trim() !== rB.table_name.trim()) return false;
-    if ((rA.rls_filter?.trim() || "") !== (rB.rls_filter?.trim() || "")) return false;
+    if ((rA.rls_filter?.trim() || "") !== (rB.rls_filter?.trim() || ""))
+      return false;
     const opsA = [...rA.operations].sort();
     const opsB = [...rB.operations].sort();
-    if (opsA.length !== opsB.length || !opsA.every((v, j) => v === opsB[j])) return false;
+    if (opsA.length !== opsB.length || !opsA.every((v, j) => v === opsB[j]))
+      return false;
   }
   return true;
 }
@@ -131,7 +160,8 @@ function areRoleBlobRulesEqual(a: RoleBlobRule[], b: RoleBlobRule[]): boolean {
     if (rA.namespace.trim() !== rB.namespace.trim()) return false;
     const opsA = [...rA.operations].sort();
     const opsB = [...rB.operations].sort();
-    if (opsA.length !== opsB.length || !opsA.every((v, j) => v === opsB[j])) return false;
+    if (opsA.length !== opsB.length || !opsA.every((v, j) => v === opsB[j]))
+      return false;
   }
   return true;
 }
@@ -142,7 +172,11 @@ interface RoleScopeSectionProps {
   dbOptions: { value: string; label: string }[];
   blobOptions: { value: string; label: string }[];
   onAddDbRule: () => void;
-  onUpdateDbRule: (idx: number, field: keyof RoleDatabaseRule, val: any) => void;
+  onUpdateDbRule: (
+    idx: number,
+    field: keyof RoleDatabaseRule,
+    val: any,
+  ) => void;
   onToggleDbOp: (idx: number, op: string) => void;
   onRemoveDbRule: (idx: number) => void;
   onAddBlobRule: () => void;
@@ -196,7 +230,8 @@ function RoleScopeSection({
               </span>
             </div>
             <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-              Configure upstream database aliases, tables, and SQL operation grants
+              Configure upstream database aliases, tables, and SQL operation
+              grants
             </p>
           </div>
           <Button
@@ -285,7 +320,9 @@ function RoleScopeSection({
                 </div>
 
                 <div className="pt-1 flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
+                  <span className="text-[12px] text-[#737373] mr-1">
+                    Permitted:
+                  </span>
                   {DB_OPERATIONS.map((op) => {
                     const isAllowed = rule.operations?.includes(op);
                     return (
@@ -364,7 +401,9 @@ function RoleScopeSection({
                     <CustomSelect
                       value={rule.namespace}
                       options={getBlobOptions(rule.namespace)}
-                      onChange={(val) => onUpdateBlobRule(idx, "namespace", val)}
+                      onChange={(val) =>
+                        onUpdateBlobRule(idx, "namespace", val)
+                      }
                       className="w-full"
                       menuWidth="w-full"
                     />
@@ -380,7 +419,9 @@ function RoleScopeSection({
                 </div>
 
                 <div className="pt-1 flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
+                  <span className="text-[12px] text-[#737373] mr-1">
+                    Permitted:
+                  </span>
                   {BLOB_OPERATIONS.map((op) => {
                     const isAllowed = rule.operations?.includes(op);
                     return (
@@ -478,15 +519,21 @@ export function Roles() {
     loadRoles();
   }, []);
 
-  const dbOptions = useMemo(() => [
-    { value: "*", label: "* (All Databases)" },
-    ...databaseAliases.map((a) => ({ value: a, label: a })),
-  ], [databaseAliases]);
+  const dbOptions = useMemo(
+    () => [
+      { value: "*", label: "* (All Databases)" },
+      ...databaseAliases.map((a) => ({ value: a, label: a })),
+    ],
+    [databaseAliases],
+  );
 
-  const blobOptions = useMemo(() => [
-    { value: "*", label: "* (All Namespaces)" },
-    ...blobNamespaces.map((n) => ({ value: n, label: n })),
-  ], [blobNamespaces]);
+  const blobOptions = useMemo(
+    () => [
+      { value: "*", label: "* (All Namespaces)" },
+      ...blobNamespaces.map((n) => ({ value: n, label: n })),
+    ],
+    [blobNamespaces],
+  );
 
   // Toolbar & Filtering State
   const [searchQuery, setSearchQuery] = useState("");
@@ -586,7 +633,9 @@ export function Roles() {
       ) {
         const ns = p.database.toLowerCase().startsWith("blob:")
           ? p.database.slice(5)
-          : (p.database === "*" ? "*" : p.database);
+          : p.database === "*"
+            ? "*"
+            : p.database;
         const ops = p.operations
           .map((op) => {
             const u = op.toUpperCase();
@@ -628,7 +677,12 @@ export function Roles() {
   const handleAddEditDbRule = () => {
     setEditDbRules((prev) => [
       ...prev,
-      { database: "*", table_name: "*", operations: ["SELECT"], rls_filter: "" },
+      {
+        database: "*",
+        table_name: "*",
+        operations: ["SELECT"],
+        rls_filter: "",
+      },
     ]);
   };
 
@@ -694,7 +748,12 @@ export function Roles() {
   const handleAddNewDbRule = () => {
     setNewDbRules((prev) => [
       ...prev,
-      { database: "*", table_name: "*", operations: ["SELECT"], rls_filter: "" },
+      {
+        database: "*",
+        table_name: "*",
+        operations: ["SELECT"],
+        rls_filter: "",
+      },
     ]);
   };
 
@@ -824,7 +883,12 @@ export function Roles() {
     setNewRoleName("");
     setNewRoleDesc("");
     setNewDbRules([
-      { database: "*", table_name: "*", operations: ["SELECT"], rls_filter: "" },
+      {
+        database: "*",
+        table_name: "*",
+        operations: ["SELECT"],
+        rls_filter: "",
+      },
     ]);
     setNewBlobRules([]);
   }
@@ -852,7 +916,9 @@ export function Roles() {
       editRoleDesc.trim() !== initialManageStateRef.current.description.trim()
     )
       return true;
-    if (!areRoleDbRulesEqual(editDbRules, initialManageStateRef.current.dbRules))
+    if (
+      !areRoleDbRulesEqual(editDbRules, initialManageStateRef.current.dbRules)
+    )
       return true;
     if (
       !areRoleBlobRulesEqual(
@@ -1204,7 +1270,12 @@ export function Roles() {
               setNewRoleName("");
               setNewRoleDesc("");
               setNewDbRules([
-                { database: "*", table_name: "*", operations: ["SELECT"], rls_filter: "" },
+                {
+                  database: "*",
+                  table_name: "*",
+                  operations: ["SELECT"],
+                  rls_filter: "",
+                },
               ]);
               setNewBlobRules([]);
               setCreateOpen(true);
@@ -1575,7 +1646,8 @@ export function Roles() {
                 Role Configuration
               </h3>
               <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                Update role identifier, descriptive summary, and granular access permissions.
+                Update role identifier, descriptive summary, and granular access
+                permissions.
               </p>
             </div>
 
@@ -1637,7 +1709,8 @@ export function Roles() {
                 <span className="text-white font-medium">
                   {selectedRole?.name}
                 </span>
-                . All API keys and identities assigned to this role will lose database permissions.
+                . All API keys and identities assigned to this role will lose
+                database permissions.
               </div>
               <button
                 type="button"

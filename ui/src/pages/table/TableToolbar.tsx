@@ -377,7 +377,11 @@ export function TableToolbar({
                 type="button"
                 onClick={onOpenInsertRow}
                 disabled={!selectedTable || !canInsert}
-                title={!canInsert ? "Insert row (insufficient privileges)" : "Insert row"}
+                title={
+                  !canInsert
+                    ? "Insert row (insufficient privileges)"
+                    : "Insert row"
+                }
                 className="flex items-center gap-1.5 h-8 px-2.5 rounded-l-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer select-none"
               >
                 <Plus className="w-3.5 h-3.5 text-blue-400" />

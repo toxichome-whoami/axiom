@@ -206,7 +206,9 @@ export function Databases() {
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [newLibsqlMode, setNewLibsqlMode] = useState<"local" | "remote">("local");
+  const [newLibsqlMode, setNewLibsqlMode] = useState<"local" | "remote">(
+    "local",
+  );
   const [newLibsqlFile, setNewLibsqlFile] = useState("");
   const [newSnowflakeWarehouse, setNewSnowflakeWarehouse] = useState("");
   const [newSnowflakeSchema, setNewSnowflakeSchema] = useState("");
@@ -238,7 +240,9 @@ export function Databases() {
   const [editUsername, setEditUsername] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [showEditPassword, setShowEditPassword] = useState(false);
-  const [editLibsqlMode, setEditLibsqlMode] = useState<"local" | "remote">("local");
+  const [editLibsqlMode, setEditLibsqlMode] = useState<"local" | "remote">(
+    "local",
+  );
   const [editLibsqlFile, setEditLibsqlFile] = useState("");
   const [editSnowflakeWarehouse, setEditSnowflakeWarehouse] = useState("");
   const [editSnowflakeSchema, setEditSnowflakeSchema] = useState("");
@@ -1423,9 +1427,12 @@ export function Databases() {
                       setNewDatabase(parsed.database);
                       setNewUsername(parsed.username);
                       setNewPassword(parsed.password);
-                      if (parsed.libsqlMode) setNewLibsqlMode(parsed.libsqlMode);
-                      if (parsed.libsqlFile) setNewLibsqlFile(parsed.libsqlFile);
-                      if (parsed.warehouse) setNewSnowflakeWarehouse(parsed.warehouse);
+                      if (parsed.libsqlMode)
+                        setNewLibsqlMode(parsed.libsqlMode);
+                      if (parsed.libsqlFile)
+                        setNewLibsqlFile(parsed.libsqlFile);
+                      if (parsed.warehouse)
+                        setNewSnowflakeWarehouse(parsed.warehouse);
                       if (parsed.schema) setNewSnowflakeSchema(parsed.schema);
                       if (parsed.role) setNewSnowflakeRole(parsed.role);
                       if (parsed.token) setNewToken(parsed.token);
@@ -1591,7 +1598,8 @@ export function Databases() {
                     <div className="space-y-3">
                       <div>
                         <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
-                          Turso Endpoint URL <span className="text-[#e5484d]">*</span>
+                          Turso Endpoint URL{" "}
+                          <span className="text-[#e5484d]">*</span>
                         </label>
                         <input
                           type="text"
@@ -1621,7 +1629,9 @@ export function Databases() {
                           <label className="block text-[13px] font-medium text-[#cccccc]">
                             Auth Token (Bearer JWT)
                           </label>
-                          <span className="text-[11px] text-[#666666]">Optional</span>
+                          <span className="text-[11px] text-[#666666]">
+                            Optional
+                          </span>
                         </div>
                         <div className="relative">
                           <input
@@ -1663,7 +1673,8 @@ export function Databases() {
                           </button>
                         </div>
                         <p className="mt-1 text-[11px] text-[#737373]">
-                          Required for Turso Cloud databases. Leave blank for unauthenticated sqld instances.
+                          Required for Turso Cloud databases. Leave blank for
+                          unauthenticated sqld instances.
                         </p>
                       </div>
                     </div>
@@ -1674,7 +1685,8 @@ export function Databases() {
                 <div className="space-y-3">
                   <div>
                     <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
-                      Account Host / Identifier <span className="text-[#e5484d]">*</span>
+                      Account Host / Identifier{" "}
+                      <span className="text-[#e5484d]">*</span>
                     </label>
                     <input
                       type="text"
@@ -1896,7 +1908,8 @@ export function Databases() {
                         </button>
                       </div>
                       <p className="mt-1.5 text-[11px] text-[#737373]">
-                        Special characters are fine; Axiom escapes them automatically.
+                        Special characters are fine; Axiom escapes them
+                        automatically.
                       </p>
                     </div>
                   </div>
@@ -1968,7 +1981,8 @@ export function Databases() {
                           setAttachError(null);
                         }}
                         placeholder={
-                          DEFAULT_ENGINE_PORTS[newEngine.toLowerCase()] || "5432"
+                          DEFAULT_ENGINE_PORTS[newEngine.toLowerCase()] ||
+                          "5432"
                         }
                         className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
                       />
@@ -2104,7 +2118,8 @@ export function Databases() {
                         </button>
                       </div>
                       <p className="mt-1.5 text-[11px] text-[#737373]">
-                        Special characters are fine; Axiom escapes them automatically.
+                        Special characters are fine; Axiom escapes them
+                        automatically.
                       </p>
                     </div>
                   </div>
@@ -2131,7 +2146,8 @@ export function Databases() {
                     placeholder={
                       newEngine.toLowerCase() === "libsql"
                         ? `Leave blank to create data/${newAlias.trim() || "database"}.db`
-                        : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example ||
+                        : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]
+                            ?.example ||
                           "postgres://user:secret@host:5432/dbname"
                     }
                     className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
@@ -2203,49 +2219,50 @@ export function Databases() {
             )}
           </div>
 
-          {newEngine.toLowerCase() === "libsql" && newConnectMode === "string" && (
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-[13px] font-medium text-[#cccccc]">
-                  Auth Token{" "}
-                  <span className="text-[11px] font-normal text-[#888888]">
-                    (Turso / Remote LibSQL)
-                  </span>
-                </label>
-                <span className="text-[11px] text-[#666666]">Optional</span>
+          {newEngine.toLowerCase() === "libsql" &&
+            newConnectMode === "string" && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[13px] font-medium text-[#cccccc]">
+                    Auth Token{" "}
+                    <span className="text-[11px] font-normal text-[#888888]">
+                      (Turso / Remote LibSQL)
+                    </span>
+                  </label>
+                  <span className="text-[11px] text-[#666666]">Optional</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showNewToken ? "text" : "password"}
+                    value={newToken}
+                    onChange={(e) => {
+                      setNewToken(e.target.value);
+                      setTestResult(null);
+                      setAttachError(null);
+                    }}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewToken(!showNewToken)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                    tabIndex={-1}
+                    aria-label={showNewToken ? "Hide token" : "Show token"}
+                  >
+                    {showNewToken ? (
+                      <EyeOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[12px] text-[#737373]">
+                  JWT auth token required for remote Turso cloud databases.
+                  Leave blank for local files.
+                </p>
               </div>
-              <div className="relative">
-                <input
-                  type={showNewToken ? "text" : "password"}
-                  value={newToken}
-                  onChange={(e) => {
-                    setNewToken(e.target.value);
-                    setTestResult(null);
-                    setAttachError(null);
-                  }}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                  className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewToken(!showNewToken)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
-                  tabIndex={-1}
-                  aria-label={showNewToken ? "Hide token" : "Show token"}
-                >
-                  {showNewToken ? (
-                    <EyeOff className="w-3.5 h-3.5" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-              <p className="mt-1.5 text-[12px] text-[#737373]">
-                JWT auth token required for remote Turso cloud databases. Leave
-                blank for local files.
-              </p>
-            </div>
-          )}
+            )}
 
           {(newEngine.toLowerCase() === "postgresql" ||
             newEngine.toLowerCase() === "mysql") && (
@@ -2274,7 +2291,9 @@ export function Databases() {
                       ),
                     );
                   } else {
-                    setNewUrl((prev) => applySslModeToUrl(prev, newEngine, mode));
+                    setNewUrl((prev) =>
+                      applySslModeToUrl(prev, newEngine, mode),
+                    );
                   }
                   setTestResult(null);
                   setAttachError(null);
@@ -2563,7 +2582,9 @@ export function Databases() {
                         nextEngine.toLowerCase() === "postgresql" ||
                         nextEngine.toLowerCase() === "mysql"
                       ) {
-                        setEditSslMode(extractSslModeFromUrl(editUrl, nextEngine));
+                        setEditSslMode(
+                          extractSslModeFromUrl(editUrl, nextEngine),
+                        );
                       }
                       if (editConnectMode === "fields") {
                         const nextUrl = buildDatabaseUrl(
@@ -2621,11 +2642,16 @@ export function Databases() {
                               setEditDatabase(parsed.database);
                               setEditUsername(parsed.username);
                               setEditPassword(parsed.password);
-                              if (parsed.libsqlMode) setEditLibsqlMode(parsed.libsqlMode);
-                              if (parsed.libsqlFile) setEditLibsqlFile(parsed.libsqlFile);
-                              if (parsed.warehouse) setEditSnowflakeWarehouse(parsed.warehouse);
-                              if (parsed.schema) setEditSnowflakeSchema(parsed.schema);
-                              if (parsed.role) setEditSnowflakeRole(parsed.role);
+                              if (parsed.libsqlMode)
+                                setEditLibsqlMode(parsed.libsqlMode);
+                              if (parsed.libsqlFile)
+                                setEditLibsqlFile(parsed.libsqlFile);
+                              if (parsed.warehouse)
+                                setEditSnowflakeWarehouse(parsed.warehouse);
+                              if (parsed.schema)
+                                setEditSnowflakeSchema(parsed.schema);
+                              if (parsed.role)
+                                setEditSnowflakeRole(parsed.role);
                               if (parsed.token) setEditToken(parsed.token);
                             }
                             setEditConnectMode("fields");
@@ -2774,7 +2800,11 @@ export function Databases() {
                                 }}
                                 className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#1a1a1a] hover:bg-[#262626] text-[#a3a3a3] hover:text-white border border-[#262626] transition-colors cursor-pointer"
                               >
-                                Default (data/{editAlias.trim() || selectedPool?.alias || "database"}.db)
+                                Default (data/
+                                {editAlias.trim() ||
+                                  selectedPool?.alias ||
+                                  "database"}
+                                .db)
                               </button>
                               <button
                                 type="button"
@@ -2791,8 +2821,11 @@ export function Databases() {
                             </div>
                             <p className="text-[11px] text-[#737373] mt-1">
                               Stored locally inside the protected{" "}
-                              <code className="font-mono text-[#a3a3a3]">data/</code>{" "}
-                              directory. Uses high-throughput WAL mode and memory page cache.
+                              <code className="font-mono text-[#a3a3a3]">
+                                data/
+                              </code>{" "}
+                              directory. Uses high-throughput WAL mode and
+                              memory page cache.
                             </p>
                           </div>
                         ) : (
@@ -2829,7 +2862,9 @@ export function Databases() {
                                 <label className="block text-[13px] font-medium text-[#cccccc]">
                                   Auth Token (Bearer JWT)
                                 </label>
-                                <span className="text-[11px] text-[#666666]">Optional</span>
+                                <span className="text-[11px] text-[#666666]">
+                                  Optional
+                                </span>
                               </div>
                               <div className="relative">
                                 <input
@@ -2856,10 +2891,14 @@ export function Databases() {
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => setShowEditToken(!showEditToken)}
+                                  onClick={() =>
+                                    setShowEditToken(!showEditToken)
+                                  }
                                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                                   tabIndex={-1}
-                                  aria-label={showEditToken ? "Hide token" : "Show token"}
+                                  aria-label={
+                                    showEditToken ? "Hide token" : "Show token"
+                                  }
                                 >
                                   {showEditToken ? (
                                     <EyeOff className="w-3.5 h-3.5" />
@@ -2869,7 +2908,8 @@ export function Databases() {
                                 </button>
                               </div>
                               <p className="mt-1 text-[11px] text-[#737373]">
-                                Required for Turso Cloud databases. Leave blank for unauthenticated sqld instances.
+                                Required for Turso Cloud databases. Leave blank
+                                for unauthenticated sqld instances.
                               </p>
                             </div>
                           </div>
@@ -2938,7 +2978,10 @@ export function Databases() {
                           </div>
                           <div className="flex-1">
                             <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
-                              Role <span className="text-[11px] font-normal text-[#888888]">(optional)</span>
+                              Role{" "}
+                              <span className="text-[11px] font-normal text-[#888888]">
+                                (optional)
+                              </span>
                             </label>
                             <input
                               type="text"
@@ -3065,16 +3108,19 @@ export function Databases() {
                                 onChange={(e) => {
                                   const val = e.target.value;
                                   setEditPassword(val);
-                                  const nextUrl = buildDatabaseUrl("snowflake", {
-                                    host: editHost,
-                                    port: "443",
-                                    database: editDatabase,
-                                    schema: editSnowflakeSchema,
-                                    warehouse: editSnowflakeWarehouse,
-                                    role: editSnowflakeRole,
-                                    username: editUsername,
-                                    password: val,
-                                  });
+                                  const nextUrl = buildDatabaseUrl(
+                                    "snowflake",
+                                    {
+                                      host: editHost,
+                                      port: "443",
+                                      database: editDatabase,
+                                      schema: editSnowflakeSchema,
+                                      warehouse: editSnowflakeWarehouse,
+                                      role: editSnowflakeRole,
+                                      username: editUsername,
+                                      password: val,
+                                    },
+                                  );
                                   setEditUrl(nextUrl);
                                   setManageTestResult(null);
                                   setManageError(null);
@@ -3084,10 +3130,16 @@ export function Databases() {
                               />
                               <button
                                 type="button"
-                                onClick={() => setShowEditPassword(!showEditPassword)}
+                                onClick={() =>
+                                  setShowEditPassword(!showEditPassword)
+                                }
                                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                                 tabIndex={-1}
-                                aria-label={showEditPassword ? "Hide password" : "Show password"}
+                                aria-label={
+                                  showEditPassword
+                                    ? "Hide password"
+                                    : "Show password"
+                                }
                               >
                                 {showEditPassword ? (
                                   <EyeOff className="w-3.5 h-3.5" />
@@ -3097,7 +3149,8 @@ export function Databases() {
                               </button>
                             </div>
                             <p className="mt-1.5 text-[11px] text-[#737373]">
-                              Special characters are fine; Axiom escapes them automatically.
+                              Special characters are fine; Axiom escapes them
+                              automatically.
                             </p>
                           </div>
                         </div>
@@ -3169,8 +3222,9 @@ export function Databases() {
                                 setManageError(null);
                               }}
                               placeholder={
-                                DEFAULT_ENGINE_PORTS[editEngine.toLowerCase()] ||
-                                "5432"
+                                DEFAULT_ENGINE_PORTS[
+                                  editEngine.toLowerCase()
+                                ] || "5432"
                               }
                               className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
                             />
@@ -3310,7 +3364,8 @@ export function Databases() {
                               </button>
                             </div>
                             <p className="mt-1.5 text-[11px] text-[#737373]">
-                              Special characters are fine; Axiom escapes them automatically.
+                              Special characters are fine; Axiom escapes them
+                              automatically.
                             </p>
                           </div>
                         </div>
@@ -3392,51 +3447,54 @@ export function Databases() {
                   )}
                 </div>
 
-                {editEngine.toLowerCase() === "libsql" && editConnectMode === "string" && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-[13px] font-medium text-[#cccccc]">
-                        Auth Token{" "}
-                        <span className="text-[11px] font-normal text-[#888888]">
-                          (Turso / Remote LibSQL)
+                {editEngine.toLowerCase() === "libsql" &&
+                  editConnectMode === "string" && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[13px] font-medium text-[#cccccc]">
+                          Auth Token{" "}
+                          <span className="text-[11px] font-normal text-[#888888]">
+                            (Turso / Remote LibSQL)
+                          </span>
+                        </label>
+                        <span className="text-[11px] text-[#666666]">
+                          Optional
                         </span>
-                      </label>
-                      <span className="text-[11px] text-[#666666]">
-                        Optional
-                      </span>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showEditToken ? "text" : "password"}
+                          value={editToken}
+                          onChange={(e) => {
+                            setEditToken(e.target.value);
+                            setManageTestResult(null);
+                            setManageError(null);
+                          }}
+                          placeholder="Leave blank to keep existing token"
+                          className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEditToken(!showEditToken)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                          tabIndex={-1}
+                          aria-label={
+                            showEditToken ? "Hide token" : "Show token"
+                          }
+                        >
+                          {showEditToken ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-[12px] text-[#737373]">
+                        Update auth token for Turso. Leave empty to preserve
+                        existing credentials.
+                      </p>
                     </div>
-                    <div className="relative">
-                      <input
-                        type={showEditToken ? "text" : "password"}
-                        value={editToken}
-                        onChange={(e) => {
-                          setEditToken(e.target.value);
-                          setManageTestResult(null);
-                          setManageError(null);
-                        }}
-                        placeholder="Leave blank to keep existing token"
-                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowEditToken(!showEditToken)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
-                        tabIndex={-1}
-                        aria-label={showEditToken ? "Hide token" : "Show token"}
-                      >
-                        {showEditToken ? (
-                          <EyeOff className="w-3.5 h-3.5" />
-                        ) : (
-                          <Eye className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                    <p className="mt-1.5 text-[12px] text-[#737373]">
-                      Update auth token for Turso. Leave empty to preserve
-                      existing credentials.
-                    </p>
-                  </div>
-                )}
+                  )}
 
                 {(editEngine.toLowerCase() === "postgresql" ||
                   editEngine.toLowerCase() === "mysql") && (
@@ -3642,7 +3700,9 @@ export function Databases() {
             </button>
             <button
               type="button"
-              disabled={!canSave || isSaving || !hasPermission("databases.update")}
+              disabled={
+                !canSave || isSaving || !hasPermission("databases.update")
+              }
               onClick={handleSaveEdit}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >

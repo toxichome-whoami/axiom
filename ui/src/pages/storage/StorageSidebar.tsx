@@ -249,15 +249,15 @@ export function StorageSidebar({
               hasPermission("blobs.delete") ||
               hasBlobAccess(activeNamespace, "WRITE") ||
               hasBlobAccess(activeNamespace, "DELETE")) && (
-            <button
-              type="button"
-              onClick={onOpenManageNamespace}
-              title="Manage Namespace Quota & Settings"
-              className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          )}
+              <button
+                type="button"
+                onClick={onOpenManageNamespace}
+                title="Manage Namespace Quota & Settings"
+                className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
 
           {hasPermission("blobs.create") && (
             <button

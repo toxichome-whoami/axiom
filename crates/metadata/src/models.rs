@@ -41,10 +41,14 @@ impl UserPermissionSet {
             }
             if let Some((res, act)) = p.split_once('.') {
                 let res_match = res.eq_ignore_ascii_case(req_resource)
-                    || (res.eq_ignore_ascii_case("db") && req_resource.eq_ignore_ascii_case("databases"))
-                    || (res.eq_ignore_ascii_case("databases") && req_resource.eq_ignore_ascii_case("db"))
-                    || (res.eq_ignore_ascii_case("blob") && req_resource.eq_ignore_ascii_case("blobs"))
-                    || (res.eq_ignore_ascii_case("blobs") && req_resource.eq_ignore_ascii_case("blob"));
+                    || (res.eq_ignore_ascii_case("db")
+                        && req_resource.eq_ignore_ascii_case("databases"))
+                    || (res.eq_ignore_ascii_case("databases")
+                        && req_resource.eq_ignore_ascii_case("db"))
+                    || (res.eq_ignore_ascii_case("blob")
+                        && req_resource.eq_ignore_ascii_case("blobs"))
+                    || (res.eq_ignore_ascii_case("blobs")
+                        && req_resource.eq_ignore_ascii_case("blob"));
                 if res_match && (act == "*" || act.eq_ignore_ascii_case(req_action)) {
                     return true;
                 }
@@ -62,10 +66,14 @@ impl UserPermissionSet {
             if (required.starts_with("settings.")) && p == "manage_settings" {
                 return true;
             }
-            if (required.starts_with("databases.") || required.starts_with("db.")) && p == "manage_databases" {
+            if (required.starts_with("databases.") || required.starts_with("db."))
+                && p == "manage_databases"
+            {
                 return true;
             }
-            if (required.starts_with("blobs.") || required.starts_with("blob.")) && p == "manage_blobs" {
+            if (required.starts_with("blobs.") || required.starts_with("blob."))
+                && p == "manage_blobs"
+            {
                 return true;
             }
             if required == "audit.view" && (p == "view_audit" || p == "audit.view") {

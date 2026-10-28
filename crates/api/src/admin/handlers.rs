@@ -96,7 +96,10 @@ pub async fn check_permission(auth: &AuthContext, required: &str) -> Result<(), 
     }
 
     // Check operator's granular capabilities
-    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    let actor = auth
+        .api_key_name
+        .strip_prefix("user:")
+        .unwrap_or(&auth.api_key_name);
     if let Ok(Some(calling_user)) = MetadataStore::get_user_by_username(actor).await {
         if calling_user.is_super_admin || calling_user.permissions.has_system_permission(required) {
             return Ok(());
@@ -105,7 +108,10 @@ pub async fn check_permission(auth: &AuthContext, required: &str) -> Result<(), 
 
     Err(AxiomError::new(
         "FORBIDDEN",
-        &format!("Insufficient privileges: permission '{}' is required for this action", required),
+        &format!(
+            "Insufficient privileges: permission '{}' is required for this action",
+            required
+        ),
         StatusCode::FORBIDDEN,
     ))
 }
@@ -547,7 +553,10 @@ pub async fn list_databases(
 ) -> Result<impl IntoResponse, AxiomError> {
     let is_super = auth.role.as_deref() == Some("admin");
     let has_view_perm = check_permission(&auth, "databases.view").await.is_ok();
-    let has_granular_db = auth.permissions.iter().any(|p| !p.database.starts_with("blob:"));
+    let has_granular_db = auth
+        .permissions
+        .iter()
+        .any(|p| !p.database.starts_with("blob:"));
 
     if !is_super && !has_view_perm && !has_granular_db {
         return Err(AxiomError::new(
@@ -566,7 +575,11 @@ pub async fn list_databases(
         let allowed_aliases = PolicyEngine::filter_databases(&auth, &aliases);
         databases
             .into_iter()
-            .filter(|d| allowed_aliases.iter().any(|a| a.eq_ignore_ascii_case(&d.alias)))
+            .filter(|d| {
+                allowed_aliases
+                    .iter()
+                    .any(|a| a.eq_ignore_ascii_case(&d.alias))
+            })
             .collect()
     } else {
         databases
@@ -1228,7 +1241,11 @@ pub async fn get_admin_health(
 ///  - Idempotent: Yes.
 pub async fn setup_begin() -> Result<impl IntoResponse, AxiomError> {
     let has_users = MetadataStore::has_users().await.map_err(|e| {
-        AxiomError::new("METADATA_STORE_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR)
+        AxiomError::new(
+            "METADATA_STORE_ERROR",
+            &e,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
     })?;
     Ok(Json(json!({
         "success": true,
@@ -1250,7 +1267,11 @@ pub async fn setup_account(
     Json(payload): Json<SetupAccountRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let has_users = MetadataStore::has_users().await.map_err(|e| {
-        AxiomError::new("METADATA_STORE_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR)
+        AxiomError::new(
+            "METADATA_STORE_ERROR",
+            &e,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
     })?;
     if has_users {
         return Err(AxiomError::new(
@@ -1327,7 +1348,10 @@ pub async fn setup_account(
         session_id, SETUP_SESSION_TTL_SECS, secure_flag
     );
 
-    let user_record = MetadataStore::get_user_by_username(&payload.username).await.ok().flatten();
+    let user_record = MetadataStore::get_user_by_username(&payload.username)
+        .await
+        .ok()
+        .flatten();
 
     Ok((
         [(axum::http::header::SET_COOKIE, cookie_header)],
@@ -1360,7 +1384,11 @@ pub async fn test_database_url(
     Json(payload): Json<TestUrlRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let has_users = MetadataStore::has_users().await.map_err(|e| {
-        AxiomError::new("METADATA_STORE_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR)
+        AxiomError::new(
+            "METADATA_STORE_ERROR",
+            &e,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
     })?;
     if has_users {
         check_permission(&auth, "databases.view").await?;
@@ -1592,17 +1620,18 @@ pub async fn login_handler(
         ));
     }
 
-    let device_secret = match MetadataStore::get_or_create_system_secret("trusted_device_hmac_key").await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("Failed to retrieve system secret for trusted device: {}", e);
-            return Err(AxiomError::new(
-                "INTERNAL_SECURITY_ERROR",
-                "Internal security configuration error",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ));
-        }
-    };
+    let device_secret =
+        match MetadataStore::get_or_create_system_secret("trusted_device_hmac_key").await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to retrieve system secret for trusted device: {}", e);
+                return Err(AxiomError::new(
+                    "INTERNAL_SECURITY_ERROR",
+                    "Internal security configuration error",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ));
+            }
+        };
 
     // 2. Evaluate Trusted Device Cookie
     let mut is_trusted_device = false;
@@ -1743,7 +1772,10 @@ pub async fn login_handler(
         .as_secs() as i64
         + LOGIN_SESSION_TTL_SECS;
 
-    let user_record = MetadataStore::get_user_by_username(&canonical_user).await.ok().flatten();
+    let user_record = MetadataStore::get_user_by_username(&canonical_user)
+        .await
+        .ok()
+        .flatten();
 
     Ok((
         headers_map,
@@ -1773,11 +1805,16 @@ pub async fn get_me_handler(
         ));
     }
 
-    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    let actor = auth
+        .api_key_name
+        .strip_prefix("user:")
+        .unwrap_or(&auth.api_key_name);
     let user = MetadataStore::get_user_by_username(actor)
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
-        .ok_or_else(|| AxiomError::new("NOT_FOUND", "User record not found", StatusCode::NOT_FOUND))?;
+        .ok_or_else(|| {
+            AxiomError::new("NOT_FOUND", "User record not found", StatusCode::NOT_FOUND)
+        })?;
 
     Ok(Json(json!({
         "success": true,
@@ -1869,9 +1906,18 @@ pub async fn create_user_handler(
 ) -> Result<impl IntoResponse, AxiomError> {
     check_permission(&auth, "users.create").await?;
 
-    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
-    let caller_user = MetadataStore::get_user_by_username(actor).await.ok().flatten();
-    let is_caller_super = caller_user.as_ref().map(|u| u.is_super_admin || u.id == 1).unwrap_or(false);
+    let actor = auth
+        .api_key_name
+        .strip_prefix("user:")
+        .unwrap_or(&auth.api_key_name);
+    let caller_user = MetadataStore::get_user_by_username(actor)
+        .await
+        .ok()
+        .flatten();
+    let is_caller_super = caller_user
+        .as_ref()
+        .map(|u| u.is_super_admin || u.id == 1)
+        .unwrap_or(false);
 
     let username = payload.username.trim();
     if username.is_empty() {
@@ -1923,7 +1969,10 @@ pub async fn create_user_handler(
         actor,
         "user.create",
         &created.username,
-        Some(&format!("Created user id={} (super_admin={})", created.id, created.is_super_admin)),
+        Some(&format!(
+            "Created user id={} (super_admin={})",
+            created.id, created.is_super_admin
+        )),
     )
     .await;
 
@@ -1981,7 +2030,10 @@ pub async fn update_user_handler(
 ) -> Result<impl IntoResponse, AxiomError> {
     check_permission(&auth, "users.update").await?;
 
-    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    let actor = auth
+        .api_key_name
+        .strip_prefix("user:")
+        .unwrap_or(&auth.api_key_name);
 
     // Resolve caller identity and privileges
     let caller_user = MetadataStore::get_user_by_username(actor)
@@ -2121,7 +2173,10 @@ pub async fn delete_user_handler(
 ) -> Result<impl IntoResponse, AxiomError> {
     check_permission(&auth, "users.delete").await?;
 
-    let actor = auth.api_key_name.strip_prefix("user:").unwrap_or(&auth.api_key_name);
+    let actor = auth
+        .api_key_name
+        .strip_prefix("user:")
+        .unwrap_or(&auth.api_key_name);
     if let Ok(Some(target_user)) = MetadataStore::get_user_by_id(id).await {
         // Enforce root super administrator account protection
         if target_user.id == 1 || target_user.is_super_admin {
@@ -2148,7 +2203,11 @@ pub async fn delete_user_handler(
         } else if e.contains("not found") {
             AxiomError::new("NOT_FOUND", &e, StatusCode::NOT_FOUND)
         } else {
-            AxiomError::new("USER_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+            AxiomError::new(
+                "USER_DELETION_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
         }
     })?;
 
@@ -2691,9 +2750,15 @@ mod tests {
             is_session: true,
             ..Default::default()
         };
-        assert!(check_permission(&superadmin_ctx, "databases.create").await.is_ok());
-        assert!(check_permission(&superadmin_ctx, "blobs.delete").await.is_ok());
-        assert!(check_permission(&superadmin_ctx, "users.delete").await.is_ok());
+        assert!(check_permission(&superadmin_ctx, "databases.create")
+            .await
+            .is_ok());
+        assert!(check_permission(&superadmin_ctx, "blobs.delete")
+            .await
+            .is_ok());
+        assert!(check_permission(&superadmin_ctx, "users.delete")
+            .await
+            .is_ok());
 
         // 3. Custom session user without privileges must be rejected
         let custom_missing = AuthContext {
@@ -2702,6 +2767,8 @@ mod tests {
             is_session: true,
             ..Default::default()
         };
-        assert!(check_permission(&custom_missing, "databases.create").await.is_err());
+        assert!(check_permission(&custom_missing, "databases.create")
+            .await
+            .is_err());
     }
 }

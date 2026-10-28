@@ -2935,7 +2935,11 @@ export function StoragePage() {
                   variant="primary"
                   size="md"
                   type="submit"
-                  disabled={isCreatingNs || !newNsName.trim() || !hasPermission("blobs.create")}
+                  disabled={
+                    isCreatingNs ||
+                    !newNsName.trim() ||
+                    !hasPermission("blobs.create")
+                  }
                   isLoading={isCreatingNs}
                 >
                   {isCreatingNs ? "Creating..." : "Create Namespace"}
@@ -3105,7 +3109,11 @@ export function StoragePage() {
                     variant="primary"
                     size="md"
                     type="submit"
-                    disabled={isSavingNs || !editNsName.trim() || !hasPermission("blobs.update")}
+                    disabled={
+                      isSavingNs ||
+                      !editNsName.trim() ||
+                      !hasPermission("blobs.update")
+                    }
                     isLoading={isSavingNs}
                   >
                     {isSavingNs ? "Saving..." : "Save Changes"}
@@ -3210,7 +3218,10 @@ export function StoragePage() {
         onCopy={
           canCreateBlob
             ? (item) => {
-                if (selectedKeys.has(item.fullKey) && selectedItemsList.length > 1) {
+                if (
+                  selectedKeys.has(item.fullKey) &&
+                  selectedItemsList.length > 1
+                ) {
                   setIsBatchCopyOpen(true);
                 } else {
                   setItemToCopy(item);
@@ -3232,7 +3243,9 @@ export function StoragePage() {
               }
             : undefined
         }
-        onUpload={canCreateBlob ? () => fileInputRef.current?.click() : undefined}
+        onUpload={
+          canCreateBlob ? () => fileInputRef.current?.click() : undefined
+        }
         onPaste={canCreateBlob ? handlePaste : undefined}
         onRefresh={loadData}
       />

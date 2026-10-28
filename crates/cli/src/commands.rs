@@ -395,7 +395,14 @@ pub struct ServerArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum UserCommands {
     /// Show super administrator account details (username, email, creation time)
-    #[command(alias = "info", alias = "get", alias = "status", alias = "details", alias = "ls", alias = "list")]
+    #[command(
+        alias = "info",
+        alias = "get",
+        alias = "status",
+        alias = "details",
+        alias = "ls",
+        alias = "list"
+    )]
     Show {
         #[arg(short = 'c', long = "config", help = "Path to config file")]
         config: Option<String>,

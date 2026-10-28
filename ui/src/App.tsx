@@ -319,7 +319,10 @@ export function App() {
   function getPageDetails(): { title: string; component: React.ReactNode } {
     const requiredPermission = ROUTE_PERMISSIONS[currentPath];
     let isAllowed = false;
-    if (currentPath === "/system/databases" || currentPath === "/system/tables") {
+    if (
+      currentPath === "/system/databases" ||
+      currentPath === "/system/tables"
+    ) {
       isAllowed = hasDatabaseAccess();
     } else if (currentPath === "/system/storage") {
       isAllowed = hasBlobAccess();

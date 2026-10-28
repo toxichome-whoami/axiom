@@ -44,7 +44,10 @@ pub fn parse_size(size_str: &str) -> Result<u64, String> {
             return Err(format!("Invalid size value: {}", size_str));
         }
         if num > u64::MAX as f64 {
-            return Err(format!("Size value exceeds maximum integer limit: {}", size_str));
+            return Err(format!(
+                "Size value exceeds maximum integer limit: {}",
+                size_str
+            ));
         }
         return Ok(num as u64);
     }

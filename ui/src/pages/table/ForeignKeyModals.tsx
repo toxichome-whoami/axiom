@@ -763,7 +763,7 @@ export function ForeignKeyPickerModal({
                               "relative flex items-center justify-center size-4.5 rounded-full border transition-all duration-150 outline-none cursor-pointer",
                               isSelected
                                 ? "border-blue-500 bg-blue-600 text-white shadow-[0_0_8px_rgba(37,99,235,0.4)] ring-2 ring-blue-500/25"
-                                : "border-[#38383a] bg-[#141416] group-hover:border-[#52525b] group-hover:bg-[#1e1e22] focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                                : "border-[#38383a] bg-[#141416] group-hover:border-[#52525b] group-hover:bg-[#1e1e22] focus-visible:ring-2 focus-visible:ring-blue-500/40",
                             )}
                           >
                             {isSelected && (

@@ -26,11 +26,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import {
-  api,
-  SystemStatusData,
-  HealthData,
-} from "../api/client";
+import { api, SystemStatusData, HealthData } from "../api/client";
 import { hasPermission } from "../api/session";
 
 export interface ApiRouteItem {
@@ -41,7 +37,9 @@ export interface ApiRouteItem {
 }
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<"server" | "routes" | "about">("server");
+  const [activeTab, setActiveTab] = useState<"server" | "routes" | "about">(
+    "server",
+  );
   const [statusData, setStatusData] = useState<SystemStatusData | null>(null);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [isReloading, setIsReloading] = useState(false);

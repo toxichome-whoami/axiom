@@ -493,7 +493,8 @@ export function StorageToolbar({
         {selectedFileItem &&
           selectedFileItem.type === "file" &&
           onShareClick &&
-          (hasPermission("blobs.update") || hasBlobAccess(activeNamespace, "WRITE")) && (
+          (hasPermission("blobs.update") ||
+            hasBlobAccess(activeNamespace, "WRITE")) && (
             <button
               type="button"
               onClick={() => onShareClick(selectedFileItem)}
@@ -506,91 +507,95 @@ export function StorageToolbar({
           )}
 
         {/* Direct Upload CTA Button with Dropdown for Folder & Multi-file Upload */}
-        {(hasPermission("blobs.create") || hasBlobAccess(activeNamespace, "WRITE")) && (
+        {(hasPermission("blobs.create") ||
+          hasBlobAccess(activeNamespace, "WRITE")) && (
           <div
             className="relative inline-flex items-center shrink-0"
             ref={uploadMenuRef}
           >
-          <button
-            type="button"
-            onClick={onUploadClick}
-            disabled={!activeNamespace}
-            title="Upload files into current directory"
-            className="flex items-center gap-1.5 h-8 px-3 rounded-l-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">Upload</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsUploadMenuOpen((prev) => !prev)}
-            disabled={!activeNamespace}
-            title="Upload options (files, folders for hosting)"
-            aria-label="Upload options"
-            className="flex items-center justify-center h-8 px-2 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </button>
+            <button
+              type="button"
+              onClick={onUploadClick}
+              disabled={!activeNamespace}
+              title="Upload files into current directory"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-l-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">Upload</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsUploadMenuOpen((prev) => !prev)}
+              disabled={!activeNamespace}
+              title="Upload options (files, folders for hosting)"
+              aria-label="Upload options"
+              className="flex items-center justify-center h-8 px-2 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
 
-          {/* Upload Dropdown Menu */}
-          {isUploadMenuOpen &&
-            (() => {
-              const rect = uploadMenuRef.current?.getBoundingClientRect();
-              const top = (rect?.bottom ?? 0) + 4;
-              const left = Math.max(
-                8,
-                Math.min(window.innerWidth - 176 - 8, (rect?.right ?? 0) - 176),
-              );
-              return (
-                <div
-                  style={{ top: `${top}px`, left: `${left}px` }}
-                  className="fixed w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsUploadMenuOpen(false);
-                      onUploadClick();
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+            {/* Upload Dropdown Menu */}
+            {isUploadMenuOpen &&
+              (() => {
+                const rect = uploadMenuRef.current?.getBoundingClientRect();
+                const top = (rect?.bottom ?? 0) + 4;
+                const left = Math.max(
+                  8,
+                  Math.min(
+                    window.innerWidth - 176 - 8,
+                    (rect?.right ?? 0) - 176,
+                  ),
+                );
+                return (
+                  <div
+                    style={{ top: `${top}px`, left: `${left}px` }}
+                    className="fixed w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
                   >
-                    <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>Upload files</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUploadMenuOpen(false);
+                        onUploadClick();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                    >
+                      <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span>Upload files</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsUploadMenuOpen(false);
-                      onUploadFolderClick
-                        ? onUploadFolderClick()
-                        : onUploadClick();
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
-                  >
-                    <FolderPlus className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
-                    <span>Upload folder</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUploadMenuOpen(false);
+                        onUploadFolderClick
+                          ? onUploadFolderClick()
+                          : onUploadClick();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                      <span>Upload folder</span>
+                    </button>
 
-                  {onCreateUploadLink && (
-                    <>
-                      <div className="my-1 border-t border-[#1f1f1f]" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsUploadMenuOpen(false);
-                          onCreateUploadLink();
-                        }}
-                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
-                      >
-                        <LinkIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span>Create upload link</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
+                    {onCreateUploadLink && (
+                      <>
+                        <div className="my-1 border-t border-[#1f1f1f]" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsUploadMenuOpen(false);
+                            onCreateUploadLink();
+                          }}
+                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                        >
+                          <LinkIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>Create upload link</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
           </div>
         )}
       </div>

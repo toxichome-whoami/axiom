@@ -253,18 +253,30 @@ impl MetadataStore {
 
         // Idempotently ensure is_super_admin, permissions, and updated_at columns exist in users table
         let _ = conn
-            .execute("ALTER TABLE users ADD COLUMN is_super_admin INTEGER NOT NULL DEFAULT 0", ())
+            .execute(
+                "ALTER TABLE users ADD COLUMN is_super_admin INTEGER NOT NULL DEFAULT 0",
+                (),
+            )
             .await;
         let _ = conn
-            .execute("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'", ())
+            .execute(
+                "ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'",
+                (),
+            )
             .await;
         let _ = conn
-            .execute("ALTER TABLE users ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0", ())
+            .execute(
+                "ALTER TABLE users ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+                (),
+            )
             .await;
 
         // Ensure the initial/first user account is marked as super admin
         let _ = conn
-            .execute("UPDATE users SET is_super_admin = 1 WHERE id = (SELECT MIN(id) FROM users)", ())
+            .execute(
+                "UPDATE users SET is_super_admin = 1 WHERE id = (SELECT MIN(id) FROM users)",
+                (),
+            )
             .await;
 
         Ok(())
@@ -1539,25 +1551,34 @@ impl MetadataStore {
             .query("SELECT MIN(id) FROM users", ())
             .await
             .map_err(|e| e.to_string())?;
-        let min_id: Option<i64> = min_rows.next().await.ok().flatten().and_then(|r| r.get(0).ok());
+        let min_id: Option<i64> = min_rows
+            .next()
+            .await
+            .ok()
+            .flatten()
+            .and_then(|r| r.get(0).ok());
 
         if id == 1 || min_id == Some(id) {
             return Err("Root super admin account cannot be deleted".to_string());
         }
 
         let mut target_rows = conn
-            .query("SELECT is_super_admin, username FROM users WHERE id = ?1", [id])
+            .query(
+                "SELECT is_super_admin, username FROM users WHERE id = ?1",
+                [id],
+            )
             .await
             .map_err(|e| e.to_string())?;
 
-        let (is_super, username): (bool, Option<String>) = if let Ok(Some(row)) = target_rows.next().await {
-            (
-                row.get::<i64>(0).map(|v| v == 1).unwrap_or(false),
-                row.get(1).ok(),
-            )
-        } else {
-            return Err(format!("User with ID {} not found", id));
-        };
+        let (is_super, username): (bool, Option<String>) =
+            if let Ok(Some(row)) = target_rows.next().await {
+                (
+                    row.get::<i64>(0).map(|v| v == 1).unwrap_or(false),
+                    row.get(1).ok(),
+                )
+            } else {
+                return Err(format!("User with ID {} not found", id));
+            };
 
         if is_super {
             return Err("Root super admin account cannot be deleted".to_string());
@@ -1606,25 +1627,32 @@ impl MetadataStore {
             .await
             .map_err(|e| format!("Database query error: {}", e))?;
 
-        let (existing_username, existing_email, existing_pass, _existing_super, existing_perms) = match rows.next().await.map_err(|e| e.to_string())? {
-            Some(row) => {
-                let u: String = row.get(0).map_err(|e| e.to_string())?;
-                let e: Option<String> = row.get(1).ok();
-                let p: String = row.get(2).map_err(|e| e.to_string())?;
-                let sa: bool = row.get::<i64>(3).unwrap_or(0) == 1;
-                let perms_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
-                let ps: UserPermissionSet = serde_json::from_str(&perms_str).unwrap_or_default();
-                (u, e, p, sa, ps)
-            }
-            None => return Ok(false),
-        };
+        let (existing_username, existing_email, existing_pass, _existing_super, existing_perms) =
+            match rows.next().await.map_err(|e| e.to_string())? {
+                Some(row) => {
+                    let u: String = row.get(0).map_err(|e| e.to_string())?;
+                    let e: Option<String> = row.get(1).ok();
+                    let p: String = row.get(2).map_err(|e| e.to_string())?;
+                    let sa: bool = row.get::<i64>(3).unwrap_or(0) == 1;
+                    let perms_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
+                    let ps: UserPermissionSet =
+                        serde_json::from_str(&perms_str).unwrap_or_default();
+                    (u, e, p, sa, ps)
+                }
+                None => return Ok(false),
+            };
 
         // Root super admin can never be demoted
         let mut min_rows = conn
             .query("SELECT MIN(id) FROM users", ())
             .await
             .map_err(|e| e.to_string())?;
-        let min_id: Option<i64> = min_rows.next().await.ok().flatten().and_then(|r| r.get(0).ok());
+        let min_id: Option<i64> = min_rows
+            .next()
+            .await
+            .ok()
+            .flatten()
+            .and_then(|r| r.get(0).ok());
 
         // Single Root Super Admin Invariants:
         // 1. Root super-admin (id = 1 or min_id) can never be demoted.
@@ -1634,7 +1662,9 @@ impl MetadataStore {
             return Err("Root super admin account cannot be demoted".to_string());
         }
         if !is_root && is_super_admin == Some(true) {
-            return Err("Super administrator status cannot be granted to secondary accounts".to_string());
+            return Err(
+                "Super administrator status cannot be granted to secondary accounts".to_string(),
+            );
         }
 
         let new_username = match username {
@@ -1651,7 +1681,12 @@ impl MetadataStore {
                         )
                         .await
                         .map_err(|e| e.to_string())?;
-                    if check_rows.next().await.map_err(|e| e.to_string())?.is_some() {
+                    if check_rows
+                        .next()
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .is_some()
+                    {
                         return Err(format!("Username '{}' is already taken", clean));
                     }
                 }
@@ -1680,8 +1715,7 @@ impl MetadataStore {
             _ => existing_pass,
         };
 
-        let new_super_admin = if is_root { true } else { false };
-        let super_admin_int: i64 = if new_super_admin { 1 } else { 0 };
+        let super_admin_int: i64 = if is_root { 1 } else { 0 };
 
         let new_perms = permissions.unwrap_or(existing_perms);
         let perms_json = serde_json::to_string(&new_perms)
@@ -3442,10 +3476,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_super_admin_protection_and_custom_permissions() {
-        let db = Builder::new_local(":memory:")
-            .build()
-            .await
-            .unwrap();
+        let db = Builder::new_local(":memory:").build().await.unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
@@ -3485,7 +3516,10 @@ mod tests {
 
         // 3. Verify querying root user and custom user
         let mut rows = conn
-            .query("SELECT id, username, is_super_admin, permissions FROM users ORDER BY id ASC", ())
+            .query(
+                "SELECT id, username, is_super_admin, permissions FROM users ORDER BY id ASC",
+                (),
+            )
             .await
             .unwrap();
 
@@ -3512,7 +3546,8 @@ mod tests {
         assert_eq!(parsed_perms2.blobs[0].namespace, "assets");
 
         // 4. Invariant: Root account (id = 1 or min id) cannot be deleted
-        let min_id_res: i64 = conn.query("SELECT MIN(id) FROM users", ())
+        let min_id_res: i64 = conn
+            .query("SELECT MIN(id) FROM users", ())
             .await
             .unwrap()
             .next()
@@ -3577,10 +3612,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_user_username_and_uniqueness() {
-        let db = Builder::new_local(":memory:")
-            .build()
-            .await
-            .unwrap();
+        let db = Builder::new_local(":memory:").build().await.unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
@@ -3604,7 +3636,10 @@ mod tests {
 
         // Check renaming user_beta to user_beta_renamed
         let mut check_existing = conn
-            .query("SELECT id FROM users WHERE username = ?1 AND id != 2", ["user_beta_renamed"])
+            .query(
+                "SELECT id FROM users WHERE username = ?1 AND id != 2",
+                ["user_beta_renamed"],
+            )
             .await
             .unwrap();
         assert!(check_existing.next().await.unwrap().is_none());
@@ -3613,16 +3648,24 @@ mod tests {
         conn.execute(
             "UPDATE users SET username = ?1, updated_at = ?2 WHERE id = 2",
             libsql::params!["user_beta_renamed", now],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Verify updated username in table
-        let mut row_check = conn.query("SELECT username FROM users WHERE id = 2", ()).await.unwrap();
+        let mut row_check = conn
+            .query("SELECT username FROM users WHERE id = 2", ())
+            .await
+            .unwrap();
         let updated_u: String = row_check.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(updated_u, "user_beta_renamed");
 
         // Attempting to rename user_beta_renamed to existing 'user_alpha' must collide
         let mut collision_check = conn
-            .query("SELECT id FROM users WHERE username = ?1 AND id != 2", ["user_alpha"])
+            .query(
+                "SELECT id FROM users WHERE username = ?1 AND id != 2",
+                ["user_alpha"],
+            )
             .await
             .unwrap();
         assert!(collision_check.next().await.unwrap().is_some());
@@ -3630,10 +3673,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_deletion_protection_invariants() {
-        let db = Builder::new_local(":memory:")
-            .build()
-            .await
-            .unwrap();
+        let db = Builder::new_local(":memory:").build().await.unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
@@ -3677,19 +3717,34 @@ mod tests {
         assert_eq!(min_id, 1);
 
         // Invariant 1: ID = 1 or min_id must fail deletion check
-        let mut target1 = conn.query("SELECT is_super_admin FROM users WHERE id = 1", ()).await.unwrap();
+        let mut target1 = conn
+            .query("SELECT is_super_admin FROM users WHERE id = 1", ())
+            .await
+            .unwrap();
         let is_super1: i64 = target1.next().await.unwrap().unwrap().get(0).unwrap();
-        assert!(1 == 1 || min_id == 1 || is_super1 == 1, "Root user 1 must be protected");
+        assert!(
+            1 == 1 || min_id == 1 || is_super1 == 1,
+            "Root user 1 must be protected"
+        );
 
         // Invariant 2: User 2 is_super_admin must fail deletion check
-        let mut target2 = conn.query("SELECT is_super_admin FROM users WHERE id = 2", ()).await.unwrap();
+        let mut target2 = conn
+            .query("SELECT is_super_admin FROM users WHERE id = 2", ())
+            .await
+            .unwrap();
         let is_super2: i64 = target2.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(is_super2, 1);
         let can_delete_user2 = target2_id_deletable(2, min_id, is_super2 == 1);
-        assert!(!can_delete_user2, "Super admin user 2 must not be deletable");
+        assert!(
+            !can_delete_user2,
+            "Super admin user 2 must not be deletable"
+        );
 
         // Invariant 3: Standard operator is deletable
-        let mut target3 = conn.query("SELECT is_super_admin FROM users WHERE id = 3", ()).await.unwrap();
+        let mut target3 = conn
+            .query("SELECT is_super_admin FROM users WHERE id = 3", ())
+            .await
+            .unwrap();
         let is_super3: i64 = target3.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(is_super3, 0);
         let can_delete_user3 = target2_id_deletable(3, min_id, is_super3 == 1);
@@ -3705,10 +3760,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_super_admin_query() {
-        let db = Builder::new_local(":memory:")
-            .build()
-            .await
-            .unwrap();
+        let db = Builder::new_local(":memory:").build().await.unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
@@ -3742,7 +3794,11 @@ mod tests {
             .await
             .unwrap();
 
-        let row = rows.next().await.unwrap().expect("Super admin row must exist");
+        let row = rows
+            .next()
+            .await
+            .unwrap()
+            .expect("Super admin row must exist");
         let id: i64 = row.get(0).unwrap();
         let username: String = row.get(1).unwrap();
         let email: Option<String> = row.get(2).ok();

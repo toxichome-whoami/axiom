@@ -171,9 +171,7 @@ export function MediaPlayer({
       lastTimeUpdateRef.current = now;
       setCurrentTime(video.currentTime);
       if (video.buffered.length > 0) {
-        setBufferedEnd(
-          video.buffered.end(video.buffered.length - 1),
-        );
+        setBufferedEnd(video.buffered.end(video.buffered.length - 1));
       }
     }
   };

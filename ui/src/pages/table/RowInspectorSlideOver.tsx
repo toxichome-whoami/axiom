@@ -94,7 +94,7 @@ export function RowInspectorSlideOver({
     const isBool = normType.includes("bool") || normType === "bit";
     const isDate = normType === "date";
     const isTimestamp = normType.includes("time") || normType.includes("date");
-    const disabled = isInsert ? !canInsert : (!canUpdate || isColReadOnly(col));
+    const disabled = isInsert ? !canInsert : !canUpdate || isColReadOnly(col);
 
     return (
       <div key={col.name} className="space-y-1.5">

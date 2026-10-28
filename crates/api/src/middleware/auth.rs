@@ -676,7 +676,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_synthesis_does_not_inject_wildcard_for_view_permissions() {
-        use axiom_metadata::models::{UserRecord, UserPermissionSet, UserDbPermission, UserBlobPermission};
+        use axiom_metadata::models::{
+            UserBlobPermission, UserDbPermission, UserPermissionSet, UserRecord,
+        };
 
         let user_rec = UserRecord {
             id: 2,
@@ -744,7 +746,12 @@ mod tests {
         assert_eq!(permissions[0].table_name, "categories");
         assert_eq!(permissions[1].database, "blob:receipts");
 
-        let has_wildcard_sql_table = permissions.iter().any(|p| p.database == "*" || (p.database == "localdb" && p.table_name == "*"));
-        assert!(!has_wildcard_sql_table, "Granular database rules must not have wildcard table access synthesized");
+        let has_wildcard_sql_table = permissions
+            .iter()
+            .any(|p| p.database == "*" || (p.database == "localdb" && p.table_name == "*"));
+        assert!(
+            !has_wildcard_sql_table,
+            "Granular database rules must not have wildcard table access synthesized"
+        );
     }
 }

@@ -84,8 +84,8 @@ export function Layout({
   }, [title]);
 
   const [, setPermissionRev] = useState(0);
-  const [currentUser, setCurrentUserLocal] = useState<UserRecordApi | null>(() =>
-    getCurrentUser(),
+  const [currentUser, setCurrentUserLocal] = useState<UserRecordApi | null>(
+    () => getCurrentUser(),
   );
 
   useEffect(() => {
@@ -672,7 +672,9 @@ export function Layout({
                         {currentUser?.username || getOperatorUser()}
                       </span>
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium text-[#8c8c8c] bg-[#1a1a1a] border border-[#262626] capitalize shrink-0">
-                        {currentUser?.is_super_admin ? "Super Admin" : "Operator"}
+                        {currentUser?.is_super_admin
+                          ? "Super Admin"
+                          : "Operator"}
                       </span>
                     </div>
                     <p

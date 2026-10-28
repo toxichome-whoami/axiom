@@ -1693,7 +1693,11 @@ export function Cluster() {
               </button>
               <button
                 type="submit"
-                disabled={!canSavePeer || isSavingPeer || !hasPermission("cluster.manage")}
+                disabled={
+                  !canSavePeer ||
+                  isSavingPeer ||
+                  !hasPermission("cluster.manage")
+                }
                 className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
               >
                 <span

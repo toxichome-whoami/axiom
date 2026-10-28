@@ -751,9 +751,17 @@ mod tests {
             permissions: vec![],
             ..Default::default()
         };
-        assert!(PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "READ").is_err());
-        assert!(PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "WRITE").is_err());
-        assert!(PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "DELETE").is_err());
+        assert!(
+            PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "READ").is_err()
+        );
+        assert!(
+            PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "WRITE")
+                .is_err()
+        );
+        assert!(
+            PolicyEngine::evaluate_blob(&unprivileged_ctx, "photos", "avatar.png", "DELETE")
+                .is_err()
+        );
         let filtered_empty = PolicyEngine::filter_blob_namespaces(
             &unprivileged_ctx,
             &["photos".to_string(), "backups".to_string()],
@@ -774,7 +782,9 @@ mod tests {
             ..Default::default()
         };
         assert!(PolicyEngine::evaluate_blob(&db_only_ctx, "photos", "avatar.png", "READ").is_err());
-        assert!(PolicyEngine::filter_blob_namespaces(&db_only_ctx, &["photos".to_string()]).is_empty());
+        assert!(
+            PolicyEngine::filter_blob_namespaces(&db_only_ctx, &["photos".to_string()]).is_empty()
+        );
 
         // 3. Custom session with granular READ on namespace 'photos'
         let blob_reader_ctx = AuthContext {
@@ -789,10 +799,20 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "READ").is_ok());
-        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "WRITE").is_err());
-        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "DELETE").is_err());
-        assert!(PolicyEngine::evaluate_blob(&blob_reader_ctx, "secret_docs", "file.pdf", "READ").is_err());
+        assert!(
+            PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "READ").is_ok()
+        );
+        assert!(
+            PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "WRITE").is_err()
+        );
+        assert!(
+            PolicyEngine::evaluate_blob(&blob_reader_ctx, "photos", "avatar.png", "DELETE")
+                .is_err()
+        );
+        assert!(
+            PolicyEngine::evaluate_blob(&blob_reader_ctx, "secret_docs", "file.pdf", "READ")
+                .is_err()
+        );
         let filtered_reader = PolicyEngine::filter_blob_namespaces(
             &blob_reader_ctx,
             &["photos".to_string(), "secret_docs".to_string()],
@@ -841,17 +861,30 @@ mod tests {
         };
 
         // Filter databases
-        let all_dbs = vec!["analytics".to_string(), "finance".to_string(), "users_db".to_string()];
+        let all_dbs = vec![
+            "analytics".to_string(),
+            "finance".to_string(),
+            "users_db".to_string(),
+        ];
         let allowed_dbs = PolicyEngine::filter_databases(&custom_user_ctx, &all_dbs);
         assert_eq!(allowed_dbs, vec!["analytics".to_string()]);
 
         // Filter tables in analytics
-        let all_tables = vec!["events".to_string(), "metrics".to_string(), "salary_secrets".to_string()];
-        let allowed_tables = PolicyEngine::filter_tables(&custom_user_ctx, "analytics", &all_tables);
-        assert_eq!(allowed_tables, vec!["events".to_string(), "metrics".to_string()]);
+        let all_tables = vec![
+            "events".to_string(),
+            "metrics".to_string(),
+            "salary_secrets".to_string(),
+        ];
+        let allowed_tables =
+            PolicyEngine::filter_tables(&custom_user_ctx, "analytics", &all_tables);
+        assert_eq!(
+            allowed_tables,
+            vec!["events".to_string(), "metrics".to_string()]
+        );
 
         // Filter tables in unauthorized db
-        let unauthorized_db_tables = PolicyEngine::filter_tables(&custom_user_ctx, "finance", &all_tables);
+        let unauthorized_db_tables =
+            PolicyEngine::filter_tables(&custom_user_ctx, "finance", &all_tables);
         assert!(unauthorized_db_tables.is_empty());
 
         // Unprivileged custom session user
@@ -892,12 +925,32 @@ mod tests {
         };
 
         // Table access checks
-        assert!(PolicyEngine::can_access_table(&scoped_user, "localdb", "categories"));
-        assert!(!PolicyEngine::can_access_table(&scoped_user, "localdb", "users"));
-        assert!(!PolicyEngine::can_access_table(&scoped_user, "localdb", "products"));
-        assert!(!PolicyEngine::can_access_table(&scoped_user, "otherdb", "categories"));
+        assert!(PolicyEngine::can_access_table(
+            &scoped_user,
+            "localdb",
+            "categories"
+        ));
+        assert!(!PolicyEngine::can_access_table(
+            &scoped_user,
+            "localdb",
+            "users"
+        ));
+        assert!(!PolicyEngine::can_access_table(
+            &scoped_user,
+            "localdb",
+            "products"
+        ));
+        assert!(!PolicyEngine::can_access_table(
+            &scoped_user,
+            "otherdb",
+            "categories"
+        ));
 
-        let tables = vec!["categories".to_string(), "users".to_string(), "products".to_string()];
+        let tables = vec![
+            "categories".to_string(),
+            "users".to_string(),
+            "products".to_string(),
+        ];
         let filtered_tables = PolicyEngine::filter_tables(&scoped_user, "localdb", &tables);
         assert_eq!(filtered_tables, vec!["categories".to_string()]);
 

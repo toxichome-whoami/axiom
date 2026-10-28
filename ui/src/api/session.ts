@@ -110,16 +110,19 @@ export function hasPermission(required: string): boolean {
     if (perms.includes(`db.${action}`) || perms.includes("db.*")) return true;
   } else if (required.startsWith("db.")) {
     const action = required.slice("db.".length);
-    if (perms.includes(`databases.${action}`) || perms.includes("databases.*")) return true;
+    if (perms.includes(`databases.${action}`) || perms.includes("databases.*"))
+      return true;
   }
 
   // Dual aliasing for blob permissions: blobs.<action> <-> blob.<action>
   if (required.startsWith("blobs.")) {
     const action = required.slice("blobs.".length);
-    if (perms.includes(`blob.${action}`) || perms.includes("blob.*")) return true;
+    if (perms.includes(`blob.${action}`) || perms.includes("blob.*"))
+      return true;
   } else if (required.startsWith("blob.")) {
     const action = required.slice("blob.".length);
-    if (perms.includes(`blobs.${action}`) || perms.includes("blobs.*")) return true;
+    if (perms.includes(`blobs.${action}`) || perms.includes("blobs.*"))
+      return true;
   }
 
   const resource = required.split(".")[0];
@@ -128,14 +131,28 @@ export function hasPermission(required: string): boolean {
   }
 
   // Legacy capability token aliases
-  if (required.startsWith("keys.") && perms.includes("manage_keys")) return true;
-  if (required.startsWith("roles.") && perms.includes("manage_roles")) return true;
-  if ((required.startsWith("databases.") || required.startsWith("db.")) && perms.includes("manage_databases")) return true;
-  if (required.startsWith("users.") && perms.includes("manage_users")) return true;
-  if (required.startsWith("audit.") && perms.includes("view_audit")) return true;
-  if (required.startsWith("cluster.") && perms.includes("manage_cluster")) return true;
-  if (required.startsWith("settings.") && perms.includes("manage_settings")) return true;
-  if ((required.startsWith("blobs.") || required.startsWith("blob.")) && perms.includes("manage_blobs")) return true;
+  if (required.startsWith("keys.") && perms.includes("manage_keys"))
+    return true;
+  if (required.startsWith("roles.") && perms.includes("manage_roles"))
+    return true;
+  if (
+    (required.startsWith("databases.") || required.startsWith("db.")) &&
+    perms.includes("manage_databases")
+  )
+    return true;
+  if (required.startsWith("users.") && perms.includes("manage_users"))
+    return true;
+  if (required.startsWith("audit.") && perms.includes("view_audit"))
+    return true;
+  if (required.startsWith("cluster.") && perms.includes("manage_cluster"))
+    return true;
+  if (required.startsWith("settings.") && perms.includes("manage_settings"))
+    return true;
+  if (
+    (required.startsWith("blobs.") || required.startsWith("blob.")) &&
+    perms.includes("manage_blobs")
+  )
+    return true;
 
   return false;
 }
@@ -143,7 +160,11 @@ export function hasPermission(required: string): boolean {
 /**
  * Checks whether the current operator has read or write access to a given database or table.
  */
-export function hasDatabaseAccess(dbName?: string, requiredOp?: string, tableName?: string): boolean {
+export function hasDatabaseAccess(
+  dbName?: string,
+  requiredOp?: string,
+  tableName?: string,
+): boolean {
   const user = getCurrentUser();
   if (!user) return false;
   if (user.is_super_admin) return true;
@@ -160,13 +181,22 @@ export function hasDatabaseAccess(dbName?: string, requiredOp?: string, tableNam
   if (dbRules.length > 0) {
     if (!dbName) return true;
     return dbRules.some((rule) => {
-      const dbMatches = rule.database === "*" || rule.database.toLowerCase() === dbName.toLowerCase();
+      const dbMatches =
+        rule.database === "*" ||
+        rule.database.toLowerCase() === dbName.toLowerCase();
       if (!dbMatches) return false;
-      if (tableName && rule.table_name && rule.table_name !== "*" && rule.table_name.toLowerCase() !== tableName.toLowerCase()) {
+      if (
+        tableName &&
+        rule.table_name &&
+        rule.table_name !== "*" &&
+        rule.table_name.toLowerCase() !== tableName.toLowerCase()
+      ) {
         return false;
       }
       if (!requiredOp) return true;
-      return rule.operations.includes(requiredOp) || rule.operations.includes("*");
+      return (
+        rule.operations.includes(requiredOp) || rule.operations.includes("*")
+      );
     });
   }
 
@@ -177,13 +207,17 @@ export function hasDatabaseAccess(dbName?: string, requiredOp?: string, tableNam
     return hasPermission("databases.view");
   }
   if (requiredOp === "INSERT" || requiredOp === "UPDATE") {
-    return hasPermission("databases.update") || hasPermission("databases.create");
+    return (
+      hasPermission("databases.update") || hasPermission("databases.create")
+    );
   }
   if (requiredOp === "DELETE") {
     return hasPermission("databases.delete");
   }
   if (requiredOp === "DDL") {
-    return hasPermission("databases.create") || hasPermission("databases.delete");
+    return (
+      hasPermission("databases.create") || hasPermission("databases.delete")
+    );
   }
 
   return false;
@@ -192,7 +226,10 @@ export function hasDatabaseAccess(dbName?: string, requiredOp?: string, tableNam
 /**
  * Checks whether the current operator has access to a blob namespace.
  */
-export function hasBlobAccess(namespace?: string, requiredOp?: string): boolean {
+export function hasBlobAccess(
+  namespace?: string,
+  requiredOp?: string,
+): boolean {
   const user = getCurrentUser();
   if (!user) return false;
   if (user.is_super_admin) return true;
@@ -209,10 +246,14 @@ export function hasBlobAccess(namespace?: string, requiredOp?: string): boolean 
   if (blobRules.length > 0) {
     if (!namespace) return true;
     return blobRules.some((rule) => {
-      const nsMatches = rule.namespace === "*" || rule.namespace.toLowerCase() === namespace.toLowerCase();
+      const nsMatches =
+        rule.namespace === "*" ||
+        rule.namespace.toLowerCase() === namespace.toLowerCase();
       if (!nsMatches) return false;
       if (!requiredOp) return true;
-      return rule.operations.includes(requiredOp) || rule.operations.includes("*");
+      return (
+        rule.operations.includes(requiredOp) || rule.operations.includes("*")
+      );
     });
   }
 
@@ -220,7 +261,11 @@ export function hasBlobAccess(namespace?: string, requiredOp?: string): boolean 
   if (!requiredOp || requiredOp === "READ" || requiredOp === "SELECT") {
     return hasPermission("blobs.view");
   }
-  if (requiredOp === "WRITE" || requiredOp === "INSERT" || requiredOp === "UPDATE") {
+  if (
+    requiredOp === "WRITE" ||
+    requiredOp === "INSERT" ||
+    requiredOp === "UPDATE"
+  ) {
     return hasPermission("blobs.create") || hasPermission("blobs.update");
   }
   if (requiredOp === "DELETE") {

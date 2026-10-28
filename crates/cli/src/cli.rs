@@ -496,14 +496,29 @@ async fn handle_user_command(
                         println!("{}", serde_json::to_string(&res)?);
                     } else {
                         println!("{:-<72}", "");
-                        println!("            AXIOM ROOT SUPER ADMINISTRATOR (HOST RECOVERY)       ");
+                        println!(
+                            "            AXIOM ROOT SUPER ADMINISTRATOR (HOST RECOVERY)       "
+                        );
                         println!("{:-<72}", "");
                         println!("{:<16} : {}", "ID", admin.id);
                         println!("{:<16} : {}", "Username", admin.username);
-                        println!("{:<16} : {}", "Email", admin.email.as_deref().unwrap_or("-"));
-                        println!("{:<16} : Root Super Admin (Full Host & PBAC Authority)", "Access Level");
-                        println!("{:<16} : {} (unix: {})", "Created At", created_formatted, admin.created_at);
-                        println!("{:<16} : {} (unix: {})", "Updated At", updated_formatted, admin.updated_at);
+                        println!(
+                            "{:<16} : {}",
+                            "Email",
+                            admin.email.as_deref().unwrap_or("-")
+                        );
+                        println!(
+                            "{:<16} : Root Super Admin (Full Host & PBAC Authority)",
+                            "Access Level"
+                        );
+                        println!(
+                            "{:<16} : {} (unix: {})",
+                            "Created At", created_formatted, admin.created_at
+                        );
+                        println!(
+                            "{:<16} : {} (unix: {})",
+                            "Updated At", updated_formatted, admin.updated_at
+                        );
                         println!("{:-<72}", "");
                         println!("Note: Secondary user accounts and PBAC roles are managed via the Web UI.");
                         println!("Use 'axiom user update' to reset root credentials from this host machine.");
@@ -524,7 +539,8 @@ async fn handle_user_command(
                 .map_err(|e| format!("Failed to retrieve Super Administrator: {}", e))?
                 .ok_or_else(|| "No Super Administrator found in metadata store. Run setup wizard to create the initial admin.".to_string())?;
 
-            let mut final_username: Option<String> = username.or(new_username).filter(|u| !u.trim().is_empty());
+            let mut final_username: Option<String> =
+                username.or(new_username).filter(|u| !u.trim().is_empty());
             let mut final_email: Option<String> = email.filter(|e| !e.trim().is_empty());
             let mut final_password: Option<String> = password.filter(|p| !p.trim().is_empty());
 
@@ -536,7 +552,10 @@ async fn handle_user_command(
                 eprintln!("       SUPER ADMINISTRATOR INTERACTIVE CREDENTIAL RECOVERY      ");
                 eprintln!("{:-<72}", "");
                 eprintln!("Current Username : {}", admin.username);
-                eprintln!("Current Email    : {}", admin.email.as_deref().unwrap_or("-"));
+                eprintln!(
+                    "Current Email    : {}",
+                    admin.email.as_deref().unwrap_or("-")
+                );
                 eprintln!("(Press Enter without typing to keep an existing value unchanged)\n");
 
                 eprint!("Enter new username [{}]: ", admin.username);
@@ -548,7 +567,10 @@ async fn handle_user_command(
                     final_username = Some(u_trimmed.to_string());
                 }
 
-                eprint!("Enter new email [{}]: ", admin.email.as_deref().unwrap_or("-"));
+                eprint!(
+                    "Enter new email [{}]: ",
+                    admin.email.as_deref().unwrap_or("-")
+                );
                 let _ = std::io::stderr().flush();
                 let mut e_buf = String::new();
                 std::io::stdin().read_line(&mut e_buf)?;
@@ -623,8 +645,20 @@ async fn handle_user_command(
                 println!("{:-<72}", "");
                 println!("{:<16} : {}", "ID", updated_admin.id);
                 println!("{:<16} : {}", "Username", updated_admin.username);
-                println!("{:<16} : {}", "Email", updated_admin.email.as_deref().unwrap_or("-"));
-                println!("{:<16} : {}", "Password", if final_password.is_some() { "[UPDATED]" } else { "[UNCHANGED]" });
+                println!(
+                    "{:<16} : {}",
+                    "Email",
+                    updated_admin.email.as_deref().unwrap_or("-")
+                );
+                println!(
+                    "{:<16} : {}",
+                    "Password",
+                    if final_password.is_some() {
+                        "[UPDATED]"
+                    } else {
+                        "[UNCHANGED]"
+                    }
+                );
                 println!("{:-<72}", "");
             })?;
         }
@@ -1080,8 +1114,6 @@ async fn handle_db_command(
                 println!("Database target '{}' removed successfully.", alias);
             }
         }
-
-
     }
     Ok(())
 }
@@ -1605,7 +1637,6 @@ async fn run_doctor(
     Ok(())
 }
 
-
 // ─── Configuration Management Command Handlers ──────────────────────────────
 // Handles config initialization, toml-to-env conversion, and validation.
 
@@ -1955,7 +1986,6 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-
 // ─── Blob Command Handlers ─────────────────────────────────────────────────
 
 async fn handle_blob_command(
@@ -2284,8 +2314,6 @@ async fn handle_blob_command(
             }
         },
 
-
-
         BlobCommands::Verify {
             namespace,
             namespace_flag,
@@ -2316,8 +2344,6 @@ async fn handle_blob_command(
                 }
             }
         }
-
-
     }
     Ok(())
 }
@@ -2376,8 +2402,6 @@ async fn handle_logout_command(
     }
     Ok(())
 }
-
-
 
 // ─── Model Context Protocol (MCP) Command Handlers ─────────────────────────
 

@@ -739,7 +739,10 @@ export function TableEditor() {
                     !allDbTablesSchema[tableName]
                   ) {
                     try {
-                      const schema = await api.getTableSchema(selectedDb, tableName);
+                      const schema = await api.getTableSchema(
+                        selectedDb,
+                        tableName,
+                      );
                       const entry = {
                         columns: schema.columns,
                         foreign_keys: schema.foreign_keys,
@@ -785,7 +788,9 @@ export function TableEditor() {
           selectedTable={selectedTable}
           columns={columns}
           selectedCount={selectedRowIndices.size}
-          onDeleteSelected={canDelete ? () => setIsDeleteBatchConfirmOpen(true) : undefined}
+          onDeleteSelected={
+            canDelete ? () => setIsDeleteBatchConfirmOpen(true) : undefined
+          }
           onExportSelected={(format) => {
             const rowsToExport =
               selectedRowIndices.size > 0

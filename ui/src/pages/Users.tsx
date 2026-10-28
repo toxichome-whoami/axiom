@@ -8,7 +8,13 @@
  * - Password complexity (min 8 chars) and clean alphanumeric usernames enforced.
  */
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   UserRecordApi,
@@ -65,10 +71,26 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "Databases & Engines",
     icon: Database,
     permissions: [
-      { id: "databases.view", label: "View", description: "Inspect database pools and schema definitions" },
-      { id: "databases.create", label: "Create", description: "Register new database connections" },
-      { id: "databases.update", label: "Update", description: "Modify connection parameters and pool sizes" },
-      { id: "databases.delete", label: "Delete", description: "Deregister upstream database connections" },
+      {
+        id: "databases.view",
+        label: "View",
+        description: "Inspect database pools and schema definitions",
+      },
+      {
+        id: "databases.create",
+        label: "Create",
+        description: "Register new database connections",
+      },
+      {
+        id: "databases.update",
+        label: "Update",
+        description: "Modify connection parameters and pool sizes",
+      },
+      {
+        id: "databases.delete",
+        label: "Delete",
+        description: "Deregister upstream database connections",
+      },
     ],
   },
   {
@@ -76,10 +98,26 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "Native Blob Storage",
     icon: HardDrive,
     permissions: [
-      { id: "blobs.view", label: "View", description: "Inspect blob namespaces and storage usage" },
-      { id: "blobs.create", label: "Create", description: "Provision new storage namespaces" },
-      { id: "blobs.update", label: "Update", description: "Modify namespace quotas and settings" },
-      { id: "blobs.delete", label: "Delete", description: "Remove namespaces and permanently delete data" },
+      {
+        id: "blobs.view",
+        label: "View",
+        description: "Inspect blob namespaces and storage usage",
+      },
+      {
+        id: "blobs.create",
+        label: "Create",
+        description: "Provision new storage namespaces",
+      },
+      {
+        id: "blobs.update",
+        label: "Update",
+        description: "Modify namespace quotas and settings",
+      },
+      {
+        id: "blobs.delete",
+        label: "Delete",
+        description: "Remove namespaces and permanently delete data",
+      },
     ],
   },
   {
@@ -87,11 +125,31 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "API Keys",
     icon: Key,
     permissions: [
-      { id: "keys.view", label: "View", description: "Inspect active machine tokens and rate limits" },
-      { id: "keys.create", label: "Create", description: "Issue new machine credentials" },
-      { id: "keys.rotate", label: "Rotate", description: "Cycle secret keys without downtime" },
-      { id: "keys.update", label: "Update", description: "Modify key metadata and database scopes" },
-      { id: "keys.delete", label: "Delete", description: "Revoke and permanently destroy API keys" },
+      {
+        id: "keys.view",
+        label: "View",
+        description: "Inspect active machine tokens and rate limits",
+      },
+      {
+        id: "keys.create",
+        label: "Create",
+        description: "Issue new machine credentials",
+      },
+      {
+        id: "keys.rotate",
+        label: "Rotate",
+        description: "Cycle secret keys without downtime",
+      },
+      {
+        id: "keys.update",
+        label: "Update",
+        description: "Modify key metadata and database scopes",
+      },
+      {
+        id: "keys.delete",
+        label: "Delete",
+        description: "Revoke and permanently destroy API keys",
+      },
     ],
   },
   {
@@ -99,10 +157,26 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "Roles & RBAC",
     icon: Shield,
     permissions: [
-      { id: "roles.view", label: "View", description: "Read role definitions and attached permissions" },
-      { id: "roles.create", label: "Create", description: "Define new RBAC role profiles" },
-      { id: "roles.update", label: "Update", description: "Modify role permissions and descriptions" },
-      { id: "roles.delete", label: "Delete", description: "Delete unused RBAC role profiles" },
+      {
+        id: "roles.view",
+        label: "View",
+        description: "Read role definitions and attached permissions",
+      },
+      {
+        id: "roles.create",
+        label: "Create",
+        description: "Define new RBAC role profiles",
+      },
+      {
+        id: "roles.update",
+        label: "Update",
+        description: "Modify role permissions and descriptions",
+      },
+      {
+        id: "roles.delete",
+        label: "Delete",
+        description: "Delete unused RBAC role profiles",
+      },
     ],
   },
   {
@@ -110,9 +184,21 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "Cluster Mesh",
     icon: Activity,
     permissions: [
-      { id: "cluster.view", label: "View", description: "Inspect cluster mesh topology and node latencies" },
-      { id: "cluster.connect", label: "Connect", description: "Initiate cryptographic pairing with remote peers" },
-      { id: "cluster.manage", label: "Manage", description: "Update peer endpoints, shared secrets, or unpair" },
+      {
+        id: "cluster.view",
+        label: "View",
+        description: "Inspect cluster mesh topology and node latencies",
+      },
+      {
+        id: "cluster.connect",
+        label: "Connect",
+        description: "Initiate cryptographic pairing with remote peers",
+      },
+      {
+        id: "cluster.manage",
+        label: "Manage",
+        description: "Update peer endpoints, shared secrets, or unpair",
+      },
     ],
   },
   {
@@ -120,7 +206,11 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "Audit Trail",
     icon: FileText,
     permissions: [
-      { id: "audit.view", label: "View", description: "Query immutable administrative audit event log" },
+      {
+        id: "audit.view",
+        label: "View",
+        description: "Query immutable administrative audit event log",
+      },
     ],
   },
   {
@@ -128,10 +218,26 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "Users",
     icon: UsersIcon,
     permissions: [
-      { id: "users.view", label: "View", description: "List user accounts and assignments" },
-      { id: "users.create", label: "Create", description: "Provision new user accounts" },
-      { id: "users.update", label: "Update", description: "Modify operator credentials and PBAC permissions" },
-      { id: "users.delete", label: "Delete", description: "Remove user accounts" },
+      {
+        id: "users.view",
+        label: "View",
+        description: "List user accounts and assignments",
+      },
+      {
+        id: "users.create",
+        label: "Create",
+        description: "Provision new user accounts",
+      },
+      {
+        id: "users.update",
+        label: "Update",
+        description: "Modify operator credentials and PBAC permissions",
+      },
+      {
+        id: "users.delete",
+        label: "Delete",
+        description: "Remove user accounts",
+      },
     ],
   },
   {
@@ -139,13 +245,23 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
     name: "System Settings",
     icon: Sliders,
     permissions: [
-      { id: "settings.view", label: "View", description: "View cache metrics, engine telemetry, and server health" },
-      { id: "settings.manage", label: "Manage", description: "Flush L1/L2 caches and reload metadata snapshots" },
+      {
+        id: "settings.view",
+        label: "View",
+        description: "View cache metrics, engine telemetry, and server health",
+      },
+      {
+        id: "settings.manage",
+        label: "Manage",
+        description: "Flush L1/L2 caches and reload metadata snapshots",
+      },
     ],
   },
 ];
 
-const ALL_SYSTEM_PERMS = CAPABILITY_GROUPS.flatMap((g) => g.permissions.map((p) => p.id));
+const ALL_SYSTEM_PERMS = CAPABILITY_GROUPS.flatMap((g) =>
+  g.permissions.map((p) => p.id),
+);
 
 const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE"];
 const BLOB_OPERATIONS = ["READ", "WRITE", "DELETE", "MANAGE_NS"];
@@ -204,17 +320,30 @@ function resolveDependencies(perms: UserPermissionSet): UserPermissionSet {
   }
 
   // Users module dependencies
-  if (sys.has("users.create") || sys.has("users.update") || sys.has("users.delete")) {
+  if (
+    sys.has("users.create") ||
+    sys.has("users.update") ||
+    sys.has("users.delete")
+  ) {
     sys.add("users.view");
   }
 
   // Roles module dependencies
-  if (sys.has("roles.create") || sys.has("roles.update") || sys.has("roles.delete")) {
+  if (
+    sys.has("roles.create") ||
+    sys.has("roles.update") ||
+    sys.has("roles.delete")
+  ) {
     sys.add("roles.view");
   }
 
   // Keys module dependencies
-  if (sys.has("keys.create") || sys.has("keys.update") || sys.has("keys.delete") || sys.has("keys.rotate")) {
+  if (
+    sys.has("keys.create") ||
+    sys.has("keys.update") ||
+    sys.has("keys.delete") ||
+    sys.has("keys.rotate")
+  ) {
     sys.add("keys.view");
   }
 
@@ -240,7 +369,10 @@ interface InitialUserFormState {
   permissions: UserPermissionSet;
 }
 
-function arePermsEqual(a?: UserPermissionSet | null, b?: UserPermissionSet | null): boolean {
+function arePermsEqual(
+  a?: UserPermissionSet | null,
+  b?: UserPermissionSet | null,
+): boolean {
   if (!a && !b) return true;
   if (!a || !b) return false;
 
@@ -256,7 +388,11 @@ function arePermsEqual(a?: UserPermissionSet | null, b?: UserPermissionSet | nul
       table_name: d.table_name || "",
       operations: [...(d.operations || [])].sort(),
     }))
-    .sort((x, y) => (x.database + ":" + x.table_name).localeCompare(y.database + ":" + y.table_name));
+    .sort((x, y) =>
+      (x.database + ":" + x.table_name).localeCompare(
+        y.database + ":" + y.table_name,
+      ),
+    );
 
   const bDbs = [...(b.databases || [])]
     .map((d) => ({
@@ -264,7 +400,11 @@ function arePermsEqual(a?: UserPermissionSet | null, b?: UserPermissionSet | nul
       table_name: d.table_name || "",
       operations: [...(d.operations || [])].sort(),
     }))
-    .sort((x, y) => (x.database + ":" + x.table_name).localeCompare(y.database + ":" + y.table_name));
+    .sort((x, y) =>
+      (x.database + ":" + x.table_name).localeCompare(
+        y.database + ":" + y.table_name,
+      ),
+    );
 
   if (JSON.stringify(aDbs) !== JSON.stringify(bDbs)) {
     return false;
@@ -305,7 +445,9 @@ export function Users() {
 
   const [matchMode, setMatchMode] = useState<"all" | "any">("all");
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
-  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
+  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>(
+    [],
+  );
 
   // Visible columns map
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
@@ -354,7 +496,10 @@ export function Users() {
   } | null>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handlePermBadgeMouseEnter = (user: UserRecordApi, e: React.MouseEvent<HTMLElement>) => {
+  const handlePermBadgeMouseEnter = (
+    user: UserRecordApi,
+    e: React.MouseEvent<HTMLElement>,
+  ) => {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
@@ -399,9 +544,10 @@ export function Users() {
   // Active operator cannot delete their own account
   const isEditingSelf = Boolean(
     currentUser &&
-      editingUser &&
-      (currentUser.id === editingUser.id ||
-        currentUser.username.toLowerCase() === editingUser.username.toLowerCase()),
+    editingUser &&
+    (currentUser.id === editingUser.id ||
+      currentUser.username.toLowerCase() ===
+        editingUser.username.toLowerCase()),
   );
 
   // Anti-Privilege-Escalation Guards: Operators can only delegate privileges they personally hold
@@ -425,8 +571,12 @@ export function Users() {
       if (!currentUser) return false;
       if (currentUser.permissions?.system?.includes("*")) return true;
       return (currentUser.permissions?.databases || []).some((d) => {
-        const dbMatch = d.database === "*" || d.database.toLowerCase() === dbAlias.toLowerCase();
-        const opMatch = d.operations.some((o) => o === "*" || o.toUpperCase() === op.toUpperCase());
+        const dbMatch =
+          d.database === "*" ||
+          d.database.toLowerCase() === dbAlias.toLowerCase();
+        const opMatch = d.operations.some(
+          (o) => o === "*" || o.toUpperCase() === op.toUpperCase(),
+        );
         return dbMatch && opMatch;
       });
     },
@@ -439,8 +589,11 @@ export function Users() {
       if (!currentUser) return false;
       if (currentUser.permissions?.system?.includes("*")) return true;
       return (currentUser.permissions?.blobs || []).some((b) => {
-        const nsMatch = b.namespace === "*" || b.namespace.toLowerCase() === ns.toLowerCase();
-        const opMatch = b.operations.some((o) => o === "*" || o.toUpperCase() === op.toUpperCase());
+        const nsMatch =
+          b.namespace === "*" || b.namespace.toLowerCase() === ns.toLowerCase();
+        const opMatch = b.operations.some(
+          (o) => o === "*" || o.toUpperCase() === op.toUpperCase(),
+        );
         return nsMatch && opMatch;
       });
     },
@@ -465,8 +618,14 @@ export function Users() {
     if (!initialFormStateRef.current) return false;
     const initial = initialFormStateRef.current;
 
-    const currentCleanUser = formUsername.trim().toLowerCase().replace(/\s+/g, "_");
-    const initCleanUser = initial.username.trim().toLowerCase().replace(/\s+/g, "_");
+    const currentCleanUser = formUsername
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_");
+    const initCleanUser = initial.username
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_");
     if (currentCleanUser !== initCleanUser) return true;
 
     if (formEmail.trim() !== initial.email.trim()) return true;
@@ -481,7 +640,10 @@ export function Users() {
   const isSaveDisabled = useMemo(() => {
     if (isSubmitting) return true;
     if (isTargetRootProtected) return true;
-    const cleanUsername = formUsername.trim().toLowerCase().replace(/\s+/g, "_");
+    const cleanUsername = formUsername
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_");
     if (!cleanUsername) return true;
 
     if (editingUser) {
@@ -493,7 +655,14 @@ export function Users() {
       if (formPassword.length < 8) return true;
       return false;
     }
-  }, [isSubmitting, isTargetRootProtected, formUsername, editingUser, isDirty, formPassword]);
+  }, [
+    isSubmitting,
+    isTargetRootProtected,
+    formUsername,
+    editingUser,
+    isDirty,
+    formPassword,
+  ]);
 
   const requestCloseDrawer = () => {
     if (isDirty && !isTargetRootProtected) {
@@ -621,8 +790,12 @@ export function Users() {
   const handleOpenEdit = (user: UserRecordApi) => {
     const initialPerms = resolveDependencies({
       system: user.permissions?.system || [],
-      databases: user.permissions?.databases ? JSON.parse(JSON.stringify(user.permissions.databases)) : [],
-      blobs: user.permissions?.blobs ? JSON.parse(JSON.stringify(user.permissions.blobs)) : [],
+      databases: user.permissions?.databases
+        ? JSON.parse(JSON.stringify(user.permissions.databases))
+        : [],
+      blobs: user.permissions?.blobs
+        ? JSON.parse(JSON.stringify(user.permissions.blobs))
+        : [],
     });
     setEditingUser(user);
     setDrawerTab("edit");
@@ -649,7 +822,10 @@ export function Users() {
       return;
     }
 
-    const cleanUsername = formUsername.trim().toLowerCase().replace(/\s+/g, "_");
+    const cleanUsername = formUsername
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_");
     if (!cleanUsername) {
       setFormError("Username is required");
       return;
@@ -704,7 +880,10 @@ export function Users() {
       forceCloseDrawer();
       await loadData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save administrator account";
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Failed to save administrator account";
       setFormError(msg);
     } finally {
       setIsSubmitting(false);
@@ -722,7 +901,8 @@ export function Users() {
     if (
       currentUser &&
       (deleteTarget.id === currentUser.id ||
-        deleteTarget.username.toLowerCase() === currentUser.username.toLowerCase())
+        deleteTarget.username.toLowerCase() ===
+          currentUser.username.toLowerCase())
     ) {
       setErrorMessage("Cannot delete your own active administrator account");
       setDeleteTarget(null);
@@ -735,7 +915,8 @@ export function Users() {
       forceCloseDrawer();
       await loadData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to delete user account";
+      const msg =
+        err instanceof Error ? err.message : "Failed to delete user account";
       setErrorMessage(msg);
     } finally {
       setIsDeleting(false);
@@ -813,7 +994,9 @@ export function Users() {
       if (grantablePermIds.length === 0) return prev;
       const allSelected = grantablePermIds.every((id) => current.includes(id));
       if (allSelected) {
-        const nextSystem = current.filter((id) => !grantablePermIds.includes(id));
+        const nextSystem = current.filter(
+          (id) => !grantablePermIds.includes(id),
+        );
         if (group.id === "databases") {
           return {
             ...prev,
@@ -999,7 +1182,11 @@ export function Users() {
           let val = "";
           if (rule.field === "username") val = u.username;
           else if (rule.field === "email") val = u.email || "";
-          else if (rule.field === "role") val = (u.id === 1 || u.is_super_admin) ? "root super admin" : "pbac operator";
+          else if (rule.field === "role")
+            val =
+              u.id === 1 || u.is_super_admin
+                ? "root super admin"
+                : "pbac operator";
           return matchesRule(val, rule.operator, rule.value);
         });
         return matchMode === "any" ? tests.some(Boolean) : tests.every(Boolean);
@@ -1021,9 +1208,9 @@ export function Users() {
         (u.permissions?.system &&
           u.permissions.system.some((p) =>
             ["cluster.", "roles.", "keys.", "audit.", "users."].some((prefix) =>
-              p.startsWith(prefix)
-            )
-          ))
+              p.startsWith(prefix),
+            ),
+          )),
     ).length;
   }, [users]);
 
@@ -1034,7 +1221,7 @@ export function Users() {
         u.is_super_admin ||
         (u.permissions?.databases && u.permissions.databases.length > 0) ||
         (u.permissions?.system &&
-          u.permissions.system.some((p) => p.startsWith("db.")))
+          u.permissions.system.some((p) => p.startsWith("db."))),
     ).length;
   }, [users]);
 
@@ -1045,14 +1232,20 @@ export function Users() {
         u.is_super_admin ||
         (u.permissions?.blobs && u.permissions.blobs.length > 0) ||
         (u.permissions?.system &&
-          u.permissions.system.some((p) => p.startsWith("blob.")))
+          u.permissions.system.some((p) => p.startsWith("blob."))),
     ).length;
   }, [users]);
 
   // Helper to extract categorized permissions for popover
   const getPopoverCategories = (user: UserRecordApi) => {
     if (user.id === 1 || user.is_super_admin) {
-      return { isRoot: true, groups: [], dbRules: [], blobRules: [], totalCount: 0 };
+      return {
+        isRoot: true,
+        groups: [],
+        dbRules: [],
+        blobRules: [],
+        totalCount: 0,
+      };
     }
 
     const userSys = new Set(user.permissions?.system || []);
@@ -1078,150 +1271,153 @@ export function Users() {
   };
 
   // Table Columns Definition
-  const columns: Column<UserRecordApi>[] = useMemo(() => [
-    {
-      id: "username",
-      header: "Username",
-      accessorKey: "username",
-      width: 220,
-      minWidth: 160,
-      maxWidth: 360,
-      isResizable: true,
-      className: "pl-4 pr-3",
-      cell: (row) => (
-        <span
-          className="text-[13px] font-medium text-white truncate"
-          title={row.username}
-        >
-          {row.username}
-        </span>
-      ),
-    },
-    {
-      id: "email",
-      header: "Email",
-      accessorKey: "email",
-      width: 220,
-      minWidth: 160,
-      maxWidth: 380,
-      isResizable: true,
-      className: "px-3",
-      cell: (row) => (
-        <span
-          className="text-[13px] text-[#8c8c8c] font-normal truncate block"
-          title={row.email || undefined}
-        >
-          {row.email || "—"}
-        </span>
-      ),
-    },
-    {
-      id: "permissions",
-      header: "Permissions",
-      width: 250,
-      minWidth: 190,
-      maxWidth: 420,
-      isResizable: true,
-      className: "px-3",
-      cell: (row) => {
-        const isRoot = row.id === 1 || row.is_super_admin;
-        if (isRoot) {
-          return (
-            <div
-              className="relative inline-flex items-center cursor-pointer select-none"
-              onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
-              onMouseLeave={handlePermBadgeMouseLeave}
-            >
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 shrink-0 hover:bg-amber-500/20 transition-colors">
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>full</span>
-              </span>
-            </div>
-          );
-        }
-
-        const sysCount = row.permissions?.system?.length || 0;
-        const dbCount = row.permissions?.databases?.length || 0;
-        const blobCount = row.permissions?.blobs?.length || 0;
-        const total = sysCount + dbCount + blobCount;
-
-        if (total === 0) {
-          return (
-            <div
-              className="relative inline-flex items-center cursor-pointer select-none"
-              onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
-              onMouseLeave={handlePermBadgeMouseLeave}
-            >
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#18181b] text-[#8c8c8c] border border-[#27272a] shrink-0 hover:border-[#383838] transition-colors">
-                <Lock className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
-                <span>0</span>
-              </span>
-            </div>
-          );
-        }
-
-        return (
-          <div
-            className="relative inline-flex items-center cursor-pointer select-none"
-            onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
-            onMouseLeave={handlePermBadgeMouseLeave}
+  const columns: Column<UserRecordApi>[] = useMemo(
+    () => [
+      {
+        id: "username",
+        header: "Username",
+        accessorKey: "username",
+        width: 220,
+        minWidth: 160,
+        maxWidth: 360,
+        isResizable: true,
+        className: "pl-4 pr-3",
+        cell: (row) => (
+          <span
+            className="text-[13px] font-medium text-white truncate"
+            title={row.username}
           >
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] hover:border-[#3f3f46] hover:text-white transition-colors shrink-0">
-              <Shield className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
-              <span>{total}</span>
-            </span>
-          </div>
-        );
+            {row.username}
+          </span>
+        ),
       },
-    },
-    {
-      id: "createdAt",
-      header: "Creation Date",
-      width: 140,
-      minWidth: 120,
-      maxWidth: 200,
-      isResizable: true,
-      className: "px-3",
-      cell: (row) => (
-        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
-          {formatDate(row.created_at)}
-        </span>
-      ),
-    },
-    {
-      id: "updatedAt",
-      header: "Last Update Date",
-      width: 150,
-      minWidth: 120,
-      maxWidth: 220,
-      isResizable: true,
-      className: "px-3",
-      cell: (row) => (
-        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
-          {formatDate(row.updated_at || row.created_at)}
-        </span>
-      ),
-    },
-    {
-      id: "actions",
-      header: <span className="sr-only">Actions</span>,
-      isFlex: true,
-      headerClassName: "justify-end pr-4 text-right",
-      className: "pl-3 pr-4 justify-end",
-      cell: (row) => (
-        <div className="flex items-center justify-end w-full">
-          <button
-            type="button"
-            disabled={!canUpdate}
-            onClick={() => handleOpenEdit(row)}
-            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+      {
+        id: "email",
+        header: "Email",
+        accessorKey: "email",
+        width: 220,
+        minWidth: 160,
+        maxWidth: 380,
+        isResizable: true,
+        className: "px-3",
+        cell: (row) => (
+          <span
+            className="text-[13px] text-[#8c8c8c] font-normal truncate block"
+            title={row.email || undefined}
           >
-            Manage
-          </button>
-        </div>
-      ),
-    },
-  ], [canUpdate, canDelete]);
+            {row.email || "—"}
+          </span>
+        ),
+      },
+      {
+        id: "permissions",
+        header: "Permissions",
+        width: 250,
+        minWidth: 190,
+        maxWidth: 420,
+        isResizable: true,
+        className: "px-3",
+        cell: (row) => {
+          const isRoot = row.id === 1 || row.is_super_admin;
+          if (isRoot) {
+            return (
+              <div
+                className="relative inline-flex items-center cursor-pointer select-none"
+                onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
+                onMouseLeave={handlePermBadgeMouseLeave}
+              >
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 shrink-0 hover:bg-amber-500/20 transition-colors">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>full</span>
+                </span>
+              </div>
+            );
+          }
+
+          const sysCount = row.permissions?.system?.length || 0;
+          const dbCount = row.permissions?.databases?.length || 0;
+          const blobCount = row.permissions?.blobs?.length || 0;
+          const total = sysCount + dbCount + blobCount;
+
+          if (total === 0) {
+            return (
+              <div
+                className="relative inline-flex items-center cursor-pointer select-none"
+                onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
+                onMouseLeave={handlePermBadgeMouseLeave}
+              >
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#18181b] text-[#8c8c8c] border border-[#27272a] shrink-0 hover:border-[#383838] transition-colors">
+                  <Lock className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                  <span>0</span>
+                </span>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              className="relative inline-flex items-center cursor-pointer select-none"
+              onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
+              onMouseLeave={handlePermBadgeMouseLeave}
+            >
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] hover:border-[#3f3f46] hover:text-white transition-colors shrink-0">
+                <Shield className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                <span>{total}</span>
+              </span>
+            </div>
+          );
+        },
+      },
+      {
+        id: "createdAt",
+        header: "Creation Date",
+        width: 140,
+        minWidth: 120,
+        maxWidth: 200,
+        isResizable: true,
+        className: "px-3",
+        cell: (row) => (
+          <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
+            {formatDate(row.created_at)}
+          </span>
+        ),
+      },
+      {
+        id: "updatedAt",
+        header: "Last Update Date",
+        width: 150,
+        minWidth: 120,
+        maxWidth: 220,
+        isResizable: true,
+        className: "px-3",
+        cell: (row) => (
+          <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
+            {formatDate(row.updated_at || row.created_at)}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: <span className="sr-only">Actions</span>,
+        isFlex: true,
+        headerClassName: "justify-end pr-4 text-right",
+        className: "pl-3 pr-4 justify-end",
+        cell: (row) => (
+          <div className="flex items-center justify-end w-full">
+            <button
+              type="button"
+              disabled={!canUpdate}
+              onClick={() => handleOpenEdit(row)}
+              className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Manage
+            </button>
+          </div>
+        ),
+      },
+    ],
+    [canUpdate, canDelete],
+  );
 
   const activeColumns = useMemo(() => {
     const visible = columns.filter(
@@ -1515,9 +1711,7 @@ export function Users() {
                         onChange={(val) =>
                           handleUpdateRule(rule.id, {
                             operator: val as
-                              | "contains"
-                              | "equals"
-                              | "starts_with",
+                              "contains" | "equals" | "starts_with",
                           })
                         }
                         className="w-32 sm:w-36 shrink-0"
@@ -1705,7 +1899,9 @@ export function Users() {
       <SlideOver
         isOpen={slideOverOpen}
         onClose={requestCloseDrawer}
-        title={editingUser ? `Manage User: ${editingUser.username}` : "New User"}
+        title={
+          editingUser ? `Manage User: ${editingUser.username}` : "New User"
+        }
         subtitle="Configure credentials and granular PBAC capabilities"
         width="w-[640px] max-w-full"
       >
@@ -1749,7 +1945,9 @@ export function Users() {
                   <span>Cannot Delete Own Account</span>
                 </div>
                 <div className="text-[13px] text-[#a1a1aa] leading-relaxed mb-4">
-                  You cannot delete your own active administrator account while signed in. Another administrator with user deletion privileges must perform this action.
+                  You cannot delete your own active administrator account while
+                  signed in. Another administrator with user deletion privileges
+                  must perform this action.
                 </div>
                 <button
                   type="button"
@@ -1770,7 +1968,8 @@ export function Users() {
                   <span className="text-white font-medium">
                     {editingUser.username}
                   </span>
-                  . All assigned capabilities and active sessions will be revoked.
+                  . All assigned capabilities and active sessions will be
+                  revoked.
                 </div>
                 <button
                   type="button"
@@ -1795,7 +1994,10 @@ export function Users() {
           </div>
         ) : (
           /* Configuration Tab Form */
-          <form onSubmit={handleSubmitForm} className="flex-1 flex flex-col min-h-0">
+          <form
+            onSubmit={handleSubmitForm}
+            className="flex-1 flex flex-col min-h-0"
+          >
             <div className="flex-1 p-5 overflow-y-auto space-y-5 font-sans">
               {formError && (
                 <div className="flex items-center gap-2 p-3 rounded-[8px] bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
@@ -1813,7 +2015,8 @@ export function Users() {
                       Root Account Protected
                     </span>
                     <span>
-                      Only the Root Super-Administrator can modify this account's credentials, email, or password.
+                      Only the Root Super-Administrator can modify this
+                      account's credentials, email, or password.
                     </span>
                   </div>
                 </div>
@@ -1841,7 +2044,9 @@ export function Users() {
                         disabled={isTargetRootProtected}
                         value={formUsername}
                         onChange={(e) =>
-                          setFormUsername(e.target.value.toLowerCase().replace(/\s+/g, "_"))
+                          setFormUsername(
+                            e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                          )
                         }
                         placeholder="e.g. dev_operator"
                         className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-mono lowercase disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1878,7 +2083,9 @@ export function Users() {
                       required={!editingUser}
                       value={formPassword}
                       onChange={(e) => setFormPassword(e.target.value)}
-                      placeholder={editingUser ? "••••••••••••" : "Minimum 8 characters"}
+                      placeholder={
+                        editingUser ? "••••••••••••" : "Minimum 8 characters"
+                      }
                       className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                   </div>
@@ -1898,11 +2105,13 @@ export function Users() {
                           Module Capabilities
                         </h4>
                         <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                          Configure administrative and functional module privileges
+                          Configure administrative and functional module
+                          privileges
                         </p>
                       </div>
                       <span className="text-[12px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans tabular-nums">
-                        {formPermissions.system.length}/{ALL_SYSTEM_PERMS.length}
+                        {formPermissions.system.length}/
+                        {ALL_SYSTEM_PERMS.length}
                       </span>
                     </div>
 
@@ -1913,7 +2122,8 @@ export function Users() {
                         const selectedCount = groupPermIds.filter((id) =>
                           formPermissions.system.includes(id),
                         ).length;
-                        const isAllSelected = selectedCount === groupPermIds.length;
+                        const isAllSelected =
+                          selectedCount === groupPermIds.length;
 
                         return (
                           <div
@@ -1941,25 +2151,35 @@ export function Users() {
 
                             <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {group.permissions.map((perm) => {
-                                const isChecked = formPermissions.system.includes(perm.id);
+                                const isChecked =
+                                  formPermissions.system.includes(perm.id);
                                 const isLockedDependency =
-                                  (perm.id === "db.view" && formPermissions.databases.length > 0) ||
-                                  (perm.id === "blob.view" && formPermissions.blobs.length > 0);
-                                const isGrantable = isHeldByCurrentOperator(perm.id);
+                                  (perm.id === "db.view" &&
+                                    formPermissions.databases.length > 0) ||
+                                  (perm.id === "blob.view" &&
+                                    formPermissions.blobs.length > 0);
+                                const isGrantable = isHeldByCurrentOperator(
+                                  perm.id,
+                                );
 
                                 return (
                                   <div
                                     key={perm.id}
                                     onClick={() => {
-                                      if (isGrantable) togglePermission(perm.id);
+                                      if (isGrantable)
+                                        togglePermission(perm.id);
                                     }}
-                                    title={!isGrantable ? "You cannot grant privileges you do not possess" : perm.description}
+                                    title={
+                                      !isGrantable
+                                        ? "You cannot grant privileges you do not possess"
+                                        : perm.description
+                                    }
                                     className={`p-2.5 rounded-[6px] border transition-all flex items-start gap-2.5 select-none ${
                                       !isGrantable
                                         ? "opacity-35 cursor-not-allowed bg-[#101010] border-[#1e1e1e] text-[#666666]"
                                         : isChecked
-                                        ? "bg-[#18181b] border-[#444444] text-white cursor-pointer"
-                                        : "bg-[#141414] border-[#222222] text-[#8c8c8c] hover:border-[#383838] cursor-pointer"
+                                          ? "bg-[#18181b] border-[#444444] text-white cursor-pointer"
+                                          : "bg-[#141414] border-[#222222] text-[#8c8c8c] hover:border-[#383838] cursor-pointer"
                                     }`}
                                   >
                                     {isGrantable ? (
@@ -1970,7 +2190,9 @@ export function Users() {
                                             : "border-[#404040] bg-[#1a1a1a]"
                                         }`}
                                       >
-                                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                        {isChecked && (
+                                          <Check className="w-3 h-3 stroke-[3]" />
+                                        )}
                                       </div>
                                     ) : (
                                       <div className="w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 text-[#666666]">
@@ -2018,11 +2240,14 @@ export function Users() {
                           </h4>
                           <span className="text-[12px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans tabular-nums">
                             {formPermissions.databases.length}{" "}
-                            {formPermissions.databases.length === 1 ? "rule" : "rules"}
+                            {formPermissions.databases.length === 1
+                              ? "rule"
+                              : "rules"}
                           </span>
                         </div>
                         <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                          Configure upstream database aliases, tables, and SQL operation grants
+                          Configure upstream database aliases, tables, and SQL
+                          operation grants
                         </p>
                       </div>
                       <Button
@@ -2043,7 +2268,8 @@ export function Users() {
                           No database access rules
                         </div>
                         <p className="text-[12px] text-[#737373]">
-                          This operator will have zero SQL query or table privileges.
+                          This operator will have zero SQL query or table
+                          privileges.
                         </p>
                       </div>
                     ) : (
@@ -2062,7 +2288,9 @@ export function Users() {
                                   <CustomSelect
                                     value={rule.database}
                                     options={dbOptions}
-                                    onChange={(val) => updateDatabaseRule(idx, "database", val)}
+                                    onChange={(val) =>
+                                      updateDatabaseRule(idx, "database", val)
+                                    }
                                     className="w-full"
                                     menuWidth="w-full"
                                   />
@@ -2075,7 +2303,11 @@ export function Users() {
                                     type="text"
                                     value={rule.table_name}
                                     onChange={(e) =>
-                                      updateDatabaseRule(idx, "table_name", e.target.value)
+                                      updateDatabaseRule(
+                                        idx,
+                                        "table_name",
+                                        e.target.value,
+                                      )
                                     }
                                     placeholder="* (All Tables)"
                                     className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[13px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-mono"
@@ -2093,25 +2325,35 @@ export function Users() {
                             </div>
 
                             <div className="pt-1 flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
+                              <span className="text-[12px] text-[#737373] mr-1">
+                                Permitted:
+                              </span>
                               {DB_OPERATIONS.map((op) => {
                                 const isAllowed = rule.operations?.includes(op);
-                                const isGrantable = isDbOpGrantable(rule.database, op);
+                                const isGrantable = isDbOpGrantable(
+                                  rule.database,
+                                  op,
+                                );
                                 return (
                                   <button
                                     key={op}
                                     type="button"
                                     disabled={!isGrantable}
-                                    title={!isGrantable ? "You do not possess permission for this operation" : undefined}
+                                    title={
+                                      !isGrantable
+                                        ? "You do not possess permission for this operation"
+                                        : undefined
+                                    }
                                     onClick={() => {
-                                      if (isGrantable) toggleDbOperation(idx, op);
+                                      if (isGrantable)
+                                        toggleDbOperation(idx, op);
                                     }}
                                     className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors border ${
                                       !isGrantable
                                         ? "opacity-30 cursor-not-allowed bg-[#141414] text-[#555555] border-[#222222]"
                                         : isAllowed
-                                        ? "bg-[#222222] text-white border-[#444444] cursor-pointer"
-                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838] cursor-pointer"
+                                          ? "bg-[#222222] text-white border-[#444444] cursor-pointer"
+                                          : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838] cursor-pointer"
                                     }`}
                                   >
                                     {op}
@@ -2137,11 +2379,14 @@ export function Users() {
                           </h4>
                           <span className="text-[12px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans tabular-nums">
                             {formPermissions.blobs.length}{" "}
-                            {formPermissions.blobs.length === 1 ? "rule" : "rules"}
+                            {formPermissions.blobs.length === 1
+                              ? "rule"
+                              : "rules"}
                           </span>
                         </div>
                         <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                          Configure binary bucket namespaces and transfer permissions
+                          Configure binary bucket namespaces and transfer
+                          permissions
                         </p>
                       </div>
                       <Button
@@ -2162,7 +2407,8 @@ export function Users() {
                           No blob storage rules
                         </div>
                         <p className="text-[12px] text-[#737373]">
-                          This operator will have zero object upload or download privileges.
+                          This operator will have zero object upload or download
+                          privileges.
                         </p>
                       </div>
                     ) : (
@@ -2180,7 +2426,9 @@ export function Users() {
                                 <CustomSelect
                                   value={rule.namespace}
                                   options={blobOptions}
-                                  onChange={(val) => updateBlobRule(idx, "namespace", val)}
+                                  onChange={(val) =>
+                                    updateBlobRule(idx, "namespace", val)
+                                  }
                                   className="w-full"
                                   menuWidth="w-full"
                                 />
@@ -2196,25 +2444,35 @@ export function Users() {
                             </div>
 
                             <div className="pt-1 flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
+                              <span className="text-[12px] text-[#737373] mr-1">
+                                Permitted:
+                              </span>
                               {BLOB_OPERATIONS.map((op) => {
                                 const isAllowed = rule.operations?.includes(op);
-                                const isGrantable = isBlobOpGrantable(rule.namespace, op);
+                                const isGrantable = isBlobOpGrantable(
+                                  rule.namespace,
+                                  op,
+                                );
                                 return (
                                   <button
                                     key={op}
                                     type="button"
                                     disabled={!isGrantable}
-                                    title={!isGrantable ? "You do not possess permission for this operation" : undefined}
+                                    title={
+                                      !isGrantable
+                                        ? "You do not possess permission for this operation"
+                                        : undefined
+                                    }
                                     onClick={() => {
-                                      if (isGrantable) toggleBlobOperation(idx, op);
+                                      if (isGrantable)
+                                        toggleBlobOperation(idx, op);
                                     }}
                                     className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors border ${
                                       !isGrantable
                                         ? "opacity-30 cursor-not-allowed bg-[#141414] text-[#555555] border-[#222222]"
                                         : isAllowed
-                                        ? "bg-[#222222] text-white border-[#444444] cursor-pointer"
-                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838] cursor-pointer"
+                                          ? "bg-[#222222] text-white border-[#444444] cursor-pointer"
+                                          : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838] cursor-pointer"
                                     }`}
                                   >
                                     {op}
@@ -2241,7 +2499,11 @@ export function Users() {
                 {isTargetRootProtected ? "Close" : "Cancel"}
               </Button>
               {!isTargetRootProtected && (
-                <Button type="submit" variant="primary" disabled={isSaveDisabled}>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={isSaveDisabled}
+                >
                   {isSubmitting ? (
                     <div className="flex items-center gap-2">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -2309,7 +2571,8 @@ export function Users() {
             {/* Popover Header */}
             <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[#222225] bg-[#141416]/90 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                {hoveredPerms.user.id === 1 || hoveredPerms.user.is_super_admin ? (
+                {hoveredPerms.user.id === 1 ||
+                hoveredPerms.user.is_super_admin ? (
                   <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
                 ) : (
                   <Shield className="w-4 h-4 text-[#3b82f6] shrink-0" />
@@ -2318,7 +2581,8 @@ export function Users() {
                   {hoveredPerms.user.username}
                 </span>
               </div>
-              {hoveredPerms.user.id === 1 || hoveredPerms.user.is_super_admin ? (
+              {hoveredPerms.user.id === 1 ||
+              hoveredPerms.user.is_super_admin ? (
                 <span className="text-[10px] font-medium text-[#d4d4d8] bg-[#1c1c20] border border-[#27272a] px-2 py-0.5 rounded-full shrink-0">
                   Super Admin
                 </span>
@@ -2341,26 +2605,33 @@ export function Users() {
                   return (
                     <div className="space-y-2.5">
                       <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
-                        Sovereign root account. Bypasses all PBAC restrictions with unrestricted global system authority.
+                        Sovereign root account. Bypasses all PBAC restrictions
+                        with unrestricted global system authority.
                       </p>
                       <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
-                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Databases
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" />{" "}
+                          Databases
                         </div>
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
-                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> SQL Queries
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" />{" "}
+                          SQL Queries
                         </div>
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
-                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Blob Storage
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" />{" "}
+                          Blob Storage
                         </div>
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
-                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> API Keys
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" />{" "}
+                          API Keys
                         </div>
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
-                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Roles & RBAC
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" />{" "}
+                          Roles & RBAC
                         </div>
                         <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
-                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Cluster Mesh
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" />{" "}
+                          Cluster Mesh
                         </div>
                       </div>
                     </div>
@@ -2371,8 +2642,12 @@ export function Users() {
                   return (
                     <div className="py-4 text-center">
                       <Lock className="w-4 h-4 text-[#52525b] mx-auto mb-1.5" />
-                      <p className="text-[11px] text-[#71717a]">Zero permissions assigned</p>
-                      <p className="text-[10px] text-[#52525b]">This operator cannot perform administrative operations</p>
+                      <p className="text-[11px] text-[#71717a]">
+                        Zero permissions assigned
+                      </p>
+                      <p className="text-[10px] text-[#52525b]">
+                        This operator cannot perform administrative operations
+                      </p>
                     </div>
                   );
                 }

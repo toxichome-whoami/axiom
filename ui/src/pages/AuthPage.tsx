@@ -699,7 +699,8 @@ export function AuthPage({
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
               />
               <p className="text-[11px] text-[#777777] mt-1">
-                Used for account recovery, notifications, and dual authentication login.
+                Used for account recovery, notifications, and dual
+                authentication login.
               </p>
             </div>
 

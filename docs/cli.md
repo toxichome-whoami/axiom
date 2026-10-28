@@ -55,40 +55,40 @@ axiom blob ns create -n assets
 
 Apply to all subcommands. Can be placed before or after the command.
 
-| Flag | Long | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `-U` | `--url` | `http://127.0.0.1:4500` | Gateway base URL |
-| | `--api-key` | *(none)* | Machine API key or token (alias: `--token`) |
-| | `--json` | `false` | Output as formatted JSON |
-| | `--jsonl` | `false` | Output as single-line JSON Lines |
-| | `--brief` | `false` | Output concise single-line summary |
-| `-h` | `--help` | | Print command help |
-| `-V` | `--version` | | Print version |
+| Flag | Long        | Default                 | Description                                 |
+| :--- | :---------- | :---------------------- | :------------------------------------------ |
+| `-U` | `--url`     | `http://127.0.0.1:4500` | Gateway base URL                            |
+|      | `--api-key` | _(none)_                | Machine API key or token (alias: `--token`) |
+|      | `--json`    | `false`                 | Output as formatted JSON                    |
+|      | `--jsonl`   | `false`                 | Output as single-line JSON Lines            |
+|      | `--brief`   | `false`                 | Output concise single-line summary          |
+| `-h` | `--help`    |                         | Print command help                          |
+| `-V` | `--version` |                         | Print version                               |
 
 ---
 
 ## 3. Command Index
 
-| Category | Command | Aliases | Purpose |
-| :--- | :--- | :--- | :--- |
-| **Daemon** | `axiom server` | `start`, `run` | Run the HTTP gateway and storage daemon |
-| **Security** | `axiom user` | `show`, `update` | Super Administrator account recovery & credentials (direct SQLite access) |
-| | `axiom login` | | Authenticate against gateway and get bearer session |
-| | `axiom logout` | | Invalidate active administrative session |
-| | `axiom key` | | Scoped machine API keys and tokens |
-| | `axiom role` | | RBAC permission policies |
-| **Data** | `axiom db` | | Upstream SQL database connection pools and validation |
-| | `axiom blob` | | Storage namespaces, bitrot scrubbing, and verification |
-| | `axiom blob ns` | | Storage namespace quotas and lifecycle |
-| **Operations** | `axiom cluster` | | Distributed node mesh and latency pings |
-| | `axiom doctor` | | Host environment and upstream connectivity checks |
-| | `axiom health` | `status` | Query live server health endpoint |
-| | `axiom metrics` | | Prometheus exposition metrics |
-| | `axiom cache` | | Hit/miss telemetry and cache purge |
-| | `axiom reload` | | Force sync of metadata snapshots |
-| | `axiom config` | | Generate, inspect, or export `config.toml` |
-| **Integration**| `axiom mcp` | | Model Context Protocol tool execution & stdio bridge |
-| | `axiom completions` | | Shell autocompletion scripts |
+| Category        | Command             | Aliases          | Purpose                                                                   |
+| :-------------- | :------------------ | :--------------- | :------------------------------------------------------------------------ |
+| **Daemon**      | `axiom server`      | `start`, `run`   | Run the HTTP gateway and storage daemon                                   |
+| **Security**    | `axiom user`        | `show`, `update` | Super Administrator account recovery & credentials (direct SQLite access) |
+|                 | `axiom login`       |                  | Authenticate against gateway and get bearer session                       |
+|                 | `axiom logout`      |                  | Invalidate active administrative session                                  |
+|                 | `axiom key`         |                  | Scoped machine API keys and tokens                                        |
+|                 | `axiom role`        |                  | RBAC permission policies                                                  |
+| **Data**        | `axiom db`          |                  | Upstream SQL database connection pools and validation                     |
+|                 | `axiom blob`        |                  | Storage namespaces, bitrot scrubbing, and verification                    |
+|                 | `axiom blob ns`     |                  | Storage namespace quotas and lifecycle                                    |
+| **Operations**  | `axiom cluster`     |                  | Distributed node mesh and latency pings                                   |
+|                 | `axiom doctor`      |                  | Host environment and upstream connectivity checks                         |
+|                 | `axiom health`      | `status`         | Query live server health endpoint                                         |
+|                 | `axiom metrics`     |                  | Prometheus exposition metrics                                             |
+|                 | `axiom cache`       |                  | Hit/miss telemetry and cache purge                                        |
+|                 | `axiom reload`      |                  | Force sync of metadata snapshots                                          |
+|                 | `axiom config`      |                  | Generate, inspect, or export `config.toml`                                |
+| **Integration** | `axiom mcp`         |                  | Model Context Protocol tool execution & stdio bridge                      |
+|                 | `axiom completions` |                  | Shell autocompletion scripts                                              |
 
 ---
 
@@ -108,12 +108,12 @@ axiom user update -u new_admin -e admin@company.com -p "newsecret!"
 
 ### Flags (`user update`)
 
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-u` | `--username`, `--user` | Yes (1st) | New super administrator username |
-| `-e` | `--email` | | New super administrator email address |
-| `-p` | `--password`, `--pass` | | New password (interactive prompt if omitted) |
-| `-c` | `--config` | | Custom config path |
+| Flag | Long                   | Positional | Description                                  |
+| :--- | :--------------------- | :--------- | :------------------------------------------- |
+| `-u` | `--username`, `--user` | Yes (1st)  | New super administrator username             |
+| `-e` | `--email`              |            | New super administrator email address        |
+| `-p` | `--password`, `--pass` |            | New password (interactive prompt if omitted) |
+| `-c` | `--config`             |            | Custom config path                           |
 
 ---
 
@@ -143,7 +143,7 @@ axiom logout
 ## 6. Databases (`axiom db`)
 
 Register and configure upstream SQL engines, test connection health, and manage connection pools.
-*(Note: Ad-hoc query execution and schema browsing are available directly via the Web UI console and REST API).*
+_(Note: Ad-hoc query execution and schema browsing are available directly via the Web UI console and REST API)._
 
 ### Connections
 
@@ -169,21 +169,21 @@ axiom db remove old_db
 
 #### Flags (`db add`, `db update`)
 
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-a` | `--alias` | Yes (1st) | Database identifier |
-| `-c` | `--conn`, `--connection-url` | | Connection string URI |
-| `-e` | `--engine`, `--dialect` | | Dialect: `postgres`, `mysql`, `sqlite`, `mssql`, `clickhouse`, `snowflake`, `oracle` |
-| `-m` | `--min`, `--pool-min` | | Min pool size |
-| `-M` | `--max`, `--pool-max` | | Max pool size |
-| `-n` | `--new-alias`, `--rename` | | Rename alias (`update` only) |
+| Flag | Long                         | Positional | Description                                                                          |
+| :--- | :--------------------------- | :--------- | :----------------------------------------------------------------------------------- |
+| `-a` | `--alias`                    | Yes (1st)  | Database identifier                                                                  |
+| `-c` | `--conn`, `--connection-url` |            | Connection string URI                                                                |
+| `-e` | `--engine`, `--dialect`      |            | Dialect: `postgres`, `mysql`, `sqlite`, `mssql`, `clickhouse`, `snowflake`, `oracle` |
+| `-m` | `--min`, `--pool-min`        |            | Min pool size                                                                        |
+| `-M` | `--max`, `--pool-max`        |            | Max pool size                                                                        |
+| `-n` | `--new-alias`, `--rename`    |            | Rename alias (`update` only)                                                         |
 
 ---
 
 ## 7. Blob Storage (`axiom blob`)
 
 Storage namespace configuration, chunk integrity verification, and bitrot scrubbing.
-*(Note: Object uploads/downloads and pre-signed capability tickets are handled via the Web UI and REST/MCP APIs).*
+_(Note: Object uploads/downloads and pre-signed capability tickets are handled via the Web UI and REST/MCP APIs)._
 
 ### Maintenance & Integrity
 
@@ -227,13 +227,13 @@ axiom key remove web_client
 
 #### Flags (`key create`, `key update`)
 
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-n` | `--name` | Yes (1st) | Key name |
-| `-r` | `--role` | | Attached RBAC role |
-| `-s` | `--secret` | | Custom secret string (auto-generated if omitted) |
-| `-l` | `--limit`, `--rate-limit` | | Requests per minute (0 = unconstrained) |
-| `-e` | `--expires`, `--expires-at` | | Expiration UNIX timestamp |
+| Flag | Long                        | Positional | Description                                      |
+| :--- | :-------------------------- | :--------- | :----------------------------------------------- |
+| `-n` | `--name`                    | Yes (1st)  | Key name                                         |
+| `-r` | `--role`                    |            | Attached RBAC role                               |
+| `-s` | `--secret`                  |            | Custom secret string (auto-generated if omitted) |
+| `-l` | `--limit`, `--rate-limit`   |            | Requests per minute (0 = unconstrained)          |
+| `-e` | `--expires`, `--expires-at` |            | Expiration UNIX timestamp                        |
 
 ### RBAC Roles (`axiom role`)
 
