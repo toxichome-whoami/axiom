@@ -37,9 +37,15 @@ fn get_multiplier(unit: &str) -> Option<f64> {
 ///  - Returns `Ok(u64)` on success, or `Err(String)` if syntax is unparseable.
 ///  - Side effects: Initializes regex on first call via `OnceLock`.
 pub fn parse_size(size_str: &str) -> Result<u64, String> {
-    let normalized = size_str.to_lowercase().replace(" ", "");
+    let normalized = size_str.to_lowercase().replace(' ', "");
 
     if let Ok(num) = normalized.parse::<f64>() {
+        if num.is_nan() || num.is_infinite() || num < 0.0 {
+            return Err(format!("Invalid size value: {}", size_str));
+        }
+        if num > u64::MAX as f64 {
+            return Err(format!("Size value exceeds maximum integer limit: {}", size_str));
+        }
         return Ok(num as u64);
     }
 
@@ -50,8 +56,15 @@ pub fn parse_size(size_str: &str) -> Result<u64, String> {
         let unit_str = caps.get(2).map_or("", |m| m.as_str());
 
         if let Ok(scalar) = scalar_str.parse::<f64>() {
+            if scalar.is_nan() || scalar.is_infinite() || scalar < 0.0 {
+                return Err(format!("Invalid size scalar: {}", size_str));
+            }
             if let Some(multiplier) = get_multiplier(unit_str) {
-                return Ok((scalar * multiplier) as u64);
+                let total = scalar * multiplier;
+                if total.is_nan() || total.is_infinite() || total > u64::MAX as f64 {
+                    return Err(format!("Size exceeds maximum integer limit: {}", size_str));
+                }
+                return Ok(total as u64);
             }
         }
     }
@@ -140,6 +153,15 @@ mod tests {
     #[test]
     fn test_parse_size_bad() {
         assert!(parse_size("bad").is_err());
+    }
+
+    #[test]
+    fn test_parse_size_nan_and_negative() {
+        assert!(parse_size("nan").is_err());
+        assert!(parse_size("NaN").is_err());
+        assert!(parse_size("inf").is_err());
+        assert!(parse_size("-5").is_err());
+        assert!(parse_size("-10MB").is_err());
     }
 
     #[test]

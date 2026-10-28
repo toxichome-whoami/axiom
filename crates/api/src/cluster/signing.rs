@@ -109,17 +109,20 @@ pub fn verify_inbound_packet(
         return Err(ClusterAuthError::TimestampSkewExceeded);
     }
 
-    // 2. Prevent replay attacks via nonce deduplication
+    // 2. Verify signature in constant time FIRST before committing nonce state (AXIOM-SEC-001)
+    let expected_mac = compute_cluster_mac(node_id, secret, timestamp, nonce, body);
+    if !constant_time_str_eq(expected_mac.as_str(), provided_signature) {
+        return Err(ClusterAuthError::InvalidSignature);
+    }
+
+    // 3. Prevent replay attacks via nonce deduplication (only for authenticated packets)
     prune_expired_nonces(now_unix);
     if SEEN_NONCES.contains_key(nonce) {
         return Err(ClusterAuthError::ReplayDetected);
     }
-    SEEN_NONCES.insert(nonce.to_string(), now_unix + 60);
-
-    // 3. Verify signature in constant time
-    let expected_mac = compute_cluster_mac(node_id, secret, timestamp, nonce, body);
-    if !constant_time_str_eq(expected_mac.as_str(), provided_signature) {
-        return Err(ClusterAuthError::InvalidSignature);
+    // Hard-bound capacity to 50,000 to prevent unbounded memory growth
+    if SEEN_NONCES.len() < 50_000 {
+        SEEN_NONCES.insert(nonce.to_string(), now_unix + 60);
     }
 
     Ok(())
@@ -175,6 +178,9 @@ mod tests {
         let bad_sig =
             verify_inbound_packet(&node, secret, ts, "fresh_nonce_1", tampered_body, &sig);
         assert_eq!(bad_sig, Err(ClusterAuthError::InvalidSignature));
+
+        // Security check: Failed signature must NOT record nonce in SEEN_NONCES (AXIOM-SEC-001)
+        assert!(!SEEN_NONCES.contains_key("fresh_nonce_1"));
 
         // Expired timestamp should fail
         let old_ts = ts - 60;

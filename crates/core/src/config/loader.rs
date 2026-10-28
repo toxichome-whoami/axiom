@@ -40,7 +40,9 @@ impl ConfigManager {
                 panic!("FATAL: Failed to load configuration: {}", e);
             });
 
-        let _ = CONFIG.set(Arc::new(parsed));
+        if CONFIG.set(Arc::new(parsed)).is_err() {
+            tracing::warn!("ConfigManager::load called after initial configuration was already locked; ignoring subsequent reload");
+        }
         Ok(())
     }
 

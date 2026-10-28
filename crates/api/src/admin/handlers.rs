@@ -1227,7 +1227,9 @@ pub async fn get_admin_health(
 ///  - Side effects: None.
 ///  - Idempotent: Yes.
 pub async fn setup_begin() -> Result<impl IntoResponse, AxiomError> {
-    let has_users = MetadataStore::has_users().await.unwrap_or(false);
+    let has_users = MetadataStore::has_users().await.map_err(|e| {
+        AxiomError::new("METADATA_STORE_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
     Ok(Json(json!({
         "success": true,
         "data": {
@@ -1247,7 +1249,9 @@ pub async fn setup_account(
     headers: axum::http::HeaderMap,
     Json(payload): Json<SetupAccountRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    let has_users = MetadataStore::has_users().await.unwrap_or(false);
+    let has_users = MetadataStore::has_users().await.map_err(|e| {
+        AxiomError::new("METADATA_STORE_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
     if has_users {
         return Err(AxiomError::new(
             "SETUP_ALREADY_COMPLETED",
@@ -1355,9 +1359,10 @@ pub async fn test_database_url(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<TestUrlRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !MetadataStore::has_users().await.unwrap_or(false) {
-        // Setup in progress, allow connectivity test
-    } else {
+    let has_users = MetadataStore::has_users().await.map_err(|e| {
+        AxiomError::new("METADATA_STORE_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
+    if has_users {
         check_permission(&auth, "databases.view").await?;
     }
 
@@ -1545,7 +1550,7 @@ fn verify_trusted_device_token(cookie_val: &str, username: &str, secret: &str) -
     }
     let msg = format!("{}.{}.{}", u, exp, secret);
     let expected_sig = blake3::hash(msg.as_bytes()).to_hex().to_string();
-    sig == expected_sig
+    crate::cluster::signing::constant_time_str_eq(sig, &expected_sig)
 }
 
 fn create_trusted_device_token(username: &str, secret: &str) -> (String, i64) {
@@ -1587,9 +1592,17 @@ pub async fn login_handler(
         ));
     }
 
-    let device_secret = MetadataStore::get_or_create_system_secret("trusted_device_hmac_key")
-        .await
-        .unwrap_or_else(|_| "axiom_fallback_device_secret_key_fixed".to_string());
+    let device_secret = match MetadataStore::get_or_create_system_secret("trusted_device_hmac_key").await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to retrieve system secret for trusted device: {}", e);
+            return Err(AxiomError::new(
+                "INTERNAL_SECURITY_ERROR",
+                "Internal security configuration error",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
 
     // 2. Evaluate Trusted Device Cookie
     let mut is_trusted_device = false;
