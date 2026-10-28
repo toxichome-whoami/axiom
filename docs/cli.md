@@ -35,8 +35,8 @@ All commands support **dual syntax**: positional arguments for fast typing, or s
 # 1. Start gateway
 axiom server run
 
-# 2. Add admin user (interactive prompt or flags)
-axiom user add admin -p "s3cur3_pass!" -e admin@example.com
+# 2. Inspect root super admin credentials (or recover via update)
+axiom user show
 
 # 3. Connect database
 axiom db add main_db -c "postgres://postgres:postgres@localhost:5432/app_db"
@@ -72,7 +72,7 @@ Apply to all subcommands. Can be placed before or after the command.
 | Category | Command | Aliases | Purpose |
 | :--- | :--- | :--- | :--- |
 | **Daemon** | `axiom server` | `start`, `run` | Run the HTTP gateway and storage daemon |
-| **Security** | `axiom user` | | Admin human user accounts (direct SQLite access) |
+| **Security** | `axiom user` | `show`, `update` | Super Administrator account recovery & credentials (direct SQLite access) |
 | | `axiom login` | | Authenticate against gateway and get bearer session |
 | | `axiom logout` | | Invalidate active administrative session |
 | | `axiom key` | | Scoped machine API keys and tokens |
@@ -92,35 +92,27 @@ Apply to all subcommands. Can be placed before or after the command.
 
 ---
 
-## 4. User Management (`axiom user`)
+## 4. Super Administrator Management & Recovery (`axiom user`)
 
-Operates directly against the local metadata store. Works even when the server daemon is stopped.
+Operates directly against the local metadata store on the host machine. Designed for root super administrator account recovery and inspection if credentials (username, email, or password) are forgotten. Secondary user accounts and PBAC roles are managed exclusively via the Web UI.
 
 ```bash
-# Add admin user
-axiom user add admin -p "secret123!" -e admin@example.com
-axiom user add -u bob -p "secret123!"
+# View super administrator account details (username, email, creation time)
+axiom user show
+axiom user info --json
 
-# Update user
-axiom user update admin -p "newsecret!"
-axiom user update -u admin -e new@example.com
-
-# List users
-axiom user list
-axiom user ls --json
-
-# Delete user
-axiom user remove bob
-axiom user rm -u bob
+# Update super administrator credentials (prompts interactively if flags omitted)
+axiom user update -p "newsecret!"
+axiom user update -u new_admin -e admin@company.com -p "newsecret!"
 ```
 
-### Flags (`user add`, `user update`)
+### Flags (`user update`)
 
 | Flag | Long | Positional | Description |
 | :--- | :--- | :--- | :--- |
-| `-u` | `--user`, `--username` | Yes (1st) | Admin username |
-| `-e` | `--email` | | Admin email address |
-| `-p` | `--password`, `--pass` | | Password (prompts securely if omitted) |
+| `-u` | `--username`, `--user` | Yes (1st) | New super administrator username |
+| `-e` | `--email` | | New super administrator email address |
+| `-p` | `--password`, `--pass` | | New password (interactive prompt if omitted) |
 | `-c` | `--config` | | Custom config path |
 
 ---

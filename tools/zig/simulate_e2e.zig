@@ -450,9 +450,9 @@ pub fn main() !void {
         if (rc_doc != 0) return error.CliDoctorFailed;
         logPass("CLI: axiom doctor executed successfully");
 
-        const rc_ul = try executeCli(allocator, "user list --json -c test_e2e_run/config.toml");
+        const rc_ul = try executeCli(allocator, "user show --json -c test_e2e_run/config.toml");
         if (rc_ul != 0) return error.CliUserListFailed;
-        logPass("CLI: axiom user list --json executed successfully");
+        logPass("CLI: axiom user show --json executed successfully");
 
         const rc_dl = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} db list --json", .{active_token}));
         if (rc_dl != 0) return error.CliDbListFailed;

@@ -2,7 +2,7 @@
  * Cluster Settings and Administrative Operator directory interface.
  * Owned by: ui/settings
  * Key deps: DataTable, Button, lucide-react, ../api/client
- * Invariants: Human admin users can only be created via initial setup or CLI command (axiom user add).
+ * Invariants: The root super administrator is created via initial setup wizard; secondary users are created and managed via the Users directory.
  * Last structural change: Standardized on Axiom pure dark neutral palette, horizontal tab navigation, and 13px typography.
  */
 

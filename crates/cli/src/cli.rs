@@ -131,7 +131,7 @@ pub fn print_quickstart_guide() {
         "  axiom blob [ls|put|get]       Native object storage, uploads, transfers & namespaces"
     );
     println!(
-        "  axiom user [ls|add|update]    Admin user management (direct host metadata DB access)"
+        "  axiom user [show|update]      Super Admin recovery & credentials (direct host metadata DB)"
     );
     println!("  axiom key [ls|create|rotate]  Machine API keys, rate limits, and tokens");
     println!("  axiom role [ls|create|update] RBAC permissions and role assignments\n");
@@ -432,215 +432,200 @@ async fn init_cli_metadata(config_path: Option<&str>) -> Result<(), String> {
 }
 
 async fn handle_user_command(
-    command: UserCommands,
+    command: Option<UserCommands>,
     format: OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cfg_path = match &command {
-        UserCommands::Add { config, .. } => config.as_deref(),
-        UserCommands::Update { config, .. } => config.as_deref(),
-        UserCommands::List { config } => config.as_deref(),
-        UserCommands::Remove { config, .. } => config.as_deref(),
+        Some(UserCommands::Show { config }) => config.as_deref(),
+        Some(UserCommands::Update { config, .. }) => config.as_deref(),
+        None => None,
     };
     init_cli_metadata(cfg_path)
         .await
         .map_err(|e| format!("Failed to connect to metadata store: {}", e))?;
 
-    match command {
-        UserCommands::Add {
-            username,
-            user,
-            email,
-            password,
-            ..
-        } => {
-            let username = match username.or(user) {
-                Some(u) if !u.trim().is_empty() => u,
-                _ => {
-                    use std::io::Write;
-                    reset_windows_console_mode();
-                    eprint!("Enter username for new admin: ");
-                    let _ = std::io::stderr().flush();
-                    let mut buf = String::new();
-                    std::io::stdin().read_line(&mut buf)?;
-                    let trimmed = buf.trim();
-                    if trimmed.is_empty() {
-                        return Err("Username cannot be empty".into());
-                    }
-                    trimmed.to_string()
-                }
-            };
+    let cmd = command.unwrap_or(UserCommands::Show { config: None });
 
-            let email_val = email.filter(|e| !e.trim().is_empty());
-
-            let pass = match password {
-                Some(p) if !p.is_empty() => p,
-                _ => {
-                    use std::io::Write;
-                    eprint!("Enter password for admin '{}': ", username);
-                    let _ = std::io::stderr().flush();
-                    read_secret_input()?
-                }
-            };
-
-            if pass.trim().is_empty() {
-                return Err("Password cannot be empty".into());
-            }
-
-            MetadataStore::create_user(&username, email_val.as_deref(), &pass)
+    match cmd {
+        UserCommands::Show { .. } => {
+            let admin_opt = MetadataStore::get_super_admin()
                 .await
-                .map_err(|e| {
-                    if e.contains("already exists") {
-                        format!("{}. Use 'axiom user update {} -p <PASS>' to update its password, or choose a different username.", e, username)
+                .map_err(|e| format!("Failed to retrieve Super Administrator: {}", e))?;
+
+            match admin_opt {
+                None => {
+                    let res = json!({
+                        "success": false,
+                        "error": "No Super Administrator account found. Initialize Axiom via the web UI setup wizard."
+                    });
+                    if format == OutputFormat::Json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else if format == OutputFormat::Jsonl {
+                        println!("{}", serde_json::to_string(&res)?);
                     } else {
-                        format!("User creation failed: {}", e)
+                        eprintln!("No Super Administrator account found in metadata store.");
+                        eprintln!("Please initialize Axiom via the web UI setup wizard or start the server.");
                     }
-                })?;
+                }
+                Some(admin) => {
+                    let created_formatted = chrono::DateTime::from_timestamp(admin.created_at, 0)
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                        .unwrap_or_else(|| admin.created_at.to_string());
+                    let updated_formatted = chrono::DateTime::from_timestamp(admin.updated_at, 0)
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                        .unwrap_or_else(|| admin.updated_at.to_string());
 
-            let res = json!({
-                "success": true,
-                "data": { "username": username, "message": "Admin user created successfully" }
-            });
+                    let res = json!({
+                        "success": true,
+                        "data": {
+                            "id": admin.id,
+                            "username": admin.username,
+                            "email": admin.email,
+                            "is_super_admin": true,
+                            "access_level": "Root Super Administrator",
+                            "created_at": admin.created_at,
+                            "created_at_formatted": created_formatted,
+                            "updated_at": admin.updated_at,
+                            "updated_at_formatted": updated_formatted,
+                        }
+                    });
 
-            render_output(format, &res, |_| {
-                println!("Admin user '{}' created successfully.", username);
-            })?;
+                    if format == OutputFormat::Json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else if format == OutputFormat::Jsonl {
+                        println!("{}", serde_json::to_string(&res)?);
+                    } else {
+                        println!("{:-<72}", "");
+                        println!("            AXIOM ROOT SUPER ADMINISTRATOR (HOST RECOVERY)       ");
+                        println!("{:-<72}", "");
+                        println!("{:<16} : {}", "ID", admin.id);
+                        println!("{:<16} : {}", "Username", admin.username);
+                        println!("{:<16} : {}", "Email", admin.email.as_deref().unwrap_or("-"));
+                        println!("{:<16} : Root Super Admin (Full Host & PBAC Authority)", "Access Level");
+                        println!("{:<16} : {} (unix: {})", "Created At", created_formatted, admin.created_at);
+                        println!("{:<16} : {} (unix: {})", "Updated At", updated_formatted, admin.updated_at);
+                        println!("{:-<72}", "");
+                        println!("Note: Secondary user accounts and PBAC roles are managed via the Web UI.");
+                        println!("Use 'axiom user update' to reset root credentials from this host machine.");
+                    }
+                }
+            }
         }
 
         UserCommands::Update {
+            new_username,
             username,
-            user,
             email,
             password,
             ..
         } => {
-            let username = match username.or(user) {
-                Some(u) if !u.trim().is_empty() => u,
-                _ => {
-                    use std::io::Write;
-                    eprint!("Enter admin username to update: ");
-                    let _ = std::io::stderr().flush();
-                    let mut buf = String::new();
-                    std::io::stdin().read_line(&mut buf)?;
-                    let trimmed = buf.trim();
-                    if trimmed.is_empty() {
-                        return Err("Username cannot be empty".into());
-                    }
-                    trimmed.to_string()
-                }
-            };
+            let admin = MetadataStore::get_super_admin()
+                .await
+                .map_err(|e| format!("Failed to retrieve Super Administrator: {}", e))?
+                .ok_or_else(|| "No Super Administrator found in metadata store. Run setup wizard to create the initial admin.".to_string())?;
 
-            let pass_input = match password {
-                Some(p) if !p.trim().is_empty() => Some(p),
-                _ if email.is_none() => {
-                    eprint!(
-                        "Enter new password for admin '{}' (leave blank to keep current): ",
-                        username
-                    );
-                    let p = read_secret_input()?;
-                    if p.trim().is_empty() {
-                        None
-                    } else {
-                        Some(p)
-                    }
-                }
-                _ => None,
-            };
+            let mut final_username: Option<String> = username.or(new_username).filter(|u| !u.trim().is_empty());
+            let mut final_email: Option<String> = email.filter(|e| !e.trim().is_empty());
+            let mut final_password: Option<String> = password.filter(|p| !p.trim().is_empty());
 
-            let email_opt = email.as_deref().map(Some);
-            if email_opt.is_none() && pass_input.is_none() {
-                eprintln!("No updates specified for admin '{}'. Use --email <EMAIL> or --password <PASS>.", username);
+            // If no flags were provided at all, prompt interactively for recovery on the host terminal
+            if final_username.is_none() && final_email.is_none() && final_password.is_none() {
+                use std::io::Write;
+                reset_windows_console_mode();
+                eprintln!("{:-<72}", "");
+                eprintln!("       SUPER ADMINISTRATOR INTERACTIVE CREDENTIAL RECOVERY      ");
+                eprintln!("{:-<72}", "");
+                eprintln!("Current Username : {}", admin.username);
+                eprintln!("Current Email    : {}", admin.email.as_deref().unwrap_or("-"));
+                eprintln!("(Press Enter without typing to keep an existing value unchanged)\n");
+
+                eprint!("Enter new username [{}]: ", admin.username);
+                let _ = std::io::stderr().flush();
+                let mut u_buf = String::new();
+                std::io::stdin().read_line(&mut u_buf)?;
+                let u_trimmed = u_buf.trim();
+                if !u_trimmed.is_empty() {
+                    final_username = Some(u_trimmed.to_string());
+                }
+
+                eprint!("Enter new email [{}]: ", admin.email.as_deref().unwrap_or("-"));
+                let _ = std::io::stderr().flush();
+                let mut e_buf = String::new();
+                std::io::stdin().read_line(&mut e_buf)?;
+                let e_trimmed = e_buf.trim();
+                if !e_trimmed.is_empty() {
+                    final_email = Some(e_trimmed.to_string());
+                }
+
+                eprint!("Enter new password (leave blank to keep unchanged): ");
+                let _ = std::io::stderr().flush();
+                let p_input = read_secret_input()?;
+                let p_trimmed = p_input.trim();
+                if !p_trimmed.is_empty() {
+                    final_password = Some(p_trimmed.to_string());
+                }
+                eprintln!();
+            }
+
+            if final_username.is_none() && final_email.is_none() && final_password.is_none() {
+                if format == OutputFormat::Json || format == OutputFormat::Jsonl {
+                    let res = json!({
+                        "success": true,
+                        "data": {
+                            "message": "No changes specified. Super Administrator account unchanged.",
+                            "username": admin.username,
+                            "email": admin.email,
+                            "password_updated": false
+                        }
+                    });
+                    render_output(format, &res, |_| {})?;
+                } else {
+                    println!("No changes specified. Super Administrator account unchanged.");
+                }
                 return Ok(());
             }
 
-            let updated = MetadataStore::update_user(&username, email_opt, pass_input.as_deref())
-                .await
-                .map_err(|e| format!("User update failed: {}", e))?;
+            let email_opt = final_email.as_deref().map(Some);
+            let updated = MetadataStore::update_user_by_id(
+                admin.id,
+                final_username.as_deref(),
+                email_opt,
+                final_password.as_deref(),
+                None,
+                None,
+            )
+            .await
+            .map_err(|e| format!("Failed to update Super Administrator: {}", e))?;
 
             if !updated {
-                return Err(format!("User '{}' not found", username).into());
+                return Err("Failed to update Super Administrator: account not found".into());
             }
+
+            let updated_admin = MetadataStore::get_super_admin()
+                .await
+                .map_err(|e| format!("Failed to retrieve updated Super Administrator: {}", e))?
+                .unwrap_or(admin);
 
             let res = json!({
                 "success": true,
-                "data": { "username": username, "message": "Admin user updated successfully" }
+                "data": {
+                    "message": "Super Administrator updated successfully",
+                    "id": updated_admin.id,
+                    "username": updated_admin.username,
+                    "email": updated_admin.email,
+                    "password_updated": final_password.is_some()
+                }
             });
 
             render_output(format, &res, |_| {
-                println!("Admin user '{}' updated successfully.", username);
-            })?;
-        }
-
-        UserCommands::List { .. } => {
-            let users = MetadataStore::list_users()
-                .await
-                .map_err(|e| format!("Failed to list users: {}", e))?;
-
-            let res = json!({
-                "success": true,
-                "data": { "users": users }
-            });
-
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&res)?);
-            } else if format == OutputFormat::Jsonl {
-                for u in &users {
-                    println!("{}", serde_json::to_string(u)?);
-                }
-            } else {
-                println!(
-                    "{:<6} {:<18} {:<15} {:<24} {:<20}",
-                    "ID", "USERNAME", "ACCESS LEVEL", "EMAIL", "CREATED AT (UNIX)"
-                );
-                println!("{:-<85}", "");
-                let count = users.len();
-                for u in users {
-                    let level = if u.is_super_admin { "Super Admin" } else { "Custom" };
-                    println!(
-                        "{:<6} {:<18} {:<15} {:<24} {:<20}",
-                        u.id,
-                        u.username,
-                        level,
-                        u.email.as_deref().unwrap_or("-"),
-                        u.created_at
-                    );
-                }
-                println!("{:-<85}", "");
-                println!("Total: {} user(s)", count);
-            }
-        }
-
-        UserCommands::Remove { username, user, .. } => {
-            let username = match username.or(user) {
-                Some(u) if !u.trim().is_empty() => u,
-                _ => {
-                    use std::io::Write;
-                    eprint!("Enter admin username to delete: ");
-                    let _ = std::io::stderr().flush();
-                    let mut buf = String::new();
-                    std::io::stdin().read_line(&mut buf)?;
-                    let trimmed = buf.trim();
-                    if trimmed.is_empty() {
-                        return Err("Username cannot be empty".into());
-                    }
-                    trimmed.to_string()
-                }
-            };
-
-            let deleted = MetadataStore::delete_user(&username)
-                .await
-                .map_err(|e| format!("Failed to delete user: {}", e))?;
-
-            if !deleted {
-                return Err(format!("User '{}' not found", username).into());
-            }
-
-            let res = json!({
-                "success": true,
-                "data": { "username": username, "message": "User deleted successfully" }
-            });
-
-            render_output(format, &res, |_| {
-                println!("User '{}' deleted successfully.", username);
+                println!("{:-<72}", "");
+                println!("    SUPER ADMINISTRATOR CREDENTIALS UPDATED SUCCESSFULLY        ");
+                println!("{:-<72}", "");
+                println!("{:<16} : {}", "ID", updated_admin.id);
+                println!("{:<16} : {}", "Username", updated_admin.username);
+                println!("{:<16} : {}", "Email", updated_admin.email.as_deref().unwrap_or("-"));
+                println!("{:<16} : {}", "Password", if final_password.is_some() { "[UPDATED]" } else { "[UNCHANGED]" });
+                println!("{:-<72}", "");
             })?;
         }
     }

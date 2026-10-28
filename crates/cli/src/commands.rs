@@ -108,10 +108,10 @@ pub enum Commands {
     #[command(alias = "start", alias = "run")]
     Server(ServerArgs),
 
-    /// Administrative user management (direct metadata DB access)
+    /// Super administrator account management and root recovery (direct metadata DB access)
     User {
         #[command(subcommand)]
-        command: UserCommands,
+        command: Option<UserCommands>,
     },
 
     /// API machine key management (via Admin API)
@@ -394,80 +394,39 @@ pub struct ServerArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum UserCommands {
-    /// Create a new administrative human user
-    #[command(alias = "create")]
-    Add {
-        #[arg(
-            value_name = "USERNAME",
-            help = "Admin username (positional or via -u/--user)"
-        )]
-        username: Option<String>,
-        #[arg(
-            short = 'u',
-            long = "user",
-            alias = "username",
-            help = "Admin username"
-        )]
-        user: Option<String>,
-        #[arg(short = 'e', long = "email", help = "Admin email address")]
-        email: Option<String>,
-        #[arg(
-            short = 'p',
-            long = "password",
-            alias = "pass",
-            help = "Password (if omitted, interactive prompt is used)"
-        )]
-        password: Option<String>,
+    /// Show super administrator account details (username, email, creation time)
+    #[command(alias = "info", alias = "get", alias = "status", alias = "details", alias = "ls", alias = "list")]
+    Show {
         #[arg(short = 'c', long = "config", help = "Path to config file")]
         config: Option<String>,
     },
-    /// Update an administrative user's email or password
+    /// Update super administrator account credentials (username, email, or password)
     Update {
         #[arg(
-            value_name = "USERNAME",
-            help = "Admin username to update (positional or via -u/--user)"
+            value_name = "NEW_USERNAME",
+            help = "New super administrator username (positional or via -u/--username)"
+        )]
+        new_username: Option<String>,
+        #[arg(
+            short = 'u',
+            long = "username",
+            alias = "user",
+            help = "New super administrator username"
         )]
         username: Option<String>,
         #[arg(
-            short = 'u',
-            long = "user",
-            alias = "username",
-            help = "Admin username to update"
+            short = 'e',
+            long = "email",
+            help = "New super administrator email address"
         )]
-        user: Option<String>,
-        #[arg(short = 'e', long = "email", help = "Updated admin email address")]
         email: Option<String>,
         #[arg(
             short = 'p',
             long = "password",
             alias = "pass",
-            help = "Updated password (if omitted and --email is omitted, prompt is shown)"
+            help = "New super administrator password (interactive prompt if omitted)"
         )]
         password: Option<String>,
-        #[arg(short = 'c', long = "config", help = "Path to config file")]
-        config: Option<String>,
-    },
-    /// List all administrative users
-    #[command(alias = "ls")]
-    List {
-        #[arg(short = 'c', long = "config", help = "Path to config file")]
-        config: Option<String>,
-    },
-    /// Delete/remove an administrative user
-    #[command(alias = "delete", alias = "rm")]
-    Remove {
-        #[arg(
-            value_name = "USERNAME",
-            help = "Admin username to delete (positional or via -u/--user)"
-        )]
-        username: Option<String>,
-        #[arg(
-            short = 'u',
-            long = "user",
-            alias = "username",
-            help = "Admin username to delete"
-        )]
-        user: Option<String>,
         #[arg(short = 'c', long = "config", help = "Path to config file")]
         config: Option<String>,
     },
@@ -978,67 +937,61 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parse_user_add() {
-        let args = [
+    fn test_cli_parse_superadmin_user_commands() {
+        // Test axiom user show
+        let args = ["axiom", "user", "show"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse user show");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::User {
+                command: Some(UserCommands::Show { .. }),
+            })
+        ));
+
+        // Test bare axiom user defaults to None subcommand (which displays super admin)
+        let args_bare = ["axiom", "user"];
+        let cli_bare = Cli::try_parse_from(args_bare).expect("Failed to parse bare user");
+        assert!(matches!(
+            cli_bare.command,
+            Some(Commands::User { command: None })
+        ));
+
+        // Test axiom user update with flags
+        let args_update = [
             "axiom",
             "user",
-            "add",
-            "ops_admin",
+            "update",
+            "-u",
+            "root_super",
             "-e",
-            "ops@axiom.local",
+            "root@axiom.local",
             "-p",
             "secret123",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse user add");
-        match cli.command {
+        let cli_update =
+            Cli::try_parse_from(args_update).expect("Failed to parse user update with flags");
+        match cli_update.command {
             Some(Commands::User {
                 command:
-                    UserCommands::Add {
+                    Some(UserCommands::Update {
+                        new_username,
                         username,
-                        user,
                         email,
                         password,
                         ..
-                    },
+                    }),
             }) => {
-                assert_eq!(username.or(user), Some("ops_admin".to_string()));
-                assert_eq!(email, Some("ops@axiom.local".to_string()));
+                assert_eq!(username.or(new_username), Some("root_super".to_string()));
+                assert_eq!(email, Some("root@axiom.local".to_string()));
                 assert_eq!(password, Some("secret123".to_string()));
             }
-            _ => panic!("Expected User Add command"),
+            _ => panic!("Expected User Update command"),
         }
 
-        // Test with short flags -u -e -p
-        let args_flags = [
-            "axiom",
-            "user",
-            "add",
-            "-u",
-            "flag_user",
-            "-e",
-            "flag@axiom.local",
-            "-p",
-            "pass456",
-        ];
-        let cli_flags =
-            Cli::try_parse_from(args_flags).expect("Failed to parse user add with flags");
-        match cli_flags.command {
-            Some(Commands::User {
-                command:
-                    UserCommands::Add {
-                        username,
-                        user,
-                        email,
-                        password,
-                        ..
-                    },
-            }) => {
-                assert_eq!(username.or(user), Some("flag_user".to_string()));
-                assert_eq!(email, Some("flag@axiom.local".to_string()));
-                assert_eq!(password, Some("pass456".to_string()));
-            }
-            _ => panic!("Expected User Add command with flags"),
-        }
+        // Test that user delete and add are forbidden (only super admin maintenance in CLI)
+        assert!(Cli::try_parse_from(["axiom", "user", "delete", "admin"]).is_err());
+        assert!(Cli::try_parse_from(["axiom", "user", "remove", "admin"]).is_err());
+        assert!(Cli::try_parse_from(["axiom", "user", "add", "admin"]).is_err());
     }
 
     #[test]
@@ -1562,20 +1515,22 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parse_user_crud_and_aliases() {
-        let args = [
-            "axiom",
-            "user",
-            "create",
-            "alice",
-            "--email",
-            "alice@example.com",
-        ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse user create alias");
+    fn test_cli_parse_user_show_and_aliases() {
+        let args = ["axiom", "user", "info"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse user info alias");
         assert!(matches!(
             cli.command,
             Some(Commands::User {
-                command: UserCommands::Add { .. }
+                command: Some(UserCommands::Show { .. })
+            })
+        ));
+
+        let args = ["axiom", "user", "status"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse user status alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::User {
+                command: Some(UserCommands::Show { .. })
             })
         ));
 
@@ -1593,38 +1548,24 @@ mod tests {
         match cli.command {
             Some(Commands::User {
                 command:
-                    UserCommands::Update {
+                    Some(UserCommands::Update {
+                        new_username,
                         username,
-                        user,
                         email,
                         password,
                         ..
-                    },
+                    }),
             }) => {
-                assert_eq!(username.or(user), Some("alice".to_string()));
+                assert_eq!(username.or(new_username), Some("alice".to_string()));
                 assert_eq!(email, Some("new_alice@example.com".to_string()));
                 assert_eq!(password, Some("newpass123".to_string()));
             }
             _ => panic!("Expected User Update command"),
         }
 
-        let args = ["axiom", "user", "remove", "alice"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse user remove");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::User {
-                command: UserCommands::Remove { .. }
-            })
-        ));
-
-        let args = ["axiom", "user", "delete", "alice"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse user delete alias");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::User {
-                command: UserCommands::Remove { .. }
-            })
-        ));
+        // Removal/deletion is eliminated from CLI
+        assert!(Cli::try_parse_from(["axiom", "user", "remove", "alice"]).is_err());
+        assert!(Cli::try_parse_from(["axiom", "user", "delete", "alice"]).is_err());
     }
 
     #[test]
@@ -1773,22 +1714,16 @@ mod tests {
         let cli = Cli::try_parse_from(["axiom", "status"]).expect("parse status");
         assert!(matches!(cli.command, Some(Commands::Health)));
 
-        // User ls and rm
+        // User ls (alias for show) and rm forbidden
         let cli = Cli::try_parse_from(["axiom", "user", "ls"]).expect("parse user ls");
         assert!(matches!(
             cli.command,
             Some(Commands::User {
-                command: UserCommands::List { .. }
+                command: Some(UserCommands::Show { .. })
             })
         ));
 
-        let cli = Cli::try_parse_from(["axiom", "user", "rm", "admin"]).expect("parse user rm");
-        assert!(matches!(
-            cli.command,
-            Some(Commands::User {
-                command: UserCommands::Remove { .. }
-            })
-        ));
+        assert!(Cli::try_parse_from(["axiom", "user", "rm", "admin"]).is_err());
 
         // Db ls and rm
         let cli = Cli::try_parse_from(["axiom", "db", "ls"]).expect("parse db ls");

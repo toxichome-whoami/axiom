@@ -83,8 +83,8 @@ Axiom starts immediately on `http://localhost:4500` with zero configuration requ
 Open **`http://localhost:4500/system`** in your browser for the first-run setup wizard, or configure via CLI:
 
 ```bash
-# 1. Create root admin (interactive prompt or flags)
-axiom user add admin -p "s3cur3_pass!" -e admin@example.com
+# 1. Inspect root super admin credentials (or recover via update)
+axiom user show
 
 # 2. Register upstream database (positional alias or flags)
 axiom db add main_db -c "postgres://postgres:postgres@localhost:5432/app_db"

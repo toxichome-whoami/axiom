@@ -1471,6 +1471,47 @@ impl MetadataStore {
         }
     }
 
+    /// Fetches the unique root Super Administrator user.
+    /// Resiliently queries for is_super_admin = 1 or the lowest ID root account.
+    pub async fn get_super_admin() -> Result<Option<UserRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query(
+                "SELECT id, username, email, is_super_admin, permissions, created_at, updated_at \
+                 FROM users \
+                 WHERE is_super_admin = 1 OR id = (SELECT MIN(id) FROM users) \
+                 ORDER BY is_super_admin DESC, id ASC LIMIT 1",
+                (),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let user_id: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let username: String = row.get(1).map_err(|e| e.to_string())?;
+            let email: Option<String> = row.get(2).ok();
+            let is_super_admin: bool = row.get::<i64>(3).unwrap_or(0) == 1;
+            let perms_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
+            let permissions: UserPermissionSet =
+                serde_json::from_str(&perms_str).unwrap_or_default();
+            let created_at: i64 = row.get(5).unwrap_or(0);
+            let updated_at: i64 = row.get(6).unwrap_or(0);
+
+            Ok(Some(UserRecord {
+                id: user_id,
+                username,
+                email,
+                password_hash: String::new(),
+                is_super_admin,
+                permissions,
+                created_at,
+                updated_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Deletes an administrative user by username, protecting the root super admin.
     pub async fn delete_user(username: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
@@ -3660,5 +3701,55 @@ mod tests {
             }
             true
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_super_admin_query() {
+        let db = Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // Insert root super admin
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('rootadmin', 'hash1', 'root@axiom.io', 1, '{}', ?1, ?2)",
+            libsql::params![now, now],
+        ).await.unwrap();
+
+        // Insert secondary normal user
+        conn.execute(
+            "INSERT INTO users (username, password_hash, email, is_super_admin, permissions, created_at, updated_at) \
+             VALUES ('normaluser', 'hash2', 'normal@axiom.io', 0, '{}', ?1, ?2)",
+            libsql::params![now, now],
+        ).await.unwrap();
+
+        let mut rows = conn
+            .query(
+                "SELECT id, username, email, is_super_admin, permissions, created_at, updated_at \
+                 FROM users \
+                 WHERE is_super_admin = 1 OR id = (SELECT MIN(id) FROM users) \
+                 ORDER BY is_super_admin DESC, id ASC LIMIT 1",
+                (),
+            )
+            .await
+            .unwrap();
+
+        let row = rows.next().await.unwrap().expect("Super admin row must exist");
+        let id: i64 = row.get(0).unwrap();
+        let username: String = row.get(1).unwrap();
+        let email: Option<String> = row.get(2).ok();
+        let is_super_admin: bool = row.get::<i64>(3).unwrap() == 1;
+        assert_eq!(id, 1);
+        assert_eq!(username, "rootadmin");
+        assert_eq!(email.as_deref(), Some("root@axiom.io"));
+        assert!(is_super_admin);
     }
 }
