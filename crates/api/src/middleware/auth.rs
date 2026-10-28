@@ -336,7 +336,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                             rls_filter: None,
                         });
                     } else {
-                        // Blob system permissions
+                        // Blob wildcard system permission
                         if user_rec.permissions.has_system_permission("blobs.*") {
                             permissions.push(axiom_core::PermissionSnapshot {
                                 database: "blob:*".to_string(),
@@ -344,30 +344,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                                 operations: vec!["*".to_string()],
                                 rls_filter: None,
                             });
-                        } else {
-                            let mut blob_ops = Vec::new();
-                            if user_rec.permissions.has_system_permission("blobs.view") {
-                                blob_ops.push("READ".to_string());
-                            }
-                            if user_rec.permissions.has_system_permission("blobs.create")
-                                || user_rec.permissions.has_system_permission("blobs.update")
-                            {
-                                blob_ops.push("WRITE".to_string());
-                            }
-                            if user_rec.permissions.has_system_permission("blobs.delete") {
-                                blob_ops.push("DELETE".to_string());
-                            }
-                            if !blob_ops.is_empty() {
-                                permissions.push(axiom_core::PermissionSnapshot {
-                                    database: "blob:*".to_string(),
-                                    table_name: "*".to_string(),
-                                    operations: blob_ops,
-                                    rls_filter: None,
-                                });
-                            }
                         }
 
-                        // Database system permissions
+                        // Database wildcard system permission
                         if user_rec.permissions.has_system_permission("databases.*") {
                             permissions.push(axiom_core::PermissionSnapshot {
                                 database: "*".to_string(),
@@ -375,28 +354,6 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                                 operations: vec!["*".to_string()],
                                 rls_filter: None,
                             });
-                        } else {
-                            let mut db_ops = Vec::new();
-                            if user_rec.permissions.has_system_permission("databases.view") {
-                                db_ops.push("SELECT".to_string());
-                            }
-                            if user_rec.permissions.has_system_permission("databases.create")
-                                || user_rec.permissions.has_system_permission("databases.update")
-                            {
-                                db_ops.push("INSERT".to_string());
-                                db_ops.push("UPDATE".to_string());
-                            }
-                            if user_rec.permissions.has_system_permission("databases.delete") {
-                                db_ops.push("DELETE".to_string());
-                            }
-                            if !db_ops.is_empty() {
-                                permissions.push(axiom_core::PermissionSnapshot {
-                                    database: "*".to_string(),
-                                    table_name: "*".to_string(),
-                                    operations: db_ops,
-                                    rls_filter: None,
-                                });
-                            }
                         }
                     }
                 }
@@ -715,5 +672,79 @@ mod tests {
         let result = validate_api_key(&token, &config);
 
         assert_eq!(result, Err(Some("API key has expired".to_string())));
+    }
+
+    #[tokio::test]
+    async fn test_session_synthesis_does_not_inject_wildcard_for_view_permissions() {
+        use axiom_metadata::models::{UserRecord, UserPermissionSet, UserDbPermission, UserBlobPermission};
+
+        let user_rec = UserRecord {
+            id: 2,
+            username: "operator_bob".to_string(),
+            email: Some("bob@axiom.io".to_string()),
+            password_hash: "".to_string(),
+            is_super_admin: false,
+            permissions: UserPermissionSet {
+                system: vec!["databases.view".to_string(), "blobs.view".to_string()],
+                databases: vec![UserDbPermission {
+                    database: "localdb".to_string(),
+                    table_name: "categories".to_string(),
+                    operations: vec!["SELECT".to_string()],
+                }],
+                blobs: vec![UserBlobPermission {
+                    namespace: "receipts".to_string(),
+                    operations: vec!["READ".to_string()],
+                }],
+            },
+            created_at: 0,
+            updated_at: 0,
+        };
+
+        let mut permissions = Vec::new();
+        for db_perm in &user_rec.permissions.databases {
+            permissions.push(axiom_core::PermissionSnapshot {
+                database: db_perm.database.clone(),
+                table_name: db_perm.table_name.clone(),
+                operations: db_perm.operations.clone(),
+                rls_filter: None,
+            });
+        }
+        for blob_perm in &user_rec.permissions.blobs {
+            permissions.push(axiom_core::PermissionSnapshot {
+                database: format!("blob:{}", blob_perm.namespace),
+                table_name: "*".to_string(),
+                operations: blob_perm.operations.clone(),
+                rls_filter: None,
+            });
+        }
+
+        if user_rec.permissions.has_system_permission("*") {
+            // wildcard
+        } else {
+            if user_rec.permissions.has_system_permission("blobs.*") {
+                permissions.push(axiom_core::PermissionSnapshot {
+                    database: "blob:*".to_string(),
+                    table_name: "*".to_string(),
+                    operations: vec!["*".to_string()],
+                    rls_filter: None,
+                });
+            }
+            if user_rec.permissions.has_system_permission("databases.*") {
+                permissions.push(axiom_core::PermissionSnapshot {
+                    database: "*".to_string(),
+                    table_name: "*".to_string(),
+                    operations: vec!["*".to_string()],
+                    rls_filter: None,
+                });
+            }
+        }
+
+        assert_eq!(permissions.len(), 2);
+        assert_eq!(permissions[0].database, "localdb");
+        assert_eq!(permissions[0].table_name, "categories");
+        assert_eq!(permissions[1].database, "blob:receipts");
+
+        let has_wildcard_sql_table = permissions.iter().any(|p| p.database == "*" || (p.database == "localdb" && p.table_name == "*"));
+        assert!(!has_wildcard_sql_table, "Granular database rules must not have wildcard table access synthesized");
     }
 }

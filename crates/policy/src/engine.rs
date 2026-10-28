@@ -865,4 +865,51 @@ mod tests {
         assert!(PolicyEngine::filter_databases(&empty_ctx, &all_dbs).is_empty());
         assert!(PolicyEngine::filter_tables(&empty_ctx, "analytics", &all_tables).is_empty());
     }
+
+    #[test]
+    fn test_granular_table_and_blob_isolation() {
+        use axiom_core::PermissionSnapshot;
+
+        let scoped_user = AuthContext {
+            api_key_name: "user:scoped_operator".to_string(),
+            is_session: true,
+            role: Some("custom".to_string()),
+            permissions: vec![
+                PermissionSnapshot {
+                    database: "localdb".to_string(),
+                    table_name: "categories".to_string(),
+                    operations: vec!["SELECT".to_string(), "INSERT".to_string()],
+                    rls_filter: None,
+                },
+                PermissionSnapshot {
+                    database: "blob:public_assets".to_string(),
+                    table_name: "*".to_string(),
+                    operations: vec!["READ".to_string()],
+                    rls_filter: None,
+                },
+            ],
+            ..Default::default()
+        };
+
+        // Table access checks
+        assert!(PolicyEngine::can_access_table(&scoped_user, "localdb", "categories"));
+        assert!(!PolicyEngine::can_access_table(&scoped_user, "localdb", "users"));
+        assert!(!PolicyEngine::can_access_table(&scoped_user, "localdb", "products"));
+        assert!(!PolicyEngine::can_access_table(&scoped_user, "otherdb", "categories"));
+
+        let tables = vec!["categories".to_string(), "users".to_string(), "products".to_string()];
+        let filtered_tables = PolicyEngine::filter_tables(&scoped_user, "localdb", &tables);
+        assert_eq!(filtered_tables, vec!["categories".to_string()]);
+
+        // Blob namespace access checks
+        let namespaces = vec!["public_assets".to_string(), "private_vault".to_string()];
+        let filtered_ns = PolicyEngine::filter_blob_namespaces(&scoped_user, &namespaces);
+        assert_eq!(filtered_ns, vec!["public_assets".to_string()]);
+
+        // Evaluation
+        assert!(PolicyEngine::evaluate(&scoped_user, "localdb", "categories", "SELECT").is_ok());
+        assert!(PolicyEngine::evaluate(&scoped_user, "localdb", "categories", "INSERT").is_ok());
+        assert!(PolicyEngine::evaluate(&scoped_user, "localdb", "categories", "DELETE").is_err());
+        assert!(PolicyEngine::evaluate(&scoped_user, "localdb", "users", "SELECT").is_err());
+    }
 }

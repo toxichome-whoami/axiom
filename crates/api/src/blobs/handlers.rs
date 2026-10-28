@@ -677,7 +677,10 @@ pub async fn list_namespaces_handler(
     let namespaces = engine.list_namespaces_info().map_err(map_blob_error)?;
 
     let can_view_all = auth.role.as_deref() == Some("admin")
-        || check_permission(&auth, "blobs.view").await.is_ok();
+        || auth
+            .permissions
+            .iter()
+            .any(|p| p.database == "*" || p.database == "blob:*");
 
     let filtered = if can_view_all {
         namespaces
@@ -704,7 +707,10 @@ pub async fn get_namespace_usage_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let can_view_all = auth.role.as_deref() == Some("admin")
-        || check_permission(&auth, "blobs.view").await.is_ok();
+        || auth
+            .permissions
+            .iter()
+            .any(|p| p.database == "*" || p.database == "blob:*");
     if !can_view_all {
         PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
     }
@@ -756,7 +762,10 @@ pub async fn get_namespace_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let can_view_all = auth.role.as_deref() == Some("admin")
-        || check_permission(&auth, "blobs.view").await.is_ok();
+        || auth
+            .permissions
+            .iter()
+            .any(|p| p.database == "*" || p.database == "blob:*");
     if !can_view_all {
         PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
     }

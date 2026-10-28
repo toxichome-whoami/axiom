@@ -638,12 +638,6 @@ export function Layout({
               <Search className="w-4 h-4" />
             </button>
 
-            {/* Cluster Status Pill */}
-            <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#222222] bg-[#0c0c0c] px-2.5 py-1 text-[11px] font-medium text-[#8c8c8c]">
-              <span className="size-1.5 rounded-full bg-[#30a46c]"></span>
-              <span>Online :4500</span>
-            </div>
-
             {/* Operator Profile Dropdown (matched to Cloudflare Kumo button) */}
             <div ref={userRef} className="relative">
               <button

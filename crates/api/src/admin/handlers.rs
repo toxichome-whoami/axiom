@@ -561,12 +561,16 @@ pub async fn list_databases(
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
-    let aliases: Vec<String> = databases.iter().map(|d| d.alias.clone()).collect();
-    let allowed_aliases = PolicyEngine::filter_databases(&auth, &aliases);
-    let filtered_dbs: Vec<_> = databases
-        .into_iter()
-        .filter(|d| allowed_aliases.iter().any(|a| a.eq_ignore_ascii_case(&d.alias)))
-        .collect();
+    let filtered_dbs: Vec<_> = if has_granular_db {
+        let aliases: Vec<String> = databases.iter().map(|d| d.alias.clone()).collect();
+        let allowed_aliases = PolicyEngine::filter_databases(&auth, &aliases);
+        databases
+            .into_iter()
+            .filter(|d| allowed_aliases.iter().any(|a| a.eq_ignore_ascii_case(&d.alias)))
+            .collect()
+    } else {
+        databases
+    };
 
     Ok(Json(json!({
         "success": true,

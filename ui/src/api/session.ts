@@ -149,29 +149,44 @@ export function hasDatabaseAccess(dbName?: string, requiredOp?: string, tableNam
   if (user.is_super_admin) return true;
   if (hasPermission("databases.*")) return true;
 
-  // System-level permission matching the requested operation
-  if (!requiredOp || requiredOp === "SELECT" || requiredOp === "READ") {
-    if (hasPermission("databases.view")) return true;
-  } else if (requiredOp === "INSERT" || requiredOp === "UPDATE") {
-    if (hasPermission("databases.update") || hasPermission("databases.create")) return true;
-  } else if (requiredOp === "DELETE") {
-    if (hasPermission("databases.delete")) return true;
-  } else if (requiredOp === "DDL") {
-    if (hasPermission("databases.create") || hasPermission("databases.delete")) return true;
+  const dbRules = user.permissions?.databases || [];
+
+  // General navigation check (no specific db, table, or op requested)
+  if (!dbName && !tableName && !requiredOp) {
+    return hasPermission("databases.view") || dbRules.length > 0;
   }
 
-  const dbRules = user.permissions?.databases || [];
-  if (!dbName) return dbRules.length > 0;
+  // If the user has explicit granular database rules, those rules strictly dictate table and op access
+  if (dbRules.length > 0) {
+    if (!dbName) return true;
+    return dbRules.some((rule) => {
+      const dbMatches = rule.database === "*" || rule.database.toLowerCase() === dbName.toLowerCase();
+      if (!dbMatches) return false;
+      if (tableName && rule.table_name && rule.table_name !== "*" && rule.table_name.toLowerCase() !== tableName.toLowerCase()) {
+        return false;
+      }
+      if (!requiredOp) return true;
+      return rule.operations.includes(requiredOp) || rule.operations.includes("*");
+    });
+  }
 
-  return dbRules.some((rule) => {
-    const dbMatches = rule.database === "*" || rule.database.toLowerCase() === dbName.toLowerCase();
-    if (!dbMatches) return false;
-    if (tableName && rule.table_name && rule.table_name !== "*" && rule.table_name.toLowerCase() !== tableName.toLowerCase()) {
-      return false;
-    }
-    if (!requiredOp) return true;
-    return rule.operations.includes(requiredOp) || rule.operations.includes("*");
-  });
+  // Fallback when no granular database rules exist: evaluate system-level capabilities
+  if (!requiredOp || requiredOp === "SELECT" || requiredOp === "READ") {
+    // If a specific table was requested but user has no granular rules and no databases.*, deny table access
+    if (tableName) return false;
+    return hasPermission("databases.view");
+  }
+  if (requiredOp === "INSERT" || requiredOp === "UPDATE") {
+    return hasPermission("databases.update") || hasPermission("databases.create");
+  }
+  if (requiredOp === "DELETE") {
+    return hasPermission("databases.delete");
+  }
+  if (requiredOp === "DDL") {
+    return hasPermission("databases.create") || hasPermission("databases.delete");
+  }
+
+  return false;
 }
 
 /**
@@ -183,24 +198,36 @@ export function hasBlobAccess(namespace?: string, requiredOp?: string): boolean 
   if (user.is_super_admin) return true;
   if (hasPermission("blobs.*")) return true;
 
-  // System-level permission matching the requested operation
-  if (!requiredOp || requiredOp === "READ" || requiredOp === "SELECT") {
-    if (hasPermission("blobs.view")) return true;
-  } else if (requiredOp === "WRITE" || requiredOp === "INSERT" || requiredOp === "UPDATE") {
-    if (hasPermission("blobs.create") || hasPermission("blobs.update")) return true;
-  } else if (requiredOp === "DELETE") {
-    if (hasPermission("blobs.delete")) return true;
+  const blobRules = user.permissions?.blobs || [];
+
+  // General navigation check (no namespace or op requested)
+  if (!namespace && !requiredOp) {
+    return hasPermission("blobs.view") || blobRules.length > 0;
   }
 
-  const blobRules = user.permissions?.blobs || [];
-  if (!namespace) return blobRules.length > 0;
+  // If the user has explicit granular blob rules, those rules strictly dictate namespace access
+  if (blobRules.length > 0) {
+    if (!namespace) return true;
+    return blobRules.some((rule) => {
+      const nsMatches = rule.namespace === "*" || rule.namespace.toLowerCase() === namespace.toLowerCase();
+      if (!nsMatches) return false;
+      if (!requiredOp) return true;
+      return rule.operations.includes(requiredOp) || rule.operations.includes("*");
+    });
+  }
 
-  return blobRules.some((rule) => {
-    const nsMatches = rule.namespace === "*" || rule.namespace.toLowerCase() === namespace.toLowerCase();
-    if (!nsMatches) return false;
-    if (!requiredOp) return true;
-    return rule.operations.includes(requiredOp) || rule.operations.includes("*");
-  });
+  // Fallback when no granular blob rules exist: evaluate system-level capabilities
+  if (!requiredOp || requiredOp === "READ" || requiredOp === "SELECT") {
+    return hasPermission("blobs.view");
+  }
+  if (requiredOp === "WRITE" || requiredOp === "INSERT" || requiredOp === "UPDATE") {
+    return hasPermission("blobs.create") || hasPermission("blobs.update");
+  }
+  if (requiredOp === "DELETE") {
+    return hasPermission("blobs.delete");
+  }
+
+  return false;
 }
 
 /**
