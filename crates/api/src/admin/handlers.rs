@@ -1266,17 +1266,25 @@ pub async fn setup_account(
         .map(|e| e.trim())
         .filter(|e| !e.is_empty());
 
-    if let Some(em) = clean_email {
-        if !em.contains('@') || !em.contains('.') || em.len() > 255 {
+    let em = match clean_email {
+        Some(em) if em.contains('@') && em.contains('.') && em.len() <= 255 => em,
+        Some(_) => {
             return Err(AxiomError::new(
                 "INVALID_INPUT",
                 "Email format is invalid",
                 StatusCode::BAD_REQUEST,
             ));
         }
-    }
+        None => {
+            return Err(AxiomError::new(
+                "INVALID_INPUT",
+                "Email address is required for administrator setup",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    };
 
-    MetadataStore::create_user(&payload.username, clean_email, &payload.password)
+    MetadataStore::create_user(&payload.username, Some(em), &payload.password)
         .await
         .map_err(|e| {
             let status = if e.contains("already exists") {

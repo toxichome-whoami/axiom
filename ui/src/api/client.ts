@@ -550,7 +550,7 @@ export const api = {
     }),
   setupAccount: async (data: {
     username: string;
-    email?: string;
+    email: string;
     password: string;
   }) => {
     const res = await request<{

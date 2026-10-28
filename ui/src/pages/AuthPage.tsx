@@ -212,6 +212,15 @@ export function AuthPage({
       setErrorMessage("Username and password are required.");
       return;
     }
+    if (!adminEmail.trim()) {
+      setErrorMessage("Email address is required.");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(adminEmail.trim())) {
+      setErrorMessage("Please enter a valid email address.");
+      return;
+    }
     if (adminPassword.length < 8) {
       setErrorMessage("Password must be at least 8 characters long.");
       return;
@@ -221,21 +230,13 @@ export function AuthPage({
       return;
     }
 
-    if (adminEmail.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(adminEmail.trim())) {
-        setErrorMessage("Please enter a valid email address.");
-        return;
-      }
-    }
-
     setErrorMessage(null);
     setLoginLoading(true);
 
     try {
       const res = await api.setupAccount({
         username: adminUsername.trim(),
-        email: adminEmail.trim() || undefined,
+        email: adminEmail.trim(),
         password: adminPassword,
       });
       const token = res.session_token || res.token || "";
@@ -686,21 +687,19 @@ export function AuthPage({
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[13px] font-medium text-[#cccccc] block">
-                  Email Address
-                </label>
-                <span className="text-[11px] text-[#777777]">Optional</span>
-              </div>
+              <label className="text-[13px] font-medium text-[#cccccc] mb-1.5 block">
+                Email Address <span className="text-[#e5484d]">*</span>
+              </label>
               <input
                 type="email"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
                 placeholder="admin@example.com"
+                required
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
               />
               <p className="text-[11px] text-[#777777] mt-1">
-                Used for account recovery and dual authentication login.
+                Used for account recovery, notifications, and dual authentication login.
               </p>
             </div>
 

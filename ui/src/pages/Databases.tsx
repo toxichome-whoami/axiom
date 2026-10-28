@@ -35,203 +35,31 @@ import { FilterRule, matchesRule } from "../utils/filters";
 export { validateCleanName };
 export type { FilterRule };
 
-/**
- * Expected URL prefix mappings and examples per database engine dialect.
- * Contract: Matches the connection routing table implemented in crates/db/src/pool.rs.
- */
-export const ENGINE_URL_SCHEMES: Record<
-  string,
-  { prefixes: string[]; example: string }
-> = {
-  postgresql: {
-    prefixes: ["postgres://", "postgresql://"],
-    example: "postgres://user:secret@host:5432/dbname",
-  },
-  mysql: {
-    prefixes: ["mysql://", "mariadb://"],
-    example: "mysql://user:secret@host:3306/dbname",
-  },
-  mssql: {
-    prefixes: ["mssql://", "sqlserver://"],
-    example: "mssql://user:secret@host:1433/dbname",
-  },
-  clickhouse: {
-    prefixes: ["clickhouse://", "clickhouse+https://", "http://", "https://"],
-    example: "clickhouse://user:secret@host:8123/default",
-  },
-  libsql: {
-    prefixes: ["libsql://", "sqlite://", "file:", "https://"],
-    example:
-      "libsql://database.turso.io, https://database.turso.io, or leave blank",
-  },
-  snowflake: {
-    prefixes: ["snowflake://", "snowflake+https://", "https://"],
-    example:
-      "snowflake://user:secret@account.snowflakecomputing.com?warehouse=COMPUTE_WH&database=DB&schema=PUBLIC",
-  },
-  oracle: {
-    prefixes: ["oracle://", "oracle+tcp://", "ords://", "ords+https://"],
-    example:
-      "oracle://user:secret@host:1521/service or ords+https://host/ords/schema",
-  },
-};
+export type { SslMode, DatabaseConnectionFields } from "../utils/databaseUrl";
+export {
+  SSL_MODE_OPTIONS,
+  ENGINE_URL_SCHEMES,
+  DEFAULT_ENGINE_PORTS,
+  DEFAULT_ENGINE_SCHEMES,
+  extractSslModeFromUrl,
+  applySslModeToUrl,
+  buildDatabaseUrl,
+  parseDatabaseUrl,
+  validateDatabaseUrl,
+} from "../utils/databaseUrl";
 
-export type SslMode =
-  "prefer" | "require" | "disable" | "verify-ca" | "verify-full";
-
-export const SSL_MODE_OPTIONS: { value: SslMode; label: string }[] = [
-  { value: "prefer", label: "Prefer (default)" },
-  { value: "require", label: "Require" },
-  { value: "disable", label: "Disable" },
-  { value: "verify-ca", label: "Verify CA" },
-  { value: "verify-full", label: "Verify Full" },
-];
-
-/**
- * Extracts the current SSL mode from a database connection URL.
- */
-export function extractSslModeFromUrl(url: string, engine: string): SslMode {
-  const normEngine = (engine || "").toLowerCase();
-  if (normEngine !== "postgresql" && normEngine !== "mysql") {
-    return "prefer";
-  }
-  const qIdx = url.indexOf("?");
-  if (qIdx === -1) return "prefer";
-  const queryString = url.slice(qIdx + 1);
-  const params = new URLSearchParams(queryString);
-  const val = (
-    params.get("sslmode") ||
-    params.get("ssl-mode") ||
-    ""
-  ).toLowerCase();
-  if (val === "require" || val === "required") return "require";
-  if (val === "disable" || val === "disabled") return "disable";
-  if (val === "verify-ca") return "verify-ca";
-  if (val === "verify-full" || val === "verify_identity") return "verify-full";
-  return "prefer";
-}
-
-/**
- * Updates or removes the SSL mode parameter in a database connection URL.
- */
-export function applySslModeToUrl(
-  url: string,
-  engine: string,
-  mode: SslMode,
-): string {
-  const normEngine = (engine || "").toLowerCase();
-  if (normEngine !== "postgresql" && normEngine !== "mysql") {
-    return url;
-  }
-  const trimmed = url.trim();
-  if (!trimmed) return trimmed;
-
-  const qIdx = trimmed.indexOf("?");
-  const base = qIdx === -1 ? trimmed : trimmed.slice(0, qIdx);
-  const queryString = qIdx === -1 ? "" : trimmed.slice(qIdx + 1);
-  const params = new URLSearchParams(queryString);
-
-  // Remove existing sslmode / ssl-mode params
-  params.delete("sslmode");
-  params.delete("ssl-mode");
-
-  // If mode is not default 'prefer', set the appropriate param
-  if (mode !== "prefer") {
-    if (normEngine === "mysql") {
-      const mysqlModeMap: Record<SslMode, string> = {
-        prefer: "PREFERRED",
-        require: "REQUIRED",
-        disable: "DISABLED",
-        "verify-ca": "VERIFY_CA",
-        "verify-full": "VERIFY_IDENTITY",
-      };
-      params.set("ssl-mode", mysqlModeMap[mode] || mode);
-    } else {
-      params.set("sslmode", mode);
-    }
-  }
-
-  const newQuery = params.toString();
-  return newQuery ? `${base}?${newQuery}` : base;
-}
-
-/**
- * Validates connection URI scheme against target database engine dialect.
- * CONTRACT:
- *  - Fails closed on empty, whitespace, or invalid scheme prefix.
- *  - Case-insensitive on protocol scheme.
- *  - Enforces minimum URI structure (scheme + target endpoint).
- *  - LibSQL allows empty string (defaults to data/{alias}.db) and restricts local paths to data/.
- * @param engine - Dialect identifier (e.g. 'PostgreSQL', 'MySQL', 'LibSQL')
- * @param rawUrl - Input URI string to validate
- */
-export function validateDatabaseUrl(
-  engine: string,
-  rawUrl: string,
-): { valid: boolean; error?: string } {
-  const trimmed = rawUrl.trim();
-  const normEngine = engine.toLowerCase().trim();
-
-  // LibSQL / SQLite allows blank URL to auto-create sqlite://data/{alias}.db
-  if (!trimmed) {
-    if (normEngine === "libsql" || normEngine === "sqlite") {
-      return { valid: true };
-    }
-    return { valid: false, error: "Connection URL is required." };
-  }
-
-  // Security jailing checks for local LibSQL / SQLite
-  if (normEngine === "libsql" || normEngine === "sqlite") {
-    if (trimmed.includes("..")) {
-      return {
-        valid: false,
-        error:
-          "Directory traversal ('..') is prohibited. Local databases are restricted to the 'data/' directory.",
-      };
-    }
-    if (
-      /^[a-zA-Z]:/.test(trimmed) ||
-      (trimmed.startsWith("/") && !trimmed.startsWith("//"))
-    ) {
-      return {
-        valid: false,
-        error:
-          "Absolute drive and root paths are prohibited. Local databases are restricted to the 'data/' directory.",
-      };
-    }
-  }
-
-  const spec = ENGINE_URL_SCHEMES[normEngine];
-  if (!spec) {
-    return { valid: trimmed.includes("://") || trimmed.startsWith("file:") };
-  }
-
-  const lowerUrl = trimmed.toLowerCase();
-  const matched = spec.prefixes.some((p) => lowerUrl.startsWith(p));
-  if (!matched) {
-    // For LibSQL/SQLite, plain relative file names (e.g. mydb.db or data/mydb.db) are valid
-    if (normEngine === "libsql" || normEngine === "sqlite") {
-      if (!trimmed.includes("://")) {
-        return { valid: true };
-      }
-    }
-    return {
-      valid: false,
-      error: `Invalid URL protocol for ${formatEngine(engine)}. Expected prefix: ${spec.prefixes.join(" or ")}`,
-    };
-  }
-
-  const matchedPrefix = spec.prefixes.find((p) => lowerUrl.startsWith(p))!;
-  const remainder = trimmed.slice(matchedPrefix.length).trim();
-  if (!remainder) {
-    return {
-      valid: false,
-      error: "URL is missing host or target path after protocol prefix.",
-    };
-  }
-
-  return { valid: true };
-}
+import {
+  SslMode,
+  DatabaseConnectionFields,
+  SSL_MODE_OPTIONS,
+  ENGINE_URL_SCHEMES,
+  DEFAULT_ENGINE_PORTS,
+  extractSslModeFromUrl,
+  applySslModeToUrl,
+  buildDatabaseUrl,
+  parseDatabaseUrl,
+  validateDatabaseUrl,
+} from "../utils/databaseUrl";
 
 function toSafeInt(
   val: unknown,
@@ -367,6 +195,22 @@ export function Databases() {
 
   // Attach DB SlideOver State
   const [attachOpen, setAttachOpen] = useState(false);
+  const [newConnectMode, setNewConnectMode] = useState<"fields" | "string">(
+    "fields",
+  );
+  const [newHost, setNewHost] = useState("");
+  const [newPort, setNewPort] = useState(
+    DEFAULT_ENGINE_PORTS["postgresql"] || "5432",
+  );
+  const [newDatabase, setNewDatabase] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [newLibsqlMode, setNewLibsqlMode] = useState<"local" | "remote">("local");
+  const [newLibsqlFile, setNewLibsqlFile] = useState("");
+  const [newSnowflakeWarehouse, setNewSnowflakeWarehouse] = useState("");
+  const [newSnowflakeSchema, setNewSnowflakeSchema] = useState("");
+  const [newSnowflakeRole, setNewSnowflakeRole] = useState("");
   const [newAlias, setNewAlias] = useState("");
   const [newEngine, setNewEngine] = useState<string>("PostgreSQL");
   const [newUrl, setNewUrl] = useState("");
@@ -385,6 +229,20 @@ export function Databases() {
   const [manageOpen, setManageOpen] = useState(false);
   const [manageTab, setManageTab] = useState<"details" | "danger">("details");
   const [selectedPool, setSelectedPool] = useState<DatabasePool | null>(null);
+  const [editConnectMode, setEditConnectMode] = useState<"fields" | "string">(
+    "fields",
+  );
+  const [editHost, setEditHost] = useState("");
+  const [editPort, setEditPort] = useState("");
+  const [editDatabase, setEditDatabase] = useState("");
+  const [editUsername, setEditUsername] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [editLibsqlMode, setEditLibsqlMode] = useState<"local" | "remote">("local");
+  const [editLibsqlFile, setEditLibsqlFile] = useState("");
+  const [editSnowflakeWarehouse, setEditSnowflakeWarehouse] = useState("");
+  const [editSnowflakeSchema, setEditSnowflakeSchema] = useState("");
+  const [editSnowflakeRole, setEditSnowflakeRole] = useState("");
   const [editAlias, setEditAlias] = useState("");
   const [editEngine, setEditEngine] = useState<EngineType>("PostgreSQL");
   const [editUrl, setEditUrl] = useState("");
@@ -406,6 +264,19 @@ export function Databases() {
   const [confirmDiscardEditOpen, setConfirmDiscardEditOpen] = useState(false);
 
   async function handleTestConnection() {
+    if (newConnectMode === "fields") {
+      if (newEngine.toLowerCase() === "libsql") {
+        if (newLibsqlMode === "remote" && !newHost.trim()) {
+          setAttachError("Turso endpoint URL is required for remote LibSQL.");
+          setTestResult("fail");
+          return;
+        }
+      } else if (!newHost.trim()) {
+        setAttachError("Host is required.");
+        setTestResult("fail");
+        return;
+      }
+    }
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
       setAttachError(
@@ -518,6 +389,14 @@ export function Databases() {
     (editAlias.trim() !== selectedPool.alias ||
       editEngine !== selectedPool.engine ||
       urlChanged ||
+      editHost.trim().length > 0 ||
+      editDatabase.trim().length > 0 ||
+      editUsername.trim().length > 0 ||
+      editPassword.length > 0 ||
+      editLibsqlFile.trim().length > 0 ||
+      editSnowflakeWarehouse.trim().length > 0 ||
+      editSnowflakeSchema.trim().length > 0 ||
+      editSnowflakeRole.trim().length > 0 ||
       editToken.trim().length > 0 ||
       editMin !== selectedPool.minConnections ||
       editMax !== selectedPool.maxConnections ||
@@ -542,6 +421,14 @@ export function Databases() {
   const isAttachDirty = Boolean(
     newAlias.trim().length > 0 ||
     newUrl.trim().length > 0 ||
+    newHost.trim().length > 0 ||
+    newDatabase.trim().length > 0 ||
+    newUsername.trim().length > 0 ||
+    newPassword.length > 0 ||
+    newLibsqlFile.trim().length > 0 ||
+    newSnowflakeWarehouse.trim().length > 0 ||
+    newSnowflakeSchema.trim().length > 0 ||
+    newSnowflakeRole.trim().length > 0 ||
     newToken.trim().length > 0 ||
     newEngine !== "PostgreSQL" ||
     newSslMode !== "prefer" ||
@@ -556,8 +443,12 @@ export function Databases() {
     aliasValidation.valid &&
     poolOk &&
     (newEngine.toLowerCase() === "libsql"
-      ? true
-      : newUrl.trim().length > 0 && urlValidation.valid),
+      ? newConnectMode === "string" ||
+        newLibsqlMode === "local" ||
+        newHost.trim().length > 0
+      : newUrl.trim().length > 0 &&
+        urlValidation.valid &&
+        (newConnectMode === "string" || newHost.trim().length > 0)),
   );
 
   function requestCloseAttach() {
@@ -571,6 +462,18 @@ export function Databases() {
   function forceCloseAttach() {
     setConfirmDiscardAttachOpen(false);
     setAttachOpen(false);
+    setNewConnectMode("fields");
+    setNewHost("");
+    setNewPort(DEFAULT_ENGINE_PORTS["postgresql"] || "5432");
+    setNewDatabase("");
+    setNewUsername("");
+    setNewPassword("");
+    setShowNewPassword(false);
+    setNewLibsqlMode("local");
+    setNewLibsqlFile("");
+    setNewSnowflakeWarehouse("");
+    setNewSnowflakeSchema("");
+    setNewSnowflakeRole("");
     setNewAlias("");
     setNewUrl("");
     setNewSslMode("prefer");
@@ -597,6 +500,18 @@ export function Databases() {
     setManageTab("details");
     setManageError(null);
     setManageTestResult(null);
+    setEditConnectMode("fields");
+    setEditHost("");
+    setEditPort("");
+    setEditDatabase("");
+    setEditUsername("");
+    setEditPassword("");
+    setShowEditPassword(false);
+    setEditLibsqlMode("local");
+    setEditLibsqlFile("");
+    setEditSnowflakeWarehouse("");
+    setEditSnowflakeSchema("");
+    setEditSnowflakeRole("");
   }
 
   async function handleAttach() {
@@ -605,6 +520,19 @@ export function Databases() {
       setAttachError(aliasValidation.error || "Invalid alias format.");
       setTestResult("fail");
       return;
+    }
+    if (newConnectMode === "fields") {
+      if (newEngine.toLowerCase() === "libsql") {
+        if (newLibsqlMode === "remote" && !newHost.trim()) {
+          setAttachError("Turso endpoint URL is required for remote LibSQL.");
+          setTestResult("fail");
+          return;
+        }
+      } else if (!newHost.trim()) {
+        setAttachError("Host is required.");
+        setTestResult("fail");
+        return;
+      }
     }
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
@@ -640,6 +568,18 @@ export function Databases() {
       });
       await loadDatabases();
       setAttachOpen(false);
+      setNewConnectMode("fields");
+      setNewHost("");
+      setNewPort(DEFAULT_ENGINE_PORTS["postgresql"] || "5432");
+      setNewDatabase("");
+      setNewUsername("");
+      setNewPassword("");
+      setShowNewPassword(false);
+      setNewLibsqlMode("local");
+      setNewLibsqlFile("");
+      setNewSnowflakeWarehouse("");
+      setNewSnowflakeSchema("");
+      setNewSnowflakeRole("");
       setNewAlias("");
       setNewUrl("");
       setNewToken("");
@@ -936,7 +876,19 @@ export function Databases() {
               setSelectedPool(row);
               setEditAlias(row.alias);
               setEditEngine(row.engine);
+              setEditConnectMode("fields");
               setEditUrl("");
+              setEditHost("");
+              setEditPort(DEFAULT_ENGINE_PORTS[row.engine.toLowerCase()] || "");
+              setEditDatabase("");
+              setEditUsername("");
+              setEditPassword("");
+              setShowEditPassword(false);
+              setEditLibsqlMode("local");
+              setEditLibsqlFile("");
+              setEditSnowflakeWarehouse("");
+              setEditSnowflakeSchema("");
+              setEditSnowflakeRole("");
               setEditSslMode(extractSslModeFromUrl(row.url || "", row.engine));
               setEditToken("");
               setShowEditToken(false);
@@ -1003,6 +955,18 @@ export function Databases() {
             onClick={() => {
               setTestResult(null);
               setAttachError(null);
+              setNewConnectMode("fields");
+              setNewHost("");
+              setNewPort(DEFAULT_ENGINE_PORTS["postgresql"] || "5432");
+              setNewDatabase("");
+              setNewUsername("");
+              setNewPassword("");
+              setShowNewPassword(false);
+              setNewLibsqlMode("local");
+              setNewLibsqlFile("");
+              setNewSnowflakeWarehouse("");
+              setNewSnowflakeSchema("");
+              setNewSnowflakeRole("");
               setNewAlias("");
               setNewUrl("");
               setNewToken("");
@@ -1358,12 +1322,43 @@ export function Databases() {
               value={newEngine}
               options={engineOptions}
               onChange={(val) => {
-                setNewEngine(val);
+                const prevEngine = newEngine;
+                const nextEngine = val as string;
+                setNewEngine(nextEngine);
+                const oldDefaultPort =
+                  DEFAULT_ENGINE_PORTS[prevEngine.toLowerCase()] || "";
+                const newDefaultPort =
+                  DEFAULT_ENGINE_PORTS[nextEngine.toLowerCase()] || "";
+                let updatedPort = newPort;
+                if (!newPort || newPort === oldDefaultPort) {
+                  updatedPort = newDefaultPort;
+                  setNewPort(newDefaultPort);
+                }
                 if (
-                  val.toLowerCase() === "postgresql" ||
-                  val.toLowerCase() === "mysql"
+                  nextEngine.toLowerCase() === "postgresql" ||
+                  nextEngine.toLowerCase() === "mysql"
                 ) {
-                  setNewSslMode(extractSslModeFromUrl(newUrl, val));
+                  setNewSslMode(extractSslModeFromUrl(newUrl, nextEngine));
+                }
+                if (newConnectMode === "fields") {
+                  const nextUrl = buildDatabaseUrl(
+                    nextEngine,
+                    {
+                      host: newHost,
+                      port: updatedPort,
+                      database: newDatabase,
+                      username: newUsername,
+                      password: newPassword,
+                      libsqlMode: newLibsqlMode,
+                      libsqlFile: newLibsqlFile,
+                      warehouse: newSnowflakeWarehouse,
+                      schema: newSnowflakeSchema,
+                      role: newSnowflakeRole,
+                      token: newToken,
+                    },
+                    newSslMode,
+                  );
+                  setNewUrl(nextUrl);
                 }
                 setTestResult(null);
                 setAttachError(null);
@@ -1405,71 +1400,772 @@ export function Databases() {
             )}
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
               <label className="block text-[13px] font-medium text-[#cccccc]">
-                Connection URL{" "}
+                Connection{" "}
                 {newEngine.toLowerCase() !== "libsql" && (
                   <span className="text-[#e5484d]">*</span>
                 )}
               </label>
-              {newEngine.toLowerCase() === "libsql" && (
-                <span className="text-[11px] text-[#888888]">
-                  Optional for local DB
-                </span>
-              )}
+              <div className="inline-flex items-center rounded-[6px] border border-[#262626] bg-[#121212] p-0.5 select-none">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newConnectMode !== "fields") {
+                      const parsed = parseDatabaseUrl(newUrl, newEngine);
+                      setNewHost(parsed.host);
+                      setNewPort(
+                        parsed.port ||
+                          DEFAULT_ENGINE_PORTS[newEngine.toLowerCase()] ||
+                          "",
+                      );
+                      setNewDatabase(parsed.database);
+                      setNewUsername(parsed.username);
+                      setNewPassword(parsed.password);
+                      if (parsed.libsqlMode) setNewLibsqlMode(parsed.libsqlMode);
+                      if (parsed.libsqlFile) setNewLibsqlFile(parsed.libsqlFile);
+                      if (parsed.warehouse) setNewSnowflakeWarehouse(parsed.warehouse);
+                      if (parsed.schema) setNewSnowflakeSchema(parsed.schema);
+                      if (parsed.role) setNewSnowflakeRole(parsed.role);
+                      if (parsed.token) setNewToken(parsed.token);
+                      setNewConnectMode("fields");
+                    }
+                  }}
+                  className={`rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer ${
+                    newConnectMode === "fields"
+                      ? "bg-[#262626] text-white shadow-xs"
+                      : "text-[#888888] hover:text-[#cccccc]"
+                  }`}
+                >
+                  Fields
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newConnectMode !== "string") {
+                      setNewConnectMode("string");
+                    }
+                  }}
+                  className={`rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer ${
+                    newConnectMode === "string"
+                      ? "bg-[#262626] text-white shadow-xs"
+                      : "text-[#888888] hover:text-[#cccccc]"
+                  }`}
+                >
+                  Connection string
+                </button>
+              </div>
             </div>
-            <div className="relative">
-              <input
-                type={showNewUrl ? "text" : "password"}
-                value={newUrl}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setNewUrl(val);
-                  if (
-                    newEngine.toLowerCase() === "postgresql" ||
-                    newEngine.toLowerCase() === "mysql"
-                  ) {
-                    setNewSslMode(extractSslModeFromUrl(val, newEngine));
-                  }
-                  setTestResult(null);
-                  setAttachError(null);
-                }}
-                placeholder={
-                  newEngine.toLowerCase() === "libsql"
-                    ? `Leave blank to create data/${newAlias.trim() || "database"}.db`
-                    : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example ||
-                      "postgres://user:secret@host:5432/dbname"
-                }
-                className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
-                  newUrl.trim().length > 0 &&
-                  !validateDatabaseUrl(newEngine, newUrl).valid
-                    ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
-                    : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
-                }`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewUrl(!showNewUrl)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
-                tabIndex={-1}
-                aria-label={showNewUrl ? "Hide password" : "Show password"}
-              >
-                {showNewUrl ? (
-                  <EyeOff className="w-3.5 h-3.5" />
-                ) : (
-                  <Eye className="w-3.5 h-3.5" />
-                )}
-              </button>
-            </div>
+
+            {newConnectMode === "fields" ? (
+              newEngine.toLowerCase() === "libsql" ? (
+                /* LibSQL Dialect View */
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                      Storage Mode
+                    </label>
+                    <div className="inline-flex items-center rounded-[6px] border border-[#262626] bg-[#121212] p-0.5 select-none w-full">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewLibsqlMode("local");
+                          const nextUrl = buildDatabaseUrl("libsql", {
+                            host: "",
+                            port: "",
+                            database: "",
+                            username: "",
+                            password: "",
+                            libsqlMode: "local",
+                            libsqlFile: newLibsqlFile,
+                          });
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        className={`flex-1 rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer text-center ${
+                          newLibsqlMode === "local"
+                            ? "bg-[#262626] text-white shadow-xs"
+                            : "text-[#888888] hover:text-[#cccccc]"
+                        }`}
+                      >
+                        Local SQLite (Embedded)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewLibsqlMode("remote");
+                          const nextUrl = buildDatabaseUrl("libsql", {
+                            host: newHost || "libsql://",
+                            port: "",
+                            database: "",
+                            username: "",
+                            password: "",
+                            libsqlMode: "remote",
+                            token: newToken,
+                          });
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        className={`flex-1 rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer text-center ${
+                          newLibsqlMode === "remote"
+                            ? "bg-[#262626] text-white shadow-xs"
+                            : "text-[#888888] hover:text-[#cccccc]"
+                        }`}
+                      >
+                        Remote Turso Cloud / sqld
+                      </button>
+                    </div>
+                  </div>
+
+                  {newLibsqlMode === "local" ? (
+                    <div className="space-y-2">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-[13px] font-medium text-[#cccccc]">
+                            Database File Path
+                          </label>
+                          <span className="text-[11px] text-[#888888]">
+                            data/{newAlias.trim() || "database"}.db (default)
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          value={newLibsqlFile}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewLibsqlFile(val);
+                            const nextUrl = buildDatabaseUrl("libsql", {
+                              host: "",
+                              port: "",
+                              database: "",
+                              username: "",
+                              password: "",
+                              libsqlMode: "local",
+                              libsqlFile: val,
+                            });
+                            setNewUrl(nextUrl);
+                            setTestResult(null);
+                            setAttachError(null);
+                          }}
+                          placeholder={`data/${newAlias.trim() || "database"}.db (leave blank to auto-create)`}
+                          className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewLibsqlFile("");
+                            setNewUrl("");
+                            setTestResult(null);
+                            setAttachError(null);
+                          }}
+                          className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#1a1a1a] hover:bg-[#262626] text-[#a3a3a3] hover:text-white border border-[#262626] transition-colors cursor-pointer"
+                        >
+                          Default (auto-create)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewLibsqlFile(":memory:");
+                            setNewUrl(":memory:");
+                            setTestResult(null);
+                            setAttachError(null);
+                          }}
+                          className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#1a1a1a] hover:bg-[#262626] text-[#a3a3a3] hover:text-white border border-[#262626] transition-colors cursor-pointer"
+                        >
+                          In-Memory (:memory:)
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-[#737373] mt-1">
+                        Stored locally inside the protected{" "}
+                        <code className="font-mono text-[#a3a3a3]">data/</code>{" "}
+                        directory. Uses high-throughput WAL mode and memory page
+                        cache.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                          Turso Endpoint URL <span className="text-[#e5484d]">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={newHost}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewHost(val);
+                            const nextUrl = buildDatabaseUrl("libsql", {
+                              host: val,
+                              port: "",
+                              database: "",
+                              username: "",
+                              password: "",
+                              libsqlMode: "remote",
+                              token: newToken,
+                            });
+                            setNewUrl(nextUrl);
+                            setTestResult(null);
+                            setAttachError(null);
+                          }}
+                          placeholder="libsql://your-db-org.turso.io"
+                          className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-[13px] font-medium text-[#cccccc]">
+                            Auth Token (Bearer JWT)
+                          </label>
+                          <span className="text-[11px] text-[#666666]">Optional</span>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type={showNewToken ? "text" : "password"}
+                            value={newToken}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewToken(val);
+                              const nextUrl = buildDatabaseUrl("libsql", {
+                                host: newHost,
+                                port: "",
+                                database: "",
+                                username: "",
+                                password: "",
+                                libsqlMode: "remote",
+                                token: val,
+                              });
+                              setNewUrl(nextUrl);
+                              setTestResult(null);
+                              setAttachError(null);
+                            }}
+                            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                            className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewToken(!showNewToken)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                            tabIndex={-1}
+                            aria-label={
+                              showNewToken ? "Hide token" : "Show token"
+                            }
+                          >
+                            {showNewToken ? (
+                              <EyeOff className="w-3.5 h-3.5" />
+                            ) : (
+                              <Eye className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                        <p className="mt-1 text-[11px] text-[#737373]">
+                          Required for Turso Cloud databases. Leave blank for unauthenticated sqld instances.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : newEngine.toLowerCase() === "snowflake" ? (
+                /* Snowflake Dialect View */
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                      Account Host / Identifier <span className="text-[#e5484d]">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newHost}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewHost(val);
+                        const nextUrl = buildDatabaseUrl("snowflake", {
+                          host: val,
+                          port: "443",
+                          database: newDatabase,
+                          schema: newSnowflakeSchema,
+                          warehouse: newSnowflakeWarehouse,
+                          role: newSnowflakeRole,
+                          username: newUsername,
+                          password: newPassword,
+                        });
+                        setNewUrl(nextUrl);
+                        setTestResult(null);
+                        setAttachError(null);
+                      }}
+                      placeholder="xy12345.us-east-1.snowflakecomputing.com"
+                      className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Warehouse
+                      </label>
+                      <input
+                        type="text"
+                        value={newSnowflakeWarehouse}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewSnowflakeWarehouse(val);
+                          const nextUrl = buildDatabaseUrl("snowflake", {
+                            host: newHost,
+                            port: "443",
+                            database: newDatabase,
+                            schema: newSnowflakeSchema,
+                            warehouse: val,
+                            role: newSnowflakeRole,
+                            username: newUsername,
+                            password: newPassword,
+                          });
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder="COMPUTE_WH"
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Role{" "}
+                        <span className="text-[11px] font-normal text-[#888888]">
+                          (optional)
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={newSnowflakeRole}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewSnowflakeRole(val);
+                          const nextUrl = buildDatabaseUrl("snowflake", {
+                            host: newHost,
+                            port: "443",
+                            database: newDatabase,
+                            schema: newSnowflakeSchema,
+                            warehouse: newSnowflakeWarehouse,
+                            role: val,
+                            username: newUsername,
+                            password: newPassword,
+                          });
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder="ACCOUNTADMIN"
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Database
+                      </label>
+                      <input
+                        type="text"
+                        value={newDatabase}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewDatabase(val);
+                          const nextUrl = buildDatabaseUrl("snowflake", {
+                            host: newHost,
+                            port: "443",
+                            database: val,
+                            schema: newSnowflakeSchema,
+                            warehouse: newSnowflakeWarehouse,
+                            role: newSnowflakeRole,
+                            username: newUsername,
+                            password: newPassword,
+                          });
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder="PRODUCTION_DB"
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Schema
+                      </label>
+                      <input
+                        type="text"
+                        value={newSnowflakeSchema}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewSnowflakeSchema(val);
+                          const nextUrl = buildDatabaseUrl("snowflake", {
+                            host: newHost,
+                            port: "443",
+                            database: newDatabase,
+                            schema: val,
+                            warehouse: newSnowflakeWarehouse,
+                            role: newSnowflakeRole,
+                            username: newUsername,
+                            password: newPassword,
+                          });
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder="PUBLIC"
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Username
+                      </label>
+                      <input
+                        type="text"
+                        value={newUsername}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewUsername(val);
+                          const nextUrl = buildDatabaseUrl("snowflake", {
+                            host: newHost,
+                            port: "443",
+                            database: newDatabase,
+                            schema: newSnowflakeSchema,
+                            warehouse: newSnowflakeWarehouse,
+                            role: newSnowflakeRole,
+                            username: val,
+                            password: newPassword,
+                          });
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder="admin"
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewPassword(val);
+                            const nextUrl = buildDatabaseUrl("snowflake", {
+                              host: newHost,
+                              port: "443",
+                              database: newDatabase,
+                              schema: newSnowflakeSchema,
+                              warehouse: newSnowflakeWarehouse,
+                              role: newSnowflakeRole,
+                              username: newUsername,
+                              password: val,
+                            });
+                            setNewUrl(nextUrl);
+                            setTestResult(null);
+                            setAttachError(null);
+                          }}
+                          placeholder="••••••••"
+                          className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                          tabIndex={-1}
+                          aria-label={
+                            showNewPassword ? "Hide password" : "Show password"
+                          }
+                        >
+                          {showNewPassword ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-[#737373]">
+                        Special characters are fine; Axiom escapes them automatically.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Standard Relational Engines (PostgreSQL, MySQL, MSSQL, ClickHouse, Oracle) */
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Host <span className="text-[#e5484d]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={newHost}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewHost(val);
+                          const nextUrl = buildDatabaseUrl(
+                            newEngine,
+                            {
+                              host: val,
+                              port: newPort,
+                              database: newDatabase,
+                              username: newUsername,
+                              password: newPassword,
+                            },
+                            newSslMode,
+                          );
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder={
+                          newEngine.toLowerCase() === "clickhouse"
+                            ? "localhost or clickhouse.example.com"
+                            : newEngine.toLowerCase() === "oracle"
+                              ? "localhost or oracle.example.com"
+                              : newEngine.toLowerCase() === "mssql"
+                                ? "localhost or mssql.example.com"
+                                : "localhost or db.example.com"
+                        }
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                    <div className="w-28 shrink-0">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Port
+                      </label>
+                      <input
+                        type="text"
+                        value={newPort}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewPort(val);
+                          const nextUrl = buildDatabaseUrl(
+                            newEngine,
+                            {
+                              host: newHost,
+                              port: val,
+                              database: newDatabase,
+                              username: newUsername,
+                              password: newPassword,
+                            },
+                            newSslMode,
+                          );
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder={
+                          DEFAULT_ENGINE_PORTS[newEngine.toLowerCase()] || "5432"
+                        }
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                      {newEngine.toLowerCase() === "oracle"
+                        ? "Service Name / Database"
+                        : "Database"}{" "}
+                      <span className="text-[11px] font-normal text-[#888888]">
+                        (optional)
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newDatabase}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewDatabase(val);
+                        const nextUrl = buildDatabaseUrl(
+                          newEngine,
+                          {
+                            host: newHost,
+                            port: newPort,
+                            database: val,
+                            username: newUsername,
+                            password: newPassword,
+                          },
+                          newSslMode,
+                        );
+                        setNewUrl(nextUrl);
+                        setTestResult(null);
+                        setAttachError(null);
+                      }}
+                      placeholder={
+                        newEngine.toLowerCase() === "clickhouse"
+                          ? "default"
+                          : newEngine.toLowerCase() === "oracle"
+                            ? "ORCL or XE"
+                            : newEngine.toLowerCase() === "mssql"
+                              ? "master or dbname"
+                              : "postgres or my_database"
+                      }
+                      className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Username
+                      </label>
+                      <input
+                        type="text"
+                        value={newUsername}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewUsername(val);
+                          const nextUrl = buildDatabaseUrl(
+                            newEngine,
+                            {
+                              host: newHost,
+                              port: newPort,
+                              database: newDatabase,
+                              username: val,
+                              password: newPassword,
+                            },
+                            newSslMode,
+                          );
+                          setNewUrl(nextUrl);
+                          setTestResult(null);
+                          setAttachError(null);
+                        }}
+                        placeholder={
+                          newEngine.toLowerCase() === "clickhouse"
+                            ? "default"
+                            : newEngine.toLowerCase() === "mssql"
+                              ? "sa"
+                              : newEngine.toLowerCase() === "oracle"
+                                ? "system"
+                                : newEngine.toLowerCase() === "mysql"
+                                  ? "root"
+                                  : "postgres"
+                        }
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewPassword(val);
+                            const nextUrl = buildDatabaseUrl(
+                              newEngine,
+                              {
+                                host: newHost,
+                                port: newPort,
+                                database: newDatabase,
+                                username: newUsername,
+                                password: val,
+                              },
+                              newSslMode,
+                            );
+                            setNewUrl(nextUrl);
+                            setTestResult(null);
+                            setAttachError(null);
+                          }}
+                          placeholder="••••••••"
+                          className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                          tabIndex={-1}
+                          aria-label={
+                            showNewPassword ? "Hide password" : "Show password"
+                          }
+                        >
+                          {showNewPassword ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-[#737373]">
+                        Special characters are fine; Axiom escapes them automatically.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            ) : (
+              <div>
+                <div className="relative">
+                  <input
+                    type={showNewUrl ? "text" : "password"}
+                    value={newUrl}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewUrl(val);
+                      if (
+                        newEngine.toLowerCase() === "postgresql" ||
+                        newEngine.toLowerCase() === "mysql"
+                      ) {
+                        setNewSslMode(extractSslModeFromUrl(val, newEngine));
+                      }
+                      setTestResult(null);
+                      setAttachError(null);
+                    }}
+                    placeholder={
+                      newEngine.toLowerCase() === "libsql"
+                        ? `Leave blank to create data/${newAlias.trim() || "database"}.db`
+                        : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example ||
+                          "postgres://user:secret@host:5432/dbname"
+                    }
+                    className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
+                      newUrl.trim().length > 0 &&
+                      !validateDatabaseUrl(newEngine, newUrl).valid
+                        ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                        : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewUrl(!showNewUrl)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                    tabIndex={-1}
+                    aria-label={showNewUrl ? "Hide password" : "Show password"}
+                  >
+                    {showNewUrl ? (
+                      <EyeOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {newUrl.trim().length > 0 &&
               (validateDatabaseUrl(newEngine, newUrl).valid ? (
-                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#30a46c]">
+                <div className="flex items-center gap-1.5 text-[12px] text-[#30a46c]">
                   <Check className="w-3.5 h-3.5 shrink-0" />
                   <span>Valid connection scheme</span>
                 </div>
               ) : (
-                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                <div className="flex items-center gap-1.5 text-[12px] text-[#e5484d]">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span>
                     Invalid {formatEngine(newEngine)} scheme. Expected prefix:{" "}
@@ -1481,8 +2177,9 @@ export function Databases() {
                   </span>
                 </div>
               ))}
+
             {newUrl.trim().length === 0 && (
-              <p className="mt-1.5 text-[12px] text-[#737373]">
+              <p className="text-[12px] text-[#737373]">
                 {newEngine.toLowerCase() === "libsql" ? (
                   <span>
                     Leave blank to automatically create{" "}
@@ -1506,7 +2203,7 @@ export function Databases() {
             )}
           </div>
 
-          {newEngine.toLowerCase() === "libsql" && (
+          {newEngine.toLowerCase() === "libsql" && newConnectMode === "string" && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-[13px] font-medium text-[#cccccc]">
@@ -1562,7 +2259,23 @@ export function Databases() {
                 onChange={(val) => {
                   const mode = val as SslMode;
                   setNewSslMode(mode);
-                  setNewUrl((prev) => applySslModeToUrl(prev, newEngine, mode));
+                  if (newConnectMode === "fields") {
+                    setNewUrl(
+                      buildDatabaseUrl(
+                        newEngine,
+                        {
+                          host: newHost,
+                          port: newPort,
+                          database: newDatabase,
+                          username: newUsername,
+                          password: newPassword,
+                        },
+                        mode,
+                      ),
+                    );
+                  } else {
+                    setNewUrl((prev) => applySslModeToUrl(prev, newEngine, mode));
+                  }
                   setTestResult(null);
                   setAttachError(null);
                 }}
@@ -1834,13 +2547,43 @@ export function Databases() {
                     value={editEngine}
                     options={engineOptions}
                     onChange={(val) => {
-                      const eng = val as EngineType;
-                      setEditEngine(eng);
+                      const prevEngine = editEngine;
+                      const nextEngine = val as EngineType;
+                      setEditEngine(nextEngine);
+                      const oldDefaultPort =
+                        DEFAULT_ENGINE_PORTS[prevEngine.toLowerCase()] || "";
+                      const newDefaultPort =
+                        DEFAULT_ENGINE_PORTS[nextEngine.toLowerCase()] || "";
+                      let updatedPort = editPort;
+                      if (!editPort || editPort === oldDefaultPort) {
+                        updatedPort = newDefaultPort;
+                        setEditPort(newDefaultPort);
+                      }
                       if (
-                        eng.toLowerCase() === "postgresql" ||
-                        eng.toLowerCase() === "mysql"
+                        nextEngine.toLowerCase() === "postgresql" ||
+                        nextEngine.toLowerCase() === "mysql"
                       ) {
-                        setEditSslMode(extractSslModeFromUrl(editUrl, eng));
+                        setEditSslMode(extractSslModeFromUrl(editUrl, nextEngine));
+                      }
+                      if (editConnectMode === "fields") {
+                        const nextUrl = buildDatabaseUrl(
+                          nextEngine,
+                          {
+                            host: editHost,
+                            port: updatedPort,
+                            database: editDatabase,
+                            username: editUsername,
+                            password: editPassword,
+                            libsqlMode: editLibsqlMode,
+                            libsqlFile: editLibsqlFile,
+                            warehouse: editSnowflakeWarehouse,
+                            schema: editSnowflakeSchema,
+                            role: editSnowflakeRole,
+                            token: editToken,
+                          },
+                          editSslMode,
+                        );
+                        setEditUrl(nextUrl);
                       }
                       setManageTestResult(null);
                       setManageError(null);
@@ -1849,61 +2592,786 @@ export function Databases() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
-                    Connection URL <span className="text-[#e5484d]">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showEditUrl ? "text" : "password"}
-                      value={editUrl}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setEditUrl(val);
-                        if (
-                          editEngine.toLowerCase() === "postgresql" ||
-                          editEngine.toLowerCase() === "mysql"
-                        ) {
-                          setEditSslMode(
-                            extractSslModeFromUrl(val, editEngine),
-                          );
-                        }
-                        setManageTestResult(null);
-                        setManageError(null);
-                      }}
-                      placeholder="Leave blank to keep the existing"
-                      className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
-                        urlChanged && !editUrlValidation.valid
-                          ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
-                          : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowEditUrl(!showEditUrl)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
-                      tabIndex={-1}
-                      aria-label={
-                        showEditUrl ? "Hide password" : "Show password"
-                      }
-                    >
-                      {showEditUrl ? (
-                        <EyeOff className="w-3.5 h-3.5" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[13px] font-medium text-[#cccccc]">
+                      Connection{" "}
+                      {editEngine.toLowerCase() !== "libsql" && (
+                        <span className="text-[#e5484d]">*</span>
                       )}
-                    </button>
+                    </label>
+                    <div className="inline-flex items-center rounded-[6px] border border-[#262626] bg-[#121212] p-0.5 select-none">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editConnectMode !== "fields") {
+                            if (editUrl.trim().length > 0) {
+                              const parsed = parseDatabaseUrl(
+                                editUrl,
+                                editEngine,
+                              );
+                              setEditHost(parsed.host);
+                              setEditPort(
+                                parsed.port ||
+                                  DEFAULT_ENGINE_PORTS[
+                                    editEngine.toLowerCase()
+                                  ] ||
+                                  "",
+                              );
+                              setEditDatabase(parsed.database);
+                              setEditUsername(parsed.username);
+                              setEditPassword(parsed.password);
+                              if (parsed.libsqlMode) setEditLibsqlMode(parsed.libsqlMode);
+                              if (parsed.libsqlFile) setEditLibsqlFile(parsed.libsqlFile);
+                              if (parsed.warehouse) setEditSnowflakeWarehouse(parsed.warehouse);
+                              if (parsed.schema) setEditSnowflakeSchema(parsed.schema);
+                              if (parsed.role) setEditSnowflakeRole(parsed.role);
+                              if (parsed.token) setEditToken(parsed.token);
+                            }
+                            setEditConnectMode("fields");
+                          }
+                        }}
+                        className={`rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer ${
+                          editConnectMode === "fields"
+                            ? "bg-[#262626] text-white shadow-xs"
+                            : "text-[#888888] hover:text-[#cccccc]"
+                        }`}
+                      >
+                        Fields
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editConnectMode !== "string") {
+                            setEditConnectMode("string");
+                          }
+                        }}
+                        className={`rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer ${
+                          editConnectMode === "string"
+                            ? "bg-[#262626] text-white shadow-xs"
+                            : "text-[#888888] hover:text-[#cccccc]"
+                        }`}
+                      >
+                        Connection string
+                      </button>
+                    </div>
                   </div>
+
+                  {editConnectMode === "fields" ? (
+                    editEngine.toLowerCase() === "libsql" ? (
+                      /* LibSQL Dialect View */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                            Storage Mode
+                          </label>
+                          <div className="inline-flex items-center rounded-[6px] border border-[#262626] bg-[#121212] p-0.5 select-none w-full">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditLibsqlMode("local");
+                                const nextUrl = buildDatabaseUrl("libsql", {
+                                  host: "",
+                                  port: "",
+                                  database: "",
+                                  username: "",
+                                  password: "",
+                                  libsqlMode: "local",
+                                  libsqlFile: editLibsqlFile,
+                                });
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              className={`flex-1 rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer text-center ${
+                                editLibsqlMode === "local"
+                                  ? "bg-[#262626] text-white shadow-xs"
+                                  : "text-[#888888] hover:text-[#cccccc]"
+                              }`}
+                            >
+                              Local SQLite (Embedded)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditLibsqlMode("remote");
+                                const nextUrl = buildDatabaseUrl("libsql", {
+                                  host: editHost,
+                                  port: "",
+                                  database: "",
+                                  username: "",
+                                  password: "",
+                                  libsqlMode: "remote",
+                                  token: editToken,
+                                });
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              className={`flex-1 rounded-[4px] px-2.5 py-1 text-[12px] font-medium transition-colors cursor-pointer text-center ${
+                                editLibsqlMode === "remote"
+                                  ? "bg-[#262626] text-white shadow-xs"
+                                  : "text-[#888888] hover:text-[#cccccc]"
+                              }`}
+                            >
+                              Remote Turso Cloud / sqld
+                            </button>
+                          </div>
+                        </div>
+
+                        {editLibsqlMode === "local" ? (
+                          <div className="space-y-2">
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-[13px] font-medium text-[#cccccc]">
+                                  Database File Path
+                                </label>
+                                <span className="text-[11px] text-[#888888]">
+                                  Leave blank to keep existing
+                                </span>
+                              </div>
+                              <input
+                                type="text"
+                                value={editLibsqlFile}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditLibsqlFile(val);
+                                  const nextUrl = buildDatabaseUrl("libsql", {
+                                    host: "",
+                                    port: "",
+                                    database: "",
+                                    username: "",
+                                    password: "",
+                                    libsqlMode: "local",
+                                    libsqlFile: val,
+                                  });
+                                  setEditUrl(nextUrl);
+                                  setManageTestResult(null);
+                                  setManageError(null);
+                                }}
+                                placeholder={`data/${editAlias.trim() || selectedPool?.alias || "database"}.db`}
+                                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const defaultPath = `data/${editAlias.trim() || selectedPool?.alias || "database"}.db`;
+                                  setEditLibsqlFile(defaultPath);
+                                  const nextUrl = buildDatabaseUrl("libsql", {
+                                    host: "",
+                                    port: "",
+                                    database: "",
+                                    username: "",
+                                    password: "",
+                                    libsqlMode: "local",
+                                    libsqlFile: defaultPath,
+                                  });
+                                  setEditUrl(nextUrl);
+                                  setManageTestResult(null);
+                                  setManageError(null);
+                                }}
+                                className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#1a1a1a] hover:bg-[#262626] text-[#a3a3a3] hover:text-white border border-[#262626] transition-colors cursor-pointer"
+                              >
+                                Default (data/{editAlias.trim() || selectedPool?.alias || "database"}.db)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditLibsqlFile(":memory:");
+                                  setEditUrl(":memory:");
+                                  setManageTestResult(null);
+                                  setManageError(null);
+                                }}
+                                className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#1a1a1a] hover:bg-[#262626] text-[#a3a3a3] hover:text-white border border-[#262626] transition-colors cursor-pointer"
+                              >
+                                In-Memory (:memory:)
+                              </button>
+                            </div>
+                            <p className="text-[11px] text-[#737373] mt-1">
+                              Stored locally inside the protected{" "}
+                              <code className="font-mono text-[#a3a3a3]">data/</code>{" "}
+                              directory. Uses high-throughput WAL mode and memory page cache.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                                Turso Endpoint URL
+                              </label>
+                              <input
+                                type="text"
+                                value={editHost}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditHost(val);
+                                  const nextUrl = buildDatabaseUrl("libsql", {
+                                    host: val,
+                                    port: "",
+                                    database: "",
+                                    username: "",
+                                    password: "",
+                                    libsqlMode: "remote",
+                                    token: editToken,
+                                  });
+                                  setEditUrl(nextUrl);
+                                  setManageTestResult(null);
+                                  setManageError(null);
+                                }}
+                                placeholder="libsql://your-db-org.turso.io (leave blank to keep existing)"
+                                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-[13px] font-medium text-[#cccccc]">
+                                  Auth Token (Bearer JWT)
+                                </label>
+                                <span className="text-[11px] text-[#666666]">Optional</span>
+                              </div>
+                              <div className="relative">
+                                <input
+                                  type={showEditToken ? "text" : "password"}
+                                  value={editToken}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setEditToken(val);
+                                    const nextUrl = buildDatabaseUrl("libsql", {
+                                      host: editHost,
+                                      port: "",
+                                      database: "",
+                                      username: "",
+                                      password: "",
+                                      libsqlMode: "remote",
+                                      token: val,
+                                    });
+                                    setEditUrl(nextUrl);
+                                    setManageTestResult(null);
+                                    setManageError(null);
+                                  }}
+                                  placeholder="Leave blank to keep existing credentials"
+                                  className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowEditToken(!showEditToken)}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                                  tabIndex={-1}
+                                  aria-label={showEditToken ? "Hide token" : "Show token"}
+                                >
+                                  {showEditToken ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                              <p className="mt-1 text-[11px] text-[#737373]">
+                                Required for Turso Cloud databases. Leave blank for unauthenticated sqld instances.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : editEngine.toLowerCase() === "snowflake" ? (
+                      /* Snowflake Dialect View */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                            Account Host / Identifier
+                          </label>
+                          <input
+                            type="text"
+                            value={editHost}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditHost(val);
+                              const nextUrl = buildDatabaseUrl("snowflake", {
+                                host: val,
+                                port: "443",
+                                database: editDatabase,
+                                schema: editSnowflakeSchema,
+                                warehouse: editSnowflakeWarehouse,
+                                role: editSnowflakeRole,
+                                username: editUsername,
+                                password: editPassword,
+                              });
+                              setEditUrl(nextUrl);
+                              setManageTestResult(null);
+                              setManageError(null);
+                            }}
+                            placeholder="xy12345.us-east-1.snowflakecomputing.com (leave blank to keep existing)"
+                            className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                          />
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Warehouse
+                            </label>
+                            <input
+                              type="text"
+                              value={editSnowflakeWarehouse}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditSnowflakeWarehouse(val);
+                                const nextUrl = buildDatabaseUrl("snowflake", {
+                                  host: editHost,
+                                  port: "443",
+                                  database: editDatabase,
+                                  schema: editSnowflakeSchema,
+                                  warehouse: val,
+                                  role: editSnowflakeRole,
+                                  username: editUsername,
+                                  password: editPassword,
+                                });
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder="COMPUTE_WH"
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Role <span className="text-[11px] font-normal text-[#888888]">(optional)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={editSnowflakeRole}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditSnowflakeRole(val);
+                                const nextUrl = buildDatabaseUrl("snowflake", {
+                                  host: editHost,
+                                  port: "443",
+                                  database: editDatabase,
+                                  schema: editSnowflakeSchema,
+                                  warehouse: editSnowflakeWarehouse,
+                                  role: val,
+                                  username: editUsername,
+                                  password: editPassword,
+                                });
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder="ACCOUNTADMIN"
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Database
+                            </label>
+                            <input
+                              type="text"
+                              value={editDatabase}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditDatabase(val);
+                                const nextUrl = buildDatabaseUrl("snowflake", {
+                                  host: editHost,
+                                  port: "443",
+                                  database: val,
+                                  schema: editSnowflakeSchema,
+                                  warehouse: editSnowflakeWarehouse,
+                                  role: editSnowflakeRole,
+                                  username: editUsername,
+                                  password: editPassword,
+                                });
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder="Leave blank to keep existing"
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Schema
+                            </label>
+                            <input
+                              type="text"
+                              value={editSnowflakeSchema}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditSnowflakeSchema(val);
+                                const nextUrl = buildDatabaseUrl("snowflake", {
+                                  host: editHost,
+                                  port: "443",
+                                  database: editDatabase,
+                                  schema: val,
+                                  warehouse: editSnowflakeWarehouse,
+                                  role: editSnowflakeRole,
+                                  username: editUsername,
+                                  password: editPassword,
+                                });
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder="PUBLIC"
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Username
+                            </label>
+                            <input
+                              type="text"
+                              value={editUsername}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditUsername(val);
+                                const nextUrl = buildDatabaseUrl("snowflake", {
+                                  host: editHost,
+                                  port: "443",
+                                  database: editDatabase,
+                                  schema: editSnowflakeSchema,
+                                  warehouse: editSnowflakeWarehouse,
+                                  role: editSnowflakeRole,
+                                  username: val,
+                                  password: editPassword,
+                                });
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder="Leave blank to keep existing"
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Password
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={showEditPassword ? "text" : "password"}
+                                value={editPassword}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditPassword(val);
+                                  const nextUrl = buildDatabaseUrl("snowflake", {
+                                    host: editHost,
+                                    port: "443",
+                                    database: editDatabase,
+                                    schema: editSnowflakeSchema,
+                                    warehouse: editSnowflakeWarehouse,
+                                    role: editSnowflakeRole,
+                                    username: editUsername,
+                                    password: val,
+                                  });
+                                  setEditUrl(nextUrl);
+                                  setManageTestResult(null);
+                                  setManageError(null);
+                                }}
+                                placeholder="Leave blank to keep existing"
+                                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowEditPassword(!showEditPassword)}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                                tabIndex={-1}
+                                aria-label={showEditPassword ? "Hide password" : "Show password"}
+                              >
+                                {showEditPassword ? (
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Eye className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                            <p className="mt-1.5 text-[11px] text-[#737373]">
+                              Special characters are fine; Axiom escapes them automatically.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Standard Relational Engines */
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Host
+                            </label>
+                            <input
+                              type="text"
+                              value={editHost}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditHost(val);
+                                const nextUrl = buildDatabaseUrl(
+                                  editEngine,
+                                  {
+                                    host: val,
+                                    port: editPort,
+                                    database: editDatabase,
+                                    username: editUsername,
+                                    password: editPassword,
+                                  },
+                                  editSslMode,
+                                );
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder={
+                                editEngine.toLowerCase() === "clickhouse"
+                                  ? "localhost or clickhouse.example.com"
+                                  : editEngine.toLowerCase() === "oracle"
+                                    ? "localhost or oracle.example.com"
+                                    : editEngine.toLowerCase() === "mssql"
+                                      ? "localhost or mssql.example.com"
+                                      : "localhost or db.example.com"
+                              }
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                          <div className="w-28 shrink-0">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Port
+                            </label>
+                            <input
+                              type="text"
+                              value={editPort}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditPort(val);
+                                const nextUrl = buildDatabaseUrl(
+                                  editEngine,
+                                  {
+                                    host: editHost,
+                                    port: val,
+                                    database: editDatabase,
+                                    username: editUsername,
+                                    password: editPassword,
+                                  },
+                                  editSslMode,
+                                );
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder={
+                                DEFAULT_ENGINE_PORTS[editEngine.toLowerCase()] ||
+                                "5432"
+                              }
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                            {editEngine.toLowerCase() === "oracle"
+                              ? "Service Name / Database"
+                              : "Database"}{" "}
+                            <span className="text-[11px] font-normal text-[#888888]">
+                              (optional)
+                            </span>
+                          </label>
+                          <input
+                            type="text"
+                            value={editDatabase}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditDatabase(val);
+                              const nextUrl = buildDatabaseUrl(
+                                editEngine,
+                                {
+                                  host: editHost,
+                                  port: editPort,
+                                  database: val,
+                                  username: editUsername,
+                                  password: editPassword,
+                                },
+                                editSslMode,
+                              );
+                              setEditUrl(nextUrl);
+                              setManageTestResult(null);
+                              setManageError(null);
+                            }}
+                            placeholder={
+                              editEngine.toLowerCase() === "clickhouse"
+                                ? "default"
+                                : editEngine.toLowerCase() === "oracle"
+                                  ? "ORCL or XE"
+                                  : editEngine.toLowerCase() === "mssql"
+                                    ? "master or dbname"
+                                    : "postgres or my_database"
+                            }
+                            className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                          />
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Username
+                            </label>
+                            <input
+                              type="text"
+                              value={editUsername}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditUsername(val);
+                                const nextUrl = buildDatabaseUrl(
+                                  editEngine,
+                                  {
+                                    host: editHost,
+                                    port: editPort,
+                                    database: editDatabase,
+                                    username: val,
+                                    password: editPassword,
+                                  },
+                                  editSslMode,
+                                );
+                                setEditUrl(nextUrl);
+                                setManageTestResult(null);
+                                setManageError(null);
+                              }}
+                              placeholder={
+                                editEngine.toLowerCase() === "clickhouse"
+                                  ? "default"
+                                  : editEngine.toLowerCase() === "mssql"
+                                    ? "sa"
+                                    : editEngine.toLowerCase() === "oracle"
+                                      ? "system"
+                                      : editEngine.toLowerCase() === "mysql"
+                                        ? "root"
+                                        : "postgres"
+                              }
+                              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                              Password
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={showEditPassword ? "text" : "password"}
+                                value={editPassword}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setEditPassword(val);
+                                  const nextUrl = buildDatabaseUrl(
+                                    editEngine,
+                                    {
+                                      host: editHost,
+                                      port: editPort,
+                                      database: editDatabase,
+                                      username: editUsername,
+                                      password: val,
+                                    },
+                                    editSslMode,
+                                  );
+                                  setEditUrl(nextUrl);
+                                  setManageTestResult(null);
+                                  setManageError(null);
+                                }}
+                                placeholder="Leave blank to keep existing"
+                                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShowEditPassword(!showEditPassword)
+                                }
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                                tabIndex={-1}
+                                aria-label={
+                                  showEditPassword
+                                    ? "Hide password"
+                                    : "Show password"
+                                }
+                              >
+                                {showEditPassword ? (
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Eye className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                            <p className="mt-1.5 text-[11px] text-[#737373]">
+                              Special characters are fine; Axiom escapes them automatically.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  ) : (
+                    <div>
+                      <div className="relative">
+                        <input
+                          type={showEditUrl ? "text" : "password"}
+                          value={editUrl}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditUrl(val);
+                            if (
+                              editEngine.toLowerCase() === "postgresql" ||
+                              editEngine.toLowerCase() === "mysql"
+                            ) {
+                              setEditSslMode(
+                                extractSslModeFromUrl(val, editEngine),
+                              );
+                            }
+                            setManageTestResult(null);
+                            setManageError(null);
+                          }}
+                          placeholder="Leave blank to keep the existing"
+                          className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
+                            urlChanged && !editUrlValidation.valid
+                              ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                              : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEditUrl(!showEditUrl)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                          tabIndex={-1}
+                          aria-label={
+                            showEditUrl ? "Hide password" : "Show password"
+                          }
+                        >
+                          {showEditUrl ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {urlChanged &&
                     (editUrlValidation.valid ? (
-                      <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#f59e0b]">
+                      <div className="flex items-center gap-1.5 text-[12px] text-[#f59e0b]">
                         <Check className="w-3.5 h-3.5 shrink-0" />
                         <span>
                           New URI configured · Test required before saving
                         </span>
                       </div>
                     ) : (
-                      <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                      <div className="flex items-center gap-1.5 text-[12px] text-[#e5484d]">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                         <span>
                           Invalid {formatEngine(editEngine)} scheme. Expected
@@ -1917,14 +3385,14 @@ export function Databases() {
                       </div>
                     ))}
                   {!urlChanged && (
-                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                    <p className="text-[12px] text-[#737373]">
                       Leave empty to keep existing password and connection
                       credentials.
                     </p>
                   )}
                 </div>
 
-                {editEngine.toLowerCase() === "libsql" && (
+                {editEngine.toLowerCase() === "libsql" && editConnectMode === "string" && (
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-[13px] font-medium text-[#cccccc]">
@@ -1982,9 +3450,25 @@ export function Databases() {
                       onChange={(val) => {
                         const mode = val as SslMode;
                         setEditSslMode(mode);
-                        setEditUrl((prev) =>
-                          applySslModeToUrl(prev, editEngine, mode),
-                        );
+                        if (editConnectMode === "fields") {
+                          setEditUrl(
+                            buildDatabaseUrl(
+                              editEngine,
+                              {
+                                host: editHost,
+                                port: editPort,
+                                database: editDatabase,
+                                username: editUsername,
+                                password: editPassword,
+                              },
+                              mode,
+                            ),
+                          );
+                        } else {
+                          setEditUrl((prev) =>
+                            applySslModeToUrl(prev, editEngine, mode),
+                          );
+                        }
                         setManageTestResult(null);
                         setManageError(null);
                       }}
