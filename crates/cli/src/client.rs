@@ -182,7 +182,7 @@ impl AdminClient {
 
             if status == reqwest::StatusCode::UNAUTHORIZED {
                 return Err(format!(
-                    "Authentication required (HTTP 401 Unauthorized): {}\n  -> Run 'axiom login' to authenticate your admin session\n  -> Or supply an API key using '--key <KEY>' or the AXIOM_KEY environment variable",
+                    "Authentication required (HTTP 401 Unauthorized): {}\n  -> Supply an API key using '--api-key <KEY>' or set the AXIOM_KEY environment variable",
                     error_msg
                 ));
             }

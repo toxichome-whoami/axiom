@@ -16,7 +16,7 @@
 2. [Global Options](#2-global-options)
 3. [Command Index](#3-command-index)
 4. [User Management (`axiom user`)](#4-user-management-axiom-user)
-5. [Authentication (`axiom login`, `axiom logout`)](#5-authentication-axiom-login-axiom-logout)
+5. [Authentication (`--api-key`, `AXIOM_KEY`)](#5-authentication---api-key-axiom_key)
 6. [Databases (`axiom db`)](#6-databases-axiom-db)
 7. [Blob Storage (`axiom blob`)](#7-blob-storage-axiom-blob)
 8. [Access Control (`axiom key`, `axiom role`)](#8-access-control-axiom-key-axiom-role)
@@ -73,8 +73,6 @@ Apply to all subcommands. Can be placed before or after the command.
 | :-------------- | :------------------ | :--------------- | :------------------------------------------------------------------------ |
 | **Daemon**      | `axiom server`      | `start`, `run`   | Run the HTTP gateway and storage daemon                                   |
 | **Security**    | `axiom user`        | `show`, `update` | Super Administrator account recovery & credentials (direct SQLite access) |
-|                 | `axiom login`       |                  | Authenticate against gateway and get bearer session                       |
-|                 | `axiom logout`      |                  | Invalidate active administrative session                                  |
 |                 | `axiom key`         |                  | Scoped machine API keys and tokens                                        |
 |                 | `axiom role`        |                  | RBAC permission policies                                                  |
 | **Data**        | `axiom db`          |                  | Upstream SQL database connection pools and validation                     |
@@ -117,25 +115,17 @@ axiom user update -u new_admin -e admin@company.com -p "newsecret!"
 
 ---
 
-## 5. Authentication (`axiom login`, `axiom logout`)
+## 5. Authentication (`--api-key`, `AXIOM_KEY`)
 
-Authenticate administrative sessions against the gateway daemon.
-
-### Gateway Login (`axiom login`)
+Administrative CLI operations against the gateway daemon authenticate using machine API keys or environment tokens:
 
 ```bash
-# Interactive password prompt
-axiom login -u admin
+# Pass explicitly with the global flag
+axiom db list --api-key "<API_KEY>"
 
-# Direct password flag
-axiom login -u admin -p "Secret123!" -U http://127.0.0.1:4500
-```
-
-### Gateway Logout (`axiom logout`)
-
-```bash
-# Invalidate administrative session and clear cached credentials
-axiom logout
+# Or export in the terminal environment
+export AXIOM_KEY="<API_KEY>"
+axiom db list
 ```
 
 ---

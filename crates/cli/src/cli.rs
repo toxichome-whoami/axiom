@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use std::io::IsTerminal;
 use std::path::Path;
 
-use crate::client::{clear_saved_session, save_session, AdminClient};
+use crate::client::AdminClient;
 use crate::commands::{
     BlobCommands, BlobNsCommands, CacheCommands, Cli, ClusterCommands, Commands, ConfigCommands,
     DbCommands, KeyCommands, RoleCommands, UserCommands,
@@ -118,17 +118,27 @@ pub fn print_quickstart_guide() {
         "High-performance multi-dialect gateway, embedded metadata, and native blob storage.\n"
     );
     println!("QUICKSTART WORKFLOWS:");
-    println!("  1. Initialize Setup:    axiom setup           (Bootstrap master admin account)");
     println!(
-        "  2. Start Gateway:       axiom server          (Launch daemon on http://127.0.0.1:4500)"
+        "  1. Start Gateway:       axiom server          (Launch daemon on http://127.0.0.1:4500)"
     );
-    println!("  3. Check Diagnostics:   axiom doctor          (Validate environment, ports & database connectivity)");
-    println!("  4. Authenticate:        axiom login <USER>    (Store session token for authenticated operations)");
-    println!("  5. Inspect State:       axiom status          (View live gateway health and auth context)\n");
-    println!("PRIMARY COMMANDS:");
-    println!("  axiom db [ls|add|query]       Upstream databases, migrations & direct query proxy");
     println!(
-        "  axiom blob [ls|put|get]       Native object storage, uploads, transfers & namespaces"
+        "  2. Web UI Setup:        http://127.0.0.1:4500/system  (First-run setup wizard & dashboard)"
+    );
+    println!(
+        "  3. Super Admin CLI:     axiom user show       (Inspect root super admin or reset credentials)"
+    );
+    println!(
+        "  4. Check Diagnostics:   axiom doctor          (Validate environment, ports & database connectivity)"
+    );
+    println!(
+        "  5. Inspect State:       axiom status          (View live gateway health and cluster state)\n"
+    );
+    println!("PRIMARY COMMANDS:");
+    println!(
+        "  axiom db [ls|add|test|rm]     Upstream database connections, pooling & reachability"
+    );
+    println!(
+        "  axiom blob [stats|scrub|ns]   Native blob storage, telemetry, scrubbing & namespaces"
     );
     println!(
         "  axiom user [show|update]      Super Admin recovery & credentials (direct host metadata DB)"
@@ -200,6 +210,7 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             "description": "Axiom API Gateway & Data Access Platform CLI",
             "capabilities": [
                 "server",
+                "setup",
                 "user",
                 "key",
                 "role",
@@ -236,6 +247,31 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let dispatch_result: Result<bool, Box<dyn std::error::Error>> = match cli.command {
         None | Some(Commands::Server(_)) => Ok(false),
 
+        Some(Commands::Setup) => {
+            if format == OutputFormat::Json || format == OutputFormat::Jsonl {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "ok",
+                        "setup_mode": "web_ui",
+                        "url": format!("{}/system", cli.url),
+                        "server_command": "axiom server",
+                        "superadmin_command": "axiom user show",
+                        "message": "Start gateway with 'axiom server' and complete initial setup at /system"
+                    })
+                );
+            } else {
+                println!("Axiom Gateway Setup & Initialization:");
+                println!("  1. Start Gateway:       axiom server        (Launch daemon on http://127.0.0.1:4500)");
+                println!(
+                    "  2. Web Setup Wizard:    {}/system  (Connect databases & setup master admin)",
+                    cli.url
+                );
+                println!("  3. Super Admin CLI:     axiom user show     (Inspect or update root credentials directly offline)");
+            }
+            Ok(true)
+        }
+
         Some(Commands::User { command }) => {
             handle_user_command(command, format).await?;
             Ok(true)
@@ -262,37 +298,6 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
         Some(Commands::Blob { command }) => {
             let client = AdminClient::new(&cli.url, cli.key);
             handle_blob_command(client, command, format).await?;
-            Ok(true)
-        }
-
-        Some(Commands::Login {
-            username,
-            user,
-            password,
-        }) => {
-            let client = AdminClient::new(&cli.url, cli.key);
-            let effective_username = match username.or(user) {
-                Some(u) if !u.trim().is_empty() => u,
-                _ => {
-                    use std::io::{stderr, stdin, Write};
-                    eprint!("Enter admin username: ");
-                    let _ = stderr().flush();
-                    let mut buf = String::new();
-                    stdin().read_line(&mut buf)?;
-                    let trimmed = buf.trim();
-                    if trimmed.is_empty() {
-                        return Err("Admin username cannot be empty".into());
-                    }
-                    trimmed.to_string()
-                }
-            };
-            handle_login_command(client, effective_username, password, format).await?;
-            Ok(true)
-        }
-
-        Some(Commands::Logout) => {
-            let client = AdminClient::new(&cli.url, cli.key);
-            handle_logout_command(client, format).await?;
             Ok(true)
         }
 
@@ -332,10 +337,10 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                     println!("{:-<50}", "");
                     println!("Uptime:          {} seconds", uptime);
                     if client.auth_key().is_some() {
-                        println!("Auth Context:    Active (authenticated session token)");
+                        println!("Auth Context:    Active (API key or session token provided)");
                     } else {
                         println!(
-                            "Auth Context:    Unauthenticated (run 'axiom login' to authenticate)"
+                            "Auth Context:    Unauthenticated (provide '--api-key <KEY>' or set AXIOM_KEY)"
                         );
                     }
                     if let Some(sys) = d.get("system") {
@@ -2344,61 +2349,6 @@ async fn handle_blob_command(
                 }
             }
         }
-    }
-    Ok(())
-}
-
-// ─── Authentication & Setup Command Handlers ───────────────────────────────
-
-async fn handle_login_command(
-    client: AdminClient,
-    username: String,
-    password: Option<String>,
-    format: OutputFormat,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let pass = match password {
-        Some(p) if !p.is_empty() => p,
-        _ => {
-            eprint!("Enter password for admin '{}': ", username);
-            read_secret_input()?
-        }
-    };
-
-    let resp = client.login(&username, &pass).await?;
-    let token = resp
-        .get("data")
-        .and_then(|d| d.get("token").or_else(|| d.get("session_token")))
-        .and_then(|t| t.as_str())
-        .ok_or_else(|| "Server response did not contain session token".to_string())?;
-
-    save_session(token)?;
-
-    if format == OutputFormat::Json {
-        println!("{}", serde_json::to_string_pretty(&resp)?);
-    } else if format == OutputFormat::Jsonl {
-        println!("{}", serde_json::to_string(&resp)?);
-    } else {
-        println!("Successfully authenticated as '{}'!", username);
-        println!("Session Token: {}", token);
-        println!("Saved session to disk. Authenticated CLI commands can now run without --key.");
-    }
-    Ok(())
-}
-
-async fn handle_logout_command(
-    client: AdminClient,
-    format: OutputFormat,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let _ = client.logout().await;
-    clear_saved_session();
-
-    let res = json!({ "success": true, "message": "Logged out successfully" });
-    if format == OutputFormat::Json {
-        println!("{}", serde_json::to_string_pretty(&res)?);
-    } else if format == OutputFormat::Jsonl {
-        println!("{}", serde_json::to_string(&res)?);
-    } else {
-        println!("Logged out successfully. Removed saved session token.");
     }
     Ok(())
 }

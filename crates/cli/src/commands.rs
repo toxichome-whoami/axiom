@@ -27,8 +27,7 @@ Usage:
 
 CORE WORKFLOWS:
   server       Start the Axiom gateway daemon (alias: start, run)
-  login        Authenticate administrative credentials and issue a session token
-  logout       Invalidate administrative session
+  setup        First-time setup guidance and bootstrap instructions
   status       Check server health, cluster state, and active auth context (alias: health)
 
 DATA & STORAGE:
@@ -36,7 +35,7 @@ DATA & STORAGE:
   blob         Native blob storage maintenance, scrubbing, and namespaces
 
 SECURITY & ACCESS:
-  user         Administrative user management (direct host metadata DB access)
+  user         Super Admin recovery & credentials (direct host metadata DB access)
   key          Machine API keys (rate limits, roles, secrets, tokens)
   role         RBAC roles and granular permission management
 
@@ -108,6 +107,9 @@ pub enum Commands {
     #[command(alias = "start", alias = "run")]
     Server(ServerArgs),
 
+    /// First-time setup guidance and bootstrap instructions
+    Setup,
+
     /// Super administrator account management and root recovery (direct metadata DB access)
     User {
         #[command(subcommand)]
@@ -137,32 +139,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: BlobCommands,
     },
-
-    /// Authenticate administrative credentials and issue a session token
-    Login {
-        #[arg(
-            value_name = "USERNAME",
-            help = "Admin username (positional or via -u/--user)"
-        )]
-        username: Option<String>,
-        #[arg(
-            short = 'u',
-            long = "user",
-            alias = "username",
-            help = "Admin username"
-        )]
-        user: Option<String>,
-        #[arg(
-            short = 'p',
-            long = "password",
-            alias = "pass",
-            help = "Admin password (if omitted, interactive prompt is used)"
-        )]
-        password: Option<String>,
-    },
-
-    /// Invalidate administrative session
-    Logout,
 
     /// Cache engine inspection and management (via Admin API)
     Cache {
@@ -1327,36 +1303,10 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parse_login() {
-        let login_args = ["axiom", "login", "admin", "-p", "mypassword123"];
-        let login_cli = Cli::try_parse_from(login_args).expect("Failed to parse login");
-        match login_cli.command {
-            Some(Commands::Login {
-                username,
-                user,
-                password,
-            }) => {
-                assert_eq!(username.or(user), Some("admin".to_string()));
-                assert_eq!(password, Some("mypassword123".to_string()));
-            }
-            _ => panic!("Expected Login command"),
-        }
-
-        // Test login with -u flag
-        let login_flag_args = ["axiom", "login", "-u", "admin_flag", "-p", "pass123"];
-        let login_flag_cli =
-            Cli::try_parse_from(login_flag_args).expect("Failed to parse login with -u");
-        match login_flag_cli.command {
-            Some(Commands::Login {
-                username,
-                user,
-                password,
-            }) => {
-                assert_eq!(username.or(user), Some("admin_flag".to_string()));
-                assert_eq!(password, Some("pass123".to_string()));
-            }
-            _ => panic!("Expected Login command with -u"),
-        }
+    fn test_cli_parse_login_and_logout_removed() {
+        // Login and logout commands have been de-bloated from CLI
+        assert!(Cli::try_parse_from(["axiom", "login", "admin", "-p", "mypassword123"]).is_err());
+        assert!(Cli::try_parse_from(["axiom", "logout"]).is_err());
     }
 
     #[test]
@@ -1720,6 +1670,9 @@ mod tests {
 
         let cli = Cli::try_parse_from(["axiom", "status"]).expect("parse status");
         assert!(matches!(cli.command, Some(Commands::Health)));
+
+        let cli = Cli::try_parse_from(["axiom", "setup"]).expect("parse setup");
+        assert!(matches!(cli.command, Some(Commands::Setup)));
 
         // User ls (alias for show) and rm forbidden
         let cli = Cli::try_parse_from(["axiom", "user", "ls"]).expect("parse user ls");
