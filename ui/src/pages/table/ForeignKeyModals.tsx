@@ -31,8 +31,10 @@ import {
 import { api } from "../../api/client";
 import { ColumnInfoApi, ForeignKeyInfoApi } from "../../types";
 import { SlideOver } from "../../components/ui/SlideOver";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { CustomSelect } from "../../components/shared/CustomSelect";
 import { getDefaultColumnWidth } from "./format";
+import { cn } from "../../utils/cn";
 
 export interface ForeignKeyRecordPreviewPopoverProps {
   db: string;
@@ -290,6 +292,27 @@ export function ForeignKeyPickerModal({
   const [selectedRecordVal, setSelectedRecordVal] =
     useState<unknown>(currentValue);
 
+  // Normalize comparison values so null, undefined, and empty string behave consistently
+  const normalizeVal = (v: unknown): string => {
+    if (v === null || v === undefined || v === "") return "";
+    return String(v);
+  };
+
+  const initialValRef = useRef<unknown>(currentValue);
+  const isDirty =
+    normalizeVal(selectedRecordVal) !== normalizeVal(initialValRef.current);
+
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const handleRequestClose = useCallback(() => {
+    if (showDiscardConfirm) return;
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  }, [isDirty, onClose, showDiscardConfirm]);
+
   useEffect(() => {
     if (!showSortPopover && !showPageSizePopover) return;
     const handleMouseDown = (e: MouseEvent) => {
@@ -371,7 +394,7 @@ export function ForeignKeyPickerModal({
   return (
     <SlideOver
       isOpen={true}
-      onClose={onClose}
+      onClose={handleRequestClose}
       zIndex="z-[60]"
       width="w-[840px] xl:w-[940px] max-w-full"
       title={
@@ -691,13 +714,19 @@ export function ForeignKeyPickerModal({
                   const refVal = r[fk.referenced_column];
                   const isSelected =
                     selectedRecordVal !== undefined &&
+                    selectedRecordVal !== null &&
                     String(refVal) === String(selectedRecordVal);
 
                   return (
                     <tr
                       key={ri}
-                      onClick={() => setSelectedRecordVal(refVal)}
-                      onDoubleClick={() => onSelect(refVal)}
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedRecordVal(null);
+                        } else {
+                          setSelectedRecordVal(refVal);
+                        }
+                      }}
                       className={`transition-colors cursor-pointer group ${
                         isSelected
                           ? "bg-[#131b2e] ring-1 ring-inset ring-blue-500/40 text-white"
@@ -717,17 +746,30 @@ export function ForeignKeyPickerModal({
                         }}
                       >
                         <div className="flex items-center justify-center">
-                          <div
-                            className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            aria-label={`Select row where ${fk.referenced_column} is ${String(refVal)}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isSelected) {
+                                setSelectedRecordVal(null);
+                              } else {
+                                setSelectedRecordVal(refVal);
+                              }
+                            }}
+                            className={cn(
+                              "relative flex items-center justify-center size-4.5 rounded-full border transition-all duration-150 outline-none cursor-pointer",
                               isSelected
-                                ? "bg-blue-600 border-blue-500 text-white shadow-xs"
-                                : "border-[#333333] bg-[#141414] group-hover:border-[#555555]"
-                            }`}
+                                ? "border-blue-500 bg-blue-600 text-white shadow-[0_0_8px_rgba(37,99,235,0.4)] ring-2 ring-blue-500/25"
+                                : "border-[#38383a] bg-[#141416] group-hover:border-[#52525b] group-hover:bg-[#1e1e22] focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                            )}
                           >
                             {isSelected && (
-                              <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                              <span className="size-2 rounded-full bg-white shadow-xs animate-in zoom-in-75 duration-150" />
                             )}
-                          </div>
+                          </button>
                         </div>
                       </td>
 
@@ -799,11 +841,25 @@ export function ForeignKeyPickerModal({
               Selected{" "}
               <span className="text-[#cccccc]">{fk.referenced_column}</span>:{" "}
               <code className="text-white font-mono bg-[#161616] px-1.5 py-0.5 rounded border border-[#262626]">
-                {selectedRecordVal !== undefined && selectedRecordVal !== null
+                {selectedRecordVal !== undefined &&
+                selectedRecordVal !== null &&
+                selectedRecordVal !== ""
                   ? String(selectedRecordVal)
                   : "None"}
               </code>
             </span>
+            {selectedRecordVal !== undefined &&
+              selectedRecordVal !== null &&
+              selectedRecordVal !== "" && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecordVal(null)}
+                  className="text-[12px] text-zinc-400 hover:text-red-400 hover:underline transition-colors cursor-pointer ml-0.5"
+                  title="Clear selection"
+                >
+                  Clear
+                </button>
+              )}
             <span className="text-[#444444]">·</span>
             <span>{filteredRows.length} records</span>
           </div>
@@ -811,16 +867,16 @@ export function ForeignKeyPickerModal({
           <div className="flex items-center gap-2.5">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
             </button>
             <button
               type="button"
-              disabled={selectedRecordVal === undefined}
+              disabled={!isDirty}
               onClick={() => {
-                if (selectedRecordVal !== undefined) {
+                if (isDirty && selectedRecordVal !== undefined) {
                   onSelect(selectedRecordVal);
                 }
               }}
@@ -840,6 +896,21 @@ export function ForeignKeyPickerModal({
             </button>
           </div>
         </div>
+
+        {/* Discard Unsaved Changes Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={showDiscardConfirm}
+          onClose={() => setShowDiscardConfirm(false)}
+          onConfirm={() => {
+            setShowDiscardConfirm(false);
+            onClose();
+          }}
+          title="Discard Unsaved Changes?"
+          description="You have unsaved changes to this foreign key selection. Are you sure you want to discard them?"
+          confirmLabel="Discard"
+          cancelLabel="Keep Editing"
+          variant="warning"
+        />
       </div>
     </SlideOver>
   );

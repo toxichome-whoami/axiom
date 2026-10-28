@@ -128,8 +128,15 @@ export function MediaPlayer({
   const [videoError, setVideoError] = useState<string | null>(null);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const controlsTimeoutRef = useRef<number | null>(null);
+  const lastMouseMoveRef = useRef<number>(0);
+  const lastTimeUpdateRef = useRef<number>(0);
+  const lastAudioTimeUpdateRef = useRef<number>(0);
 
   const handleMouseMove = () => {
+    const now = performance.now();
+    if (now - lastMouseMoveRef.current < 120) return;
+    lastMouseMoveRef.current = now;
+
     setShowControls(true);
     if (controlsTimeoutRef.current) {
       window.clearTimeout(controlsTimeoutRef.current);
@@ -156,12 +163,18 @@ export function MediaPlayer({
   }, []);
 
   const handleTimeUpdate = () => {
-    if (!videoRef.current) return;
-    setCurrentTime(videoRef.current.currentTime);
-    if (videoRef.current.buffered.length > 0) {
-      setBufferedEnd(
-        videoRef.current.buffered.end(videoRef.current.buffered.length - 1),
-      );
+    const video = videoRef.current;
+    if (!video) return;
+    const now = performance.now();
+    // Throttle React state updates to ~200ms to eliminate 60fps virtual DOM diffing churn
+    if (now - lastTimeUpdateRef.current >= 200 || video.ended || video.paused) {
+      lastTimeUpdateRef.current = now;
+      setCurrentTime(video.currentTime);
+      if (video.buffered.length > 0) {
+        setBufferedEnd(
+          video.buffered.end(video.buffered.length - 1),
+        );
+      }
     }
   };
 
@@ -175,6 +188,7 @@ export function MediaPlayer({
     if (videoRef.current) {
       videoRef.current.currentTime = time;
       setCurrentTime(time);
+      lastTimeUpdateRef.current = performance.now();
     }
   };
 
@@ -446,7 +460,7 @@ export function MediaPlayer({
                 src={url}
                 autoPlay={autoPlay}
                 playsInline
-                preload="metadata"
+                preload="auto"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onPlay={() => setIsPlaying(true)}
@@ -460,20 +474,19 @@ export function MediaPlayer({
                 onSeeked={() => setIsBuffering(false)}
                 onError={() => {
                   const video = videoRef.current;
-                  if (video && video.currentTime > 0) {
-                    const savedTime = video.currentTime;
-                    video.load();
-                    video.currentTime = savedTime;
-                    video
-                      .play()
-                      .catch(() =>
-                        setVideoError(
-                          "Error decoding video or stream interrupted",
-                        ),
-                      );
+                  const errCode = video?.error?.code;
+                  if (errCode === 4) {
+                    setVideoError(
+                      "Video format or codec is not natively supported by your browser",
+                    );
+                  } else if (errCode === 3) {
+                    setVideoError("Error decoding video stream");
+                  } else if (errCode === 2) {
+                    setVideoError("Network error while streaming video");
                   } else {
                     setVideoError("Error decoding video");
                   }
+                  setIsBuffering(false);
                 }}
                 className="max-h-[72vh] w-auto max-w-full object-contain mx-auto"
                 style={{ maxHeight: isFullscreen ? "100vh" : "72vh" }}
@@ -481,15 +494,15 @@ export function MediaPlayer({
 
               {/* Minimal Center Buffering Indicator */}
               {isBuffering && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/25 backdrop-blur-xs z-10">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/40 z-10">
                   <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin shadow-xl" />
                 </div>
               )}
 
               {/* Minimal Center Play Indicator when paused and not buffering */}
               {!isPlaying && !isBuffering && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
-                  <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 backdrop-blur-xs flex items-center justify-center text-white shadow-xl">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/25">
+                  <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white shadow-xl">
                     <Play className="w-5 h-5 fill-white translate-x-0.5" />
                   </div>
                 </div>
@@ -498,7 +511,7 @@ export function MediaPlayer({
 
             {/* Custom Control Bar */}
             <div
-              className={`absolute bottom-0 left-0 right-0 p-3 pt-4 bg-[#0a0a0a]/90 backdrop-blur-xs border-t border-[#1f1f1f] transition-opacity duration-200 font-sans z-20 ${
+              className={`absolute bottom-0 left-0 right-0 p-3 pt-4 bg-[#0a0a0a]/95 border-t border-[#1f1f1f] transition-opacity duration-200 font-sans z-20 ${
                 showControls ? "opacity-100" : "opacity-0 pointer-events-none"
               }`}
             >
@@ -668,10 +681,19 @@ export function MediaPlayer({
           src={url}
           autoPlay={autoPlay}
           loop={isAudioLoop}
-          onTimeUpdate={() =>
-            audioRef.current &&
-            setAudioCurrentTime(audioRef.current.currentTime)
-          }
+          onTimeUpdate={() => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            const now = performance.now();
+            if (
+              now - lastAudioTimeUpdateRef.current >= 200 ||
+              audio.ended ||
+              audio.paused
+            ) {
+              lastAudioTimeUpdateRef.current = now;
+              setAudioCurrentTime(audio.currentTime);
+            }
+          }}
           onLoadedMetadata={() =>
             audioRef.current && setAudioDuration(audioRef.current.duration || 0)
           }

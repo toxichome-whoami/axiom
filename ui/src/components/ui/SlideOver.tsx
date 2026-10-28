@@ -67,6 +67,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (e.defaultPrevented) return;
         onClose();
       }
     };
