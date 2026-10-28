@@ -220,6 +220,14 @@ async fn ensure_metadata_store() {
                 .await
                 .expect("Failed to init metadata store in test fixture");
 
+            // Root super admin (first user guaranteed to have is_super_admin = true)
+            let _ = axiom_metadata::MetadataStore::create_user(
+                "root_admin",
+                Some("root@axiom.test"),
+                "RootSuperAdminPass123!",
+            )
+            .await;
+
             // Roles
             let _ = axiom_metadata::MetadataStore::create_role(
                 "admin",
@@ -379,6 +387,14 @@ async fn ensure_metadata_store() {
             }
         })
         .await;
+}
+
+/// Returns an authentic super administrator session token for testing Admin Control Plane endpoints.
+async fn get_test_admin_session() -> String {
+    ensure_metadata_store().await;
+    axiom_metadata::MetadataStore::create_session("root_admin", 3600)
+        .await
+        .unwrap()
 }
 
 /// Ensures the items table exists in testdb for CRUD & RBAC testing.
@@ -1658,9 +1674,7 @@ async fn blob_storage_integrity_scrub_and_ttl() {
     ensure_blob_engine().await;
 
     // Create authentic admin session in metadata store
-    let session_token = axiom_metadata::MetadataStore::create_session("admin_user", 3600)
-        .await
-        .unwrap();
+    let session_token = get_test_admin_session().await;
     let cookie_header = format!("axiom_session={}", session_token);
 
     // 1. Upload temporary blob with TTL 0
@@ -2232,16 +2246,14 @@ async fn db_idempotency_key_replay_protection() {
 #[tokio::test]
 async fn admin_api_full_control_plane_lifecycle() {
     ensure_metadata_store().await;
-    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", None, "SecretP@ss12345!")
-        .await;
 
     // 1. Admin Login
     let login_req = Request::post("/admin/v1/auth/login")
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
-                "username": "super_admin_ops",
-                "password": "SecretP@ss12345!"
+                "username": "root_admin",
+                "password": "RootSuperAdminPass123!"
             }))
             .unwrap(),
         ))
@@ -2775,10 +2787,11 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
     axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
     axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let admin_session = format!("Bearer {}", get_test_admin_session().await);
 
     // 1. Create a public namespace for website media
     let req = Request::post("/admin/v1/blobs/namespaces")
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", &admin_session)
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
@@ -2839,7 +2852,7 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
 
     // 5. Test private namespace rejection: create private namespace
     let req = Request::post("/admin/v1/blobs/namespaces")
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", &admin_session)
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
@@ -3075,11 +3088,12 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
     axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
     axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let admin_session = format!("Bearer {}", get_test_admin_session().await);
 
     // 1. Create a namespace with quota limit
     let ns_name = "fc-blob-test";
     let req = Request::post("/admin/v1/blobs/namespaces")
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", &admin_session)
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
@@ -3370,11 +3384,12 @@ async fn test_zero_overhead_upload_inlining_and_header_preflight_rejection() {
     axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
     axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let admin_session = format!("Bearer {}", get_test_admin_session().await);
 
     let ns_name = "zero-io-test";
     // 1. Create a namespace with 10 KB quota ceiling
     let req = Request::post("/admin/v1/blobs/namespaces")
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", &admin_session)
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
@@ -3514,12 +3529,13 @@ async fn test_admin_delete_blob_namespace_lifecycle() {
     axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
     axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let admin_session = format!("Bearer {}", get_test_admin_session().await);
 
     let ns_name = "test-delete-ns";
 
     // 1. Create the namespace via Admin API
     let req = Request::post("/admin/v1/blobs/namespaces")
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", &admin_session)
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
@@ -3544,7 +3560,7 @@ async fn test_admin_delete_blob_namespace_lifecycle() {
 
     // 3. Delete namespace via Admin API: DELETE /admin/v1/blobs/namespaces/:namespace
     let req = Request::delete(format!("/admin/v1/blobs/namespaces/{}", ns_name))
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", &admin_session)
         .body(Body::empty())
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
@@ -3556,7 +3572,7 @@ async fn test_admin_delete_blob_namespace_lifecycle() {
 
     // 4. Verify subsequent lookup returns 404 NOT_FOUND
     let req = Request::get(format!("/admin/v1/blobs/namespaces/{}", ns_name))
-        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Authorization", &admin_session)
         .body(Body::empty())
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
@@ -3572,14 +3588,12 @@ async fn test_master_end_to_end_crud_simulation() {
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 
     // 0. Authenticate Operator Session for Admin Control Plane
-    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", None, "SecretP@ss12345!")
-        .await;
     let login_req = Request::post("/admin/v1/auth/login")
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
-                "username": "super_admin_ops",
-                "password": "SecretP@ss12345!"
+                "username": "root_admin",
+                "password": "RootSuperAdminPass123!"
             }))
             .unwrap(),
         ))
