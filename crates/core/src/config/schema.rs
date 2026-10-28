@@ -265,7 +265,7 @@ impl Default for AxiomConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            version: "0.1.20".to_string(),
+            version: "0.1.21".to_string(),
             logging: LoggingConfig::default(),
             rate_limit: RateLimitConfig::default(),
             cache: CacheConfig::default(),
