@@ -6,7 +6,7 @@
 
 **Sub-Microsecond Hot Paths · Zero-Lock Snapshots · Constant-Time Auth**
 
-[![Version](https://img.shields.io/badge/version-0.1.16%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.20%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Criterion](https://img.shields.io/badge/criterion.rs-0.5-111827.svg?style=flat-square)](https://bheisler.github.io/criterion.rs/book/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)

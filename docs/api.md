@@ -161,46 +161,47 @@ List endpoints use **keyset (cursor) pagination**: pass `limit` and `cursor`; re
 
 ### Control plane: `/admin/v1`
 
-| Area          | Method               | Path                               | Description                                                         |
-| ------------- | -------------------- | ---------------------------------- | ------------------------------------------------------------------- |
-| **Auth**      | POST                 | `/auth/login`                      | Authenticate and issue a session token                              |
-|               | POST                 | `/auth/logout`                     | Revoke the session token and clear the cookie                       |
-| **Setup**     | GET / POST           | `/setup/begin`                     | Check / initialize the first-run wizard                             |
-|               | POST                 | `/setup/account`                   | Create the initial root administrator                               |
-|               | POST                 | `/setup/database`                  | Provision the initial primary database                              |
-|               | POST                 | `/setup/database/test`             | Test connectivity during setup                                      |
-|               | POST                 | `/setup/complete`                  | Seal setup and switch to production mode                            |
-| **System**    | GET                  | `/status`                          | Version, uptime, memory, CPU, engine status                         |
-|               | GET                  | `/health`                          | Administrative health probe                                         |
-|               | GET                  | `/metrics`                         | Prometheus and JSON metrics (QPS, errors, latency)                  |
-|               | GET                  | `/audit`                           | Tamper-evident audit log (filter by user / action / date)           |
-|               | POST                 | `/reload`                          | Hot-reload metadata configuration from disk                         |
-|               | GET                  | `/users`                           | List administrators (mutations are local-CLI only)                  |
-| **API keys**  | GET / POST           | `/keys`                            | List keys / mint a key (`name`, `role`, `rate_limit`, optional TTL) |
-|               | PATCH / DELETE       | `/keys/:name`                      | Update role, rate limit, or expiry / revoke immediately             |
-|               | POST                 | `/keys/:name/rotate`               | Zero-downtime secret rotation (issues a new secret)                 |
-| **Roles**     | GET / POST           | `/roles`                           | List RBAC roles / create a custom role                              |
-|               | PATCH / DELETE       | `/roles/:name`                     | Update permissions / delete (system roles are immutable)            |
-| **Databases** | GET / POST           | `/databases`                       | List pools (credentials masked) / register a pool                   |
-|               | POST                 | `/databases/test-url`              | Test an uncommitted connection string                               |
-|               | PATCH / DELETE       | `/databases/:alias`                | Update pool parameters / unregister                                 |
-|               | GET                  | `/databases/:alias/test`           | Probe health and latency of an existing alias                       |
-| **Cache**     | GET                  | `/cache/stats`                     | Hit ratios, cached ASTs, memory footprint                           |
-|               | POST                 | `/cache/flush`                     | Evict all query, schema, and policy caches                          |
-| **Cluster**   | GET                  | `/cluster/status`                  | Node ID, moniker, active peer count                                 |
-|               | PATCH                | `/cluster/moniker`                 | Rename the local node                                               |
-|               | GET / POST           | `/cluster/peers`                   | List peers / handshake and register a peer                          |
-|               | PATCH / DELETE       | `/cluster/peers/:node_id`          | Update peer address / disconnect                                    |
-|               | POST                 | `/cluster/peers/:node_id/ping`     | Measure round-trip latency                                          |
-| **Storage**   | GET                  | `/blobs/stats`                     | CAS objects, disk used, deduplication ratio                         |
-|               | POST                 | `/blobs/scrub`                     | Cluster-wide BLAKE3 bit-rot verification                            |
-|               | POST                 | `/blobs/sweep`                     | Garbage-collect expired TTL blobs now                               |
-|               | GET / POST           | `/blobs/namespaces`                | List / provision namespaces (quota bytes, public-read toggle)       |
-|               | GET / PATCH / DELETE | `/blobs/namespaces/:ns`            | Inspect / update quota or policy / delete                           |
-|               | GET                  | `/blobs/tickets`                   | Audit all tickets cluster-wide                                      |
-|               | POST                 | `/blobs/tickets/:signature/revoke` | Emergency cluster-wide revoke                                       |
-|               | POST                 | `/blobs/tickets/:signature/enable` | Cluster-wide restore                                                |
-|               | DELETE               | `/blobs/tickets/:signature`        | Purge the ticket record from the cluster                            |
+| Area             | Method               | Path                               | Description                                                         |
+| ---------------- | -------------------- | ---------------------------------- | ------------------------------------------------------------------- |
+| **Auth**         | POST                 | `/auth/login`                      | Authenticate and issue a session token                              |
+|                  | POST                 | `/auth/logout`                     | Revoke the session token and clear the cookie                       |
+| **Setup**        | GET / POST           | `/setup/begin`                     | Check / initialize the first-run wizard                             |
+|                  | POST                 | `/setup/account`                   | Create the initial root administrator                               |
+|                  | POST                 | `/setup/database`                  | Provision the initial primary database                              |
+|                  | POST                 | `/setup/database/test`             | Test connectivity during setup                                      |
+|                  | POST                 | `/setup/complete`                  | Seal setup and switch to production mode                            |
+| **System**       | GET                  | `/status`                          | Version, uptime, memory, CPU, engine status                         |
+|                  | GET                  | `/health`                          | Administrative health probe                                         |
+|                  | GET                  | `/metrics`                         | Prometheus and JSON metrics (QPS, errors, latency)                  |
+|                  | GET                  | `/audit`                           | Tamper-evident audit log (filter by user / action / date)           |
+|                  | POST                 | `/reload`                          | Hot-reload metadata configuration from disk                         |
+| **Users (PBAC)** | GET / POST           | `/users`                           | List administrators (keyset pagination) / create a scoped user      |
+|                  | GET / PATCH / DELETE | `/users/:id`                       | Inspect, update credentials/permissions, or delete scoped user      |
+| **API keys**     | GET / POST           | `/keys`                            | List keys / mint a key (`name`, `role`, `rate_limit`, optional TTL) |
+|                  | PATCH / DELETE       | `/keys/:name`                      | Update role, rate limit, or expiry / revoke immediately             |
+|                  | POST                 | `/keys/:name/rotate`               | Zero-downtime secret rotation (issues a new secret)                 |
+| **Roles**        | GET / POST           | `/roles`                           | List RBAC roles / create a custom role                              |
+|                  | PATCH / DELETE       | `/roles/:name`                     | Update permissions / delete (system roles are immutable)            |
+| **Databases**    | GET / POST           | `/databases`                       | List pools (credentials masked) / register a pool                   |
+|                  | POST                 | `/databases/test-url`              | Test an uncommitted connection string                               |
+|                  | PATCH / DELETE       | `/databases/:alias`                | Update pool parameters / unregister                                 |
+|                  | GET                  | `/databases/:alias/test`           | Probe health and latency of an existing alias                       |
+| **Cache**        | GET                  | `/cache/stats`                     | Hit ratios, cached ASTs, memory footprint                           |
+|                  | POST                 | `/cache/flush`                     | Evict all query, schema, and policy caches                          |
+| **Cluster**      | GET                  | `/cluster/status`                  | Node ID, moniker, active peer count                                 |
+|                  | PATCH                | `/cluster/moniker`                 | Rename the local node                                               |
+|                  | GET / POST           | `/cluster/peers`                   | List peers / handshake and register a peer                          |
+|                  | PATCH / DELETE       | `/cluster/peers/:node_id`          | Update peer address / disconnect                                    |
+|                  | POST                 | `/cluster/peers/:node_id/ping`     | Measure round-trip latency                                          |
+| **Storage**      | GET                  | `/blobs/stats`                     | CAS objects, disk used, deduplication ratio                         |
+|                  | POST                 | `/blobs/scrub`                     | Cluster-wide BLAKE3 bit-rot verification                            |
+|                  | POST                 | `/blobs/sweep`                     | Garbage-collect expired TTL blobs now                               |
+|                  | GET / POST           | `/blobs/namespaces`                | List / provision namespaces (quota bytes, public-read toggle)       |
+|                  | GET / PATCH / DELETE | `/blobs/namespaces/:ns`            | Inspect / update quota or policy / delete                           |
+|                  | GET                  | `/blobs/tickets`                   | Audit all tickets cluster-wide                                      |
+|                  | POST                 | `/blobs/tickets/:signature/revoke` | Emergency cluster-wide revoke                                       |
+|                  | POST                 | `/blobs/tickets/:signature/enable` | Cluster-wide restore                                                |
+|                  | DELETE               | `/blobs/tickets/:signature`        | Purge the ticket record from the cluster                            |
 
 ## 5. Database Data API (`/api/v1/db`)
 
@@ -385,6 +386,14 @@ Content-Type: application/pdf
 
 <binary file bytes>
 ```
+
+### Streaming and Range Requests
+
+Axiom supports high-throughput, zero-copy HTTP streaming with full RFC 9110 Range request support (`206 Partial Content`).
+
+- **Media Streaming**: For `video/*` and `audio/*` media, open-ended requests (`Range: bytes=start-`) are adaptively streamed in bounded 4 MB chunks (`MEDIA_RANGE_CHUNK_BYTES`) with `Accept-Ranges: bytes` and `Content-Range: bytes start-end/total`. This delivers instant playback startup in HTML5 `<video>` players and eliminates buffer stalls and memory bloat.
+- **Explicit Slices**: Explicit range requests (e.g. `Range: bytes=0-65535` for container headers or timeline seek offsets) return the exact requested byte window.
+- **Cache Validation**: Supports `If-Range`, `If-None-Match`, and `If-Modified-Since` conditional revalidation, returning `304 Not Modified` when content is unchanged.
 
 ```http
 GET /api/v1/blobs/objects/media/reports/q3.pdf
