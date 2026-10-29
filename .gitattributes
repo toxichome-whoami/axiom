@@ -1,0 +1,3 @@
+# GitHub Linguist Overrides
+# Treat the embedded web UI console as vendored for repository language statistics so Rust remains the primary language.
+ui/** linguist-vendored
