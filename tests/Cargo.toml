@@ -22,8 +22,13 @@ blake3 = { workspace = true }
 sqlparser = { workspace = true }
 tempfile = { workspace = true }
 uuid = { workspace = true }
-
+reqwest = { workspace = true }
+rustls = { workspace = true }
 
 [[test]]
 name = "integration"
 path = "integration.rs"
+
+[[test]]
+name = "e2e_simulation"
+path = "e2e_simulation.rs"

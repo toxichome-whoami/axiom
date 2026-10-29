@@ -135,7 +135,7 @@ For day-to-day development, use `zig build` or the compiled `tools/zig/runner` b
 | **`zig build`**                      | `cargo build --release`      | Compiles runner, bootstraps shims, and builds optimized release binary |
 | **`zig build version`**              | `tools/zig/version.zig`      | Inspect current workspace version across all crates and docs           |
 | **`zig build version -Dto=patch`**   | `tools/zig/version.zig`      | Atomically bump patch version across workspace                         |
-| **`zig build test-e2e`**             | `tools/zig/simulate_e2e.zig` | Run comprehensive end-to-end simulation in Zig                         |
+| **`zig build test-e2e`**             | `tests/e2e_simulation.rs`    | Run comprehensive end-to-end simulation in Rust (`cargo test --test e2e_simulation`) |
 | **`tools/zig/runner`**               | `cargo build --release`      | Fast release build using existing runner binary                        |
 | **`tools/zig/runner dev`**           | `cargo build`                | Fast unoptimized debug build in `target/debug/`                        |
 | **`tools/zig/runner check`**         | `cargo check`                | Sub-second workspace type check and syntax verification                |

@@ -37,7 +37,7 @@ use axiom_policy::PolicyEngine;
 /// Idempotent — safe to call from every test without ordering concerns.
 fn setup_test_metadata() {
     axiom_cache::CacheEngine::reset_rate_limits();
-    BanList::unban_ip_local("127.0.0.1");
+    BanList::clear();
     let mut keys = HashMap::new();
     let mut roles = HashMap::new();
     let mut databases = HashMap::new();

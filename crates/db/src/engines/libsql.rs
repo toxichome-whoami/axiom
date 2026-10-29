@@ -504,8 +504,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_libsql_in_memory_full_lifecycle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_file = tmp.path().join("lifecycle.db");
         let config = DatabaseDefConfig {
-            url: "sqlite://:memory:".to_string(),
+            url: format!("sqlite://{}", db_file.display()),
             pool_min: 1,
             pool_max: 5,
             ..Default::default()
@@ -563,8 +565,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_libsql_foreign_keys_empty_when_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_file = tmp.path().join("standalone.db");
         let config = DatabaseDefConfig {
-            url: "sqlite://:memory:".to_string(),
+            url: format!("sqlite://{}", db_file.display()),
             ..Default::default()
         };
         let mut engine = LibsqlDatabaseEngine::new(config);
@@ -580,8 +584,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_query_truncation_when_exceeding_max_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_file = tmp.path().join("items.db");
         let config = DatabaseDefConfig {
-            url: "sqlite://:memory:".to_string(),
+            url: format!("sqlite://{}", db_file.display()),
             ..Default::default()
         };
         let mut engine = LibsqlDatabaseEngine::new(config);

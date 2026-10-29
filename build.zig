@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) void {
     version_step.dependOn(&version_cmd.step);
 
     // End-to-end simulation test step: zig build test-e2e
-    const test_e2e_cmd = b.addSystemCommand(&.{ "zig", "run", "-lc", "tools/zig/simulate_e2e.zig" });
-    const test_e2e_step = b.step("test-e2e", "Run comprehensive end-to-end simulation in Zig");
+    const test_e2e_cmd = b.addSystemCommand(&.{ "cargo", "test", "-p", "axiom-integration-tests", "--test", "e2e_simulation" });
+    const test_e2e_step = b.step("test-e2e", "Run comprehensive end-to-end simulation test suite in Rust");
     test_e2e_step.dependOn(&test_e2e_cmd.step);
 }
