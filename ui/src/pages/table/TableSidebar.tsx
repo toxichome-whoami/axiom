@@ -16,6 +16,7 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
+  Copy,
 } from "lucide-react";
 import { DatabaseRecordApi } from "../../api/client";
 import { TableInfoApi } from "../../types";
@@ -61,6 +62,7 @@ export function TableSidebar({
     tableName: string;
     rect: DOMRect;
   } | null>(null);
+  const [copiedTable, setCopiedTable] = useState<string | null>(null);
   const tableMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -337,13 +339,45 @@ export function TableSidebar({
         <div
           ref={tableMenuRef}
           style={{
-            top: `${Math.min(window.innerHeight - 100, tableMenuState.rect.bottom + 4)}px`,
-            left: `${Math.min(window.innerWidth - 170, Math.max(8, tableMenuState.rect.right - 160))}px`,
-            width: "160px",
+            top: `${Math.min(window.innerHeight - 130, tableMenuState.rect.bottom + 4)}px`,
+            left: `${Math.min(window.innerWidth - 180, Math.max(8, tableMenuState.rect.right - 168))}px`,
+            width: "168px",
           }}
           className="fixed z-50 bg-[#141414] border border-[#262626] rounded-[6px] shadow-2xl p-1 text-[13px] text-[#cccccc] animate-in fade-in zoom-in-95 duration-100 select-none font-sans"
           onClick={(e) => e.stopPropagation()}
         >
+          {/* 1. Copy table name */}
+          <button
+            type="button"
+            onClick={() => {
+              const target = tableMenuState.tableName;
+              navigator.clipboard.writeText(target);
+              setCopiedTable(target);
+              setTimeout(() => {
+                setCopiedTable(null);
+                setTableMenuState(null);
+              }, 600);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] hover:bg-[#1f1f1f] hover:text-white transition-colors cursor-pointer text-left"
+          >
+            {copiedTable === tableMenuState.tableName ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 text-[#888888] shrink-0" />
+            )}
+            <span>
+              {copiedTable === tableMenuState.tableName
+                ? "Copied!"
+                : "Copy table name"}
+            </span>
+          </button>
+
+          {/* Separator before DDL operations */}
+          {canDdl !== false && (onEditTable || onDeleteTable) && (
+            <div className="my-1 -mx-1 border-t border-[#222222]" />
+          )}
+
+          {/* 2. Edit Table */}
           {canDdl !== false && onEditTable && (
             <button
               type="button"
@@ -354,15 +388,17 @@ export function TableSidebar({
               }}
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] hover:bg-[#1f1f1f] hover:text-white transition-colors cursor-pointer text-left"
             >
-              <Pencil className="w-3.5 h-3.5 text-[#888888]" />
+              <Pencil className="w-3.5 h-3.5 text-[#888888] shrink-0" />
               <span>Edit Table</span>
             </button>
           )}
 
+          {/* Separator between Edit and Delete */}
           {canDdl !== false && onEditTable && onDeleteTable && (
             <div className="my-1 -mx-1 border-t border-[#222222]" />
           )}
 
+          {/* 3. Delete Table */}
           {canDdl !== false && onDeleteTable && (
             <button
               type="button"
@@ -373,7 +409,7 @@ export function TableSidebar({
               }}
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-rose-400 hover:bg-rose-950/30 hover:text-rose-300 transition-colors cursor-pointer text-left"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
               <span>Delete Table</span>
             </button>
           )}
