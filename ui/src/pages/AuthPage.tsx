@@ -77,7 +77,7 @@ export function AuthPage({
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
 
   // Operator Login State
-  const [loginUsername, setLoginUsername] = useState("admin");
+  const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(true);
@@ -90,7 +90,7 @@ export function AuthPage({
   const [botHoneypot, setBotHoneypot] = useState("");
 
   // Setup Wizard Step 2: Admin Account
-  const [adminUsername, setAdminUsername] = useState("admin");
+  const [adminUsername, setAdminUsername] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminConfirmPassword, setAdminConfirmPassword] = useState("");
@@ -514,7 +514,7 @@ export function AuthPage({
                 autoComplete="username"
                 value={loginUsername}
                 onChange={(e) => setLoginUsername(e.target.value)}
-                placeholder="admin or admin@example.com"
+                placeholder="Enter username or email"
                 required
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
               />
@@ -681,7 +681,7 @@ export function AuthPage({
                 type="text"
                 value={adminUsername}
                 onChange={(e) => setAdminUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="Enter master username"
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
               />
             </div>
@@ -694,7 +694,7 @@ export function AuthPage({
                 type="email"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="admin@example.com"
+                placeholder="name@example.com"
                 required
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
               />
