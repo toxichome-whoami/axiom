@@ -37,7 +37,7 @@ use axiom_policy::PolicyEngine;
 /// Idempotent — safe to call from every test without ordering concerns.
 fn setup_test_metadata() {
     axiom_cache::CacheEngine::reset_rate_limits();
-    BanList::clear();
+    BanList::unban_ip_local("127.0.0.1");
     let mut keys = HashMap::new();
     let mut roles = HashMap::new();
     let mut databases = HashMap::new();
@@ -790,6 +790,8 @@ async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
     setup_test_metadata();
     let attacker_ip = "198.51.100.77";
     let legitimate_ip = "198.51.100.88";
+    BanList::unban_ip_local(attacker_ip);
+    BanList::unban_ip_local(legitimate_ip);
     let victim_key_name = "ro_key";
 
     // Attacker sends bad secret attempts for known victim_key_name up to penalty_threshold
@@ -2995,7 +2997,8 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
             .await
             .unwrap();
 
-    let target_ip = "198.51.100.77";
+    let target_ip = "198.51.100.215";
+    BanList::unban_ip_local(target_ip);
     assert!(!BanList::is_ip_banned(target_ip).0);
 
     // 1. Simulate inbound cluster broadcast event: Node 1 bans attacker
