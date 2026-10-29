@@ -610,7 +610,7 @@ export function ColumnSlideOver({
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+          <div className="px-5 py-3 border-t border-[#222222] bg-[#0c0c0c] flex items-center justify-end gap-2.5 font-sans shrink-0">
             {editingColumn && columnTab === "danger" ? (
               <button
                 type="button"
@@ -1003,7 +1003,7 @@ export function ColumnSlideOver({
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+          <div className="px-5 py-3 border-t border-[#222222] bg-[#0c0c0c] flex items-center justify-end gap-2.5 font-sans shrink-0">
             <button
               type="button"
               onClick={handleRequestCloseFkModal}

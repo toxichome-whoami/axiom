@@ -1121,7 +1121,7 @@ export function Mcp() {
           </div>
         </div>
 
-        <div className="p-4 border-t border-[#222222] bg-[#0c0c0c] flex items-center justify-end font-sans">
+        <div className="px-5 py-3 border-t border-[#222222] bg-[#0c0c0c] flex items-center justify-end font-sans shrink-0">
           <Button
             variant="secondary"
             size="sm"

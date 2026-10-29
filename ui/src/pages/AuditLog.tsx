@@ -804,7 +804,7 @@ export function AuditLog() {
             </button>
 
             {showDisplayOptions && (
-              <div className="absolute right-0 top-[calc(100%+4px)] w-52 rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none font-sans animate-in fade-in duration-100">
+              <div className="absolute right-0 top-[calc(100%+4px)] w-52 rounded-[6px] bg-[#111111] border border-[#222222] shadow-[0_12px_32px_rgba(0,0,0,0.95)] p-1 z-50 select-none font-sans animate-in fade-in zoom-in-95 duration-75">
                 {DISPLAY_COLUMN_OPTIONS.map((col) => {
                   const isVisible = visibleCols[col.id] !== false;
                   return (
@@ -812,7 +812,7 @@ export function AuditLog() {
                       key={col.id}
                       type="button"
                       onClick={() => toggleColVisibility(col.id)}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer"
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-[4px] text-[12.5px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
                     >
                       <span
                         className={
@@ -833,7 +833,7 @@ export function AuditLog() {
                 <button
                   type="button"
                   onClick={handleResetColumns}
-                  className="w-full text-left px-3 py-2 rounded-[6px] text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 rounded-[4px] text-[12.5px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
                 >
                   Reset columns
                 </button>

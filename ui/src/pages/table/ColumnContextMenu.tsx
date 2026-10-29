@@ -83,7 +83,7 @@ export function ColumnContextMenu({
         left: `${left}px`,
         width: `${menuWidth}px`,
       }}
-      className="fixed z-50 rounded-[8px] border border-[#262626] bg-[#141414] shadow-[0_16px_36px_rgba(0,0,0,0.95)] p-1.5 flex flex-col font-sans select-none animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-50 rounded-[6px] border border-[#222222] bg-[#111111] shadow-[0_12px_32px_rgba(0,0,0,0.95)] p-1 flex flex-col font-sans select-none animate-in fade-in zoom-in-95 duration-75"
     >
       {/* 1. Sort Ascending */}
       <button
@@ -92,10 +92,10 @@ export function ColumnContextMenu({
           onSetSort({ col: col.name, order: "asc" });
           onClose();
         }}
-        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans transition-colors cursor-pointer text-left ${
+        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[4px] text-[12.5px] font-sans transition-colors cursor-pointer text-left ${
           isAsc
             ? "bg-blue-600/15 text-blue-400 font-medium"
-            : "text-[#cccccc] hover:text-white hover:bg-[#202020]"
+            : "text-[#cccccc] hover:text-white hover:bg-[#1a1a1a]"
         }`}
       >
         <ArrowUp className="w-3.5 h-3.5 shrink-0 opacity-80" />
@@ -110,10 +110,10 @@ export function ColumnContextMenu({
           onSetSort({ col: col.name, order: "desc" });
           onClose();
         }}
-        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans transition-colors cursor-pointer text-left ${
+        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[4px] text-[12.5px] font-sans transition-colors cursor-pointer text-left ${
           isDesc
             ? "bg-blue-600/15 text-blue-400 font-medium"
-            : "text-[#cccccc] hover:text-white hover:bg-[#202020]"
+            : "text-[#cccccc] hover:text-white hover:bg-[#1a1a1a]"
         }`}
       >
         <ArrowDown className="w-3.5 h-3.5 shrink-0 opacity-80" />
@@ -122,7 +122,7 @@ export function ColumnContextMenu({
       </button>
 
       {/* Separator */}
-      <div className="-mx-1.5 border-t border-[#222222] my-1" />
+      <div className="-mx-1 border-t border-[#222222] my-1" />
 
       {/* 3. Copy name */}
       <button
@@ -131,7 +131,7 @@ export function ColumnContextMenu({
           onCopyName(col.name);
           onClose();
         }}
-        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer text-left"
+        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[4px] text-[12.5px] font-sans text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
       >
         <Copy className="w-3.5 h-3.5 shrink-0 opacity-80" />
         <span>{copiedKey === col.name ? "Copied!" : "Copy name"}</span>
@@ -144,7 +144,7 @@ export function ColumnContextMenu({
           onOpenEditColumn(col);
           onClose();
         }}
-        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer text-left"
+        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[4px] text-[12.5px] font-sans text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
       >
         <Edit3 className="w-3.5 h-3.5 shrink-0 opacity-80" />
         <span>Edit column</span>
@@ -157,7 +157,7 @@ export function ColumnContextMenu({
           onResetWidth(col.name);
           onClose();
         }}
-        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer text-left"
+        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[4px] text-[12.5px] font-sans text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
       >
         <ArrowUpDown className="w-3.5 h-3.5 shrink-0 opacity-80" />
         <span>Reset width</span>
@@ -166,14 +166,14 @@ export function ColumnContextMenu({
       {/* 6. Destructive Delete Column (guarded separator) */}
       {onRequestDeleteColumn && (
         <>
-          <div className="-mx-1.5 border-t border-[#222222] my-1" />
+          <div className="-mx-1 border-t border-[#222222] my-1" />
           <button
             type="button"
             onClick={() => {
               onRequestDeleteColumn(col);
               onClose();
             }}
-            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer text-left"
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[4px] text-[12.5px] font-sans text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer text-left"
           >
             <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-80" />
             <span>Delete column</span>

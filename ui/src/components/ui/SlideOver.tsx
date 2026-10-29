@@ -152,12 +152,12 @@ export const SlideOver: React.FC<SlideOverProps> = ({
         <div
           ref={panelRef}
           className={cn(
-            "w-screen h-full pointer-events-auto bg-black border-l border-[#222222] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans pt-safe pb-safe",
+            "w-screen h-full pointer-events-auto bg-[#0e0e0e] border-l border-[#222222] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans",
             width,
           )}
         >
-          {/* Outer Header Bar (Title & metadata on pure black frame) */}
-          <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-black shrink-0 font-sans">
+          {/* Header Bar */}
+          <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-[#0e0e0e] border-b border-[#222222] shrink-0 font-sans">
             <div className="min-w-0 pr-3 flex-1">
               <h2
                 id="slideover-title"
@@ -190,8 +190,8 @@ export const SlideOver: React.FC<SlideOverProps> = ({
             </button>
           </div>
 
-          {/* Inset Container ("container in container" design) */}
-          <div className="mx-[6px] mb-[6px] flex-1 flex flex-col border border-[#262626] rounded-[8px] bg-[#0e0e0e] overflow-hidden min-h-0 touch-scroll">
+          {/* Unified Content Container */}
+          <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
             {children}
           </div>
         </div>

@@ -664,11 +664,11 @@ export function Layout({
               </button>
 
               {userOpen && (
-                <div className="absolute right-0 top-full mt-2 w-[260px] bg-[#0e0e0e] border border-[#262626] rounded-[8px] shadow-2xl p-1.5 z-50 select-none animate-in fade-in zoom-in-95 font-sans">
+                <div className="absolute right-0 top-full mt-2 w-[260px] bg-[#111111] border border-[#222222] rounded-[6px] shadow-2xl p-1 z-50 select-none animate-in fade-in zoom-in-95 duration-75 font-sans">
                   {/* Account info header */}
-                  <div className="p-2.5 rounded-lg bg-[#141414] border border-[#1f1f1f] mb-1">
+                  <div className="p-2 rounded-[5px] bg-[#141414] border border-[#1f1f1f] mb-1">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[14px] font-medium text-white truncate leading-tight font-mono">
+                      <span className="text-[13px] font-medium text-white truncate leading-tight font-mono">
                         {currentUser?.username || getOperatorUser()}
                       </span>
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium text-[#8c8c8c] bg-[#1a1a1a] border border-[#262626] capitalize shrink-0">
@@ -678,7 +678,7 @@ export function Layout({
                       </span>
                     </div>
                     <p
-                      className="text-[13px] text-[#8c8c8c] truncate leading-tight mt-1 font-mono"
+                      className="text-[12px] text-[#8c8c8c] truncate leading-tight mt-1 font-mono"
                       title={currentUser?.email || undefined}
                     >
                       {currentUser?.email && currentUser.email.trim().length > 0
@@ -688,16 +688,16 @@ export function Layout({
                   </div>
 
                   {/* Navigation Items */}
-                  <div className="space-y-0.5 py-0.5">
+                  <div className="space-y-0.5">
                     <button
                       type="button"
                       onClick={() => {
                         onNavigate("/system/settings");
                         setUserOpen(false);
                       }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
+                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
                     >
-                      <Settings className="w-4 h-4 text-[#8c8c8c] shrink-0" />
+                      <Settings className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                       <span>Settings</span>
                     </button>
                     <button
@@ -706,15 +706,15 @@ export function Layout({
                         onNavigate("/system/keys");
                         setUserOpen(false);
                       }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
+                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
                     >
-                      <Key className="w-4 h-4 text-[#8c8c8c] shrink-0" />
+                      <Key className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                       <span>API Key Vault</span>
                     </button>
                   </div>
 
                   {/* Edge-to-edge line through padding */}
-                  <div className="-mx-1.5 h-px bg-[#222222] my-1.5" />
+                  <div className="-mx-1 h-px bg-[#222222] my-1" />
 
                   {/* Sign out */}
                   <button
@@ -733,9 +733,9 @@ export function Layout({
                         window.location.href = "/system";
                       }
                     }}
-                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
                   >
-                    <LogOut className="w-4 h-4 text-[#8c8c8c] shrink-0" />
+                    <LogOut className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                     <span>Sign Out</span>
                   </button>
                 </div>

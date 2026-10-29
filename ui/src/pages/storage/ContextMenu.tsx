@@ -138,7 +138,7 @@ export function ContextMenu({
         top: `${Math.max(10, clampedY)}px`,
         left: `${Math.max(10, clampedX)}px`,
       }}
-      className="fixed z-50 w-52 bg-[#111111] border border-[#262626] rounded-md shadow-2xl p-1 font-sans select-none animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-50 w-52 bg-[#111111] border border-[#222222] rounded-[6px] shadow-[0_12px_32px_rgba(0,0,0,0.95)] p-1 font-sans select-none animate-in fade-in zoom-in-95 duration-75"
       onClick={(e) => e.stopPropagation()}
     >
       {item ? (
@@ -156,7 +156,7 @@ export function ContextMenu({
                 onOpenFolder(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Folder className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Open Folder</span>
@@ -170,7 +170,7 @@ export function ContextMenu({
                 onPreview(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Eye className="w-4 h-4 text-blue-400 shrink-0" />
               <span>Preview</span>
@@ -184,7 +184,7 @@ export function ContextMenu({
                 onDownload(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Download className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Download</span>
@@ -198,7 +198,7 @@ export function ContextMenu({
                 onShare(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Share2 className="w-4 h-4 text-white shrink-0" />
               <span>Share Link...</span>
@@ -212,7 +212,7 @@ export function ContextMenu({
                 onCopyPublicUrl(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Globe className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Copy Public URL</span>
@@ -232,7 +232,7 @@ export function ContextMenu({
                 onRename(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Edit3 className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Rename</span>
@@ -246,7 +246,7 @@ export function ContextMenu({
                 onMove(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <ArrowRight className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Move to...</span>
@@ -260,7 +260,7 @@ export function ContextMenu({
                 onCopy(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Copy className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Copy to...</span>
@@ -280,7 +280,7 @@ export function ContextMenu({
                 onViewDetails(item);
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Info className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>View Details</span>
@@ -301,7 +301,7 @@ export function ContextMenu({
                   onDelete(item);
                   onClose();
                 }}
-                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#f87171] hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded-md transition-colors cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#f87171] hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded-[4px] transition-colors cursor-pointer text-left"
               >
                 <Trash2 className="w-4 h-4 text-[#ef4444] shrink-0" />
                 <span>Delete</span>
@@ -318,7 +318,7 @@ export function ContextMenu({
                 onNewFolder();
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <FolderPlus className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>New Folder</span>
@@ -332,7 +332,7 @@ export function ContextMenu({
                 onUpload();
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Upload className="w-4 h-4 text-white shrink-0" />
               <span>Upload Files</span>
@@ -346,7 +346,7 @@ export function ContextMenu({
                 onPaste();
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <Clipboard className="w-4 h-4 text-white shrink-0" />
               <span>Paste ({clipboard.name})</span>
@@ -365,7 +365,7 @@ export function ContextMenu({
                 onRefresh();
                 onClose();
               }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
             >
               <RefreshCw className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Refresh</span>

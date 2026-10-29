@@ -343,7 +343,7 @@ export function TableSidebar({
             left: `${Math.min(window.innerWidth - 180, Math.max(8, tableMenuState.rect.right - 168))}px`,
             width: "168px",
           }}
-          className="fixed z-50 bg-[#141414] border border-[#262626] rounded-[6px] shadow-2xl p-1 text-[13px] text-[#cccccc] animate-in fade-in zoom-in-95 duration-100 select-none font-sans"
+          className="fixed z-50 bg-[#111111] border border-[#222222] rounded-[6px] shadow-[0_12px_32px_rgba(0,0,0,0.95)] p-1 text-[12.5px] text-[#cccccc] animate-in fade-in zoom-in-95 duration-75 select-none font-sans"
           onClick={(e) => e.stopPropagation()}
         >
           {/* 1. Copy table name */}

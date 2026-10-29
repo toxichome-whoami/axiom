@@ -410,7 +410,7 @@ export function TableToolbar({
                   return (
                     <div
                       style={{ top: `${top}px`, left: `${left}px` }}
-                      className="fixed w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
+                      className="fixed w-44 bg-[#111111] border border-[#222222] rounded-[6px] shadow-[0_12px_32px_rgba(0,0,0,0.95)] p-1 z-50 animate-in fade-in zoom-in-95 duration-75 font-sans"
                     >
                       {canInsert && (
                         <button
@@ -419,7 +419,7 @@ export function TableToolbar({
                             setIsInsertDropdownOpen(false);
                             onOpenInsertRow();
                           }}
-                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-[12.5px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
                         >
                           <Plus className="w-3.5 h-3.5 text-[#888888]" />
                           <span>Insert row</span>
@@ -433,7 +433,7 @@ export function TableToolbar({
                             setIsInsertDropdownOpen(false);
                             onOpenAddColumn();
                           }}
-                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-[12.5px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
                         >
                           <Columns className="w-3.5 h-3.5 text-[#888888]" />
                           <span>Insert column</span>
@@ -1010,7 +1010,7 @@ export function TableToolbar({
                 return (
                   <div
                     style={{ top: `${top}px`, left: `${left}px` }}
-                    className="fixed w-24 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 font-sans animate-in fade-in duration-100"
+                    className="fixed w-24 bg-[#111111] border border-[#222222] rounded-[6px] shadow-[0_12px_32px_rgba(0,0,0,0.95)] p-1 z-50 font-sans animate-in fade-in zoom-in-95 duration-75"
                   >
                     {[25, 50, 100, 250, 500].map((sz) => (
                       <button
@@ -1020,7 +1020,7 @@ export function TableToolbar({
                           setPageSize(sz);
                           setShowPageSizePopover(false);
                         }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer font-sans ${
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[4px] text-[12.5px] transition-colors cursor-pointer font-sans ${
                           pageSize === sz
                             ? "bg-blue-600/15 text-blue-400 font-medium"
                             : "text-[#cccccc] hover:bg-[#1a1a1a] hover:text-white"
