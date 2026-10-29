@@ -6,7 +6,7 @@
 
 **Universal Cargo Build · Zero External Shims · Sub-15MB Binary**
 
-[![Version](https://img.shields.io/badge/version-0.1.21%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.22%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
@@ -97,7 +97,7 @@ cargo run -p axiom-cli --bin axiom-version -- get
 # Preview next patch bump without writing to disk
 cargo run -p axiom-cli --bin axiom-version -- bump patch --dry-run
 
-# Increment patch version (e.g. 0.1.21 -> 0.1.22) and sync Cargo.lock
+# Increment patch version (e.g. 0.1.22 -> 0.1.22) and sync Cargo.lock
 cargo run -p axiom-cli --bin axiom-version -- bump patch
 
 # Increment minor or major version
