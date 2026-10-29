@@ -265,6 +265,7 @@ pub enum ClusterCommands {
             short = 't',
             long = "target",
             alias = "peer-url",
+            value_name = "URL",
             help = "Remote peer URL (e.g. http://10.0.0.2:4500)"
         )]
         url_flag: Option<String>,
@@ -286,6 +287,7 @@ pub enum ClusterCommands {
             short = 'i',
             long = "id",
             alias = "node-id",
+            value_name = "NODE_ID",
             help = "Node ID of the peer to remove"
         )]
         id_flag: Option<String>,
@@ -303,6 +305,7 @@ pub enum ClusterCommands {
             short = 'i',
             long = "id",
             alias = "node-id",
+            value_name = "NODE_ID",
             help = "Node ID of the peer to update"
         )]
         id_flag: Option<String>,
@@ -314,6 +317,7 @@ pub enum ClusterCommands {
             short = 't',
             long = "target",
             alias = "peer-url",
+            value_name = "URL",
             help = "Updated peer URL endpoint"
         )]
         url: Option<String>,
@@ -334,6 +338,7 @@ pub enum ClusterCommands {
             short = 'i',
             long = "id",
             alias = "node-id",
+            value_name = "NODE_ID",
             help = "Node ID of the peer to ping"
         )]
         id_flag: Option<String>,
@@ -350,6 +355,7 @@ pub enum ClusterCommands {
         #[arg(
             short = 'm',
             long = "moniker",
+            value_name = "MONIKER",
             help = "New moniker for this local cluster node"
         )]
         moniker_flag: Option<String>,
@@ -424,7 +430,7 @@ pub enum KeyCommands {
     Create {
         #[arg(value_name = "NAME", help = "Key name (positional or via -n/--name)")]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Key name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Key name")]
         name_flag: Option<String>,
         #[arg(short = 'r', long = "role", help = "Attached role name")]
         role: Option<String>,
@@ -453,7 +459,7 @@ pub enum KeyCommands {
     Update {
         #[arg(value_name = "NAME", help = "Key name (positional or via -n/--name)")]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Key name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Key name")]
         name_flag: Option<String>,
         #[arg(short = 'r', long = "role", help = "Updated role name")]
         role: Option<String>,
@@ -476,7 +482,7 @@ pub enum KeyCommands {
     Rotate {
         #[arg(value_name = "NAME", help = "Key name (positional or via -n/--name)")]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Key name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Key name")]
         name_flag: Option<String>,
     },
     /// List all API keys
@@ -487,7 +493,7 @@ pub enum KeyCommands {
     Remove {
         #[arg(value_name = "NAME", help = "Key name (positional or via -n/--name)")]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Key name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Key name")]
         name_flag: Option<String>,
     },
 }
@@ -499,7 +505,7 @@ pub enum RoleCommands {
     Create {
         #[arg(value_name = "NAME", help = "Role name (positional or via -n/--name)")]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Role name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Role name")]
         name_flag: Option<String>,
         #[arg(
             short = 'd',
@@ -520,7 +526,7 @@ pub enum RoleCommands {
     Update {
         #[arg(value_name = "NAME", help = "Role name (positional or via -n/--name)")]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Role name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Role name")]
         name_flag: Option<String>,
         #[arg(
             short = 'd',
@@ -545,7 +551,7 @@ pub enum RoleCommands {
     Remove {
         #[arg(value_name = "NAME", help = "Role name (positional or via -n/--name)")]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Role name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Role name")]
         name_flag: Option<String>,
     },
 }
@@ -560,12 +566,13 @@ pub enum DbCommands {
             help = "Database alias (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
+        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias")]
         alias_flag: Option<String>,
         #[arg(
             short = 'c',
             long = "conn",
             alias = "connection-url",
+            value_name = "URL",
             help = "Database connection URL (e.g. postgres://..., sqlite://...)"
         )]
         connection_url: String,
@@ -573,6 +580,8 @@ pub enum DbCommands {
             short = 'e',
             long = "engine",
             alias = "dialect",
+            value_name = "ENGINE",
+            value_parser = ["postgres", "mysql", "mariadb", "sqlite", "libsql", "mssql", "clickhouse", "snowflake", "oracle"],
             help = "Dialect/engine (e.g. postgres, mysql, sqlite, mssql, clickhouse, snowflake, oracle)"
         )]
         engine: Option<String>,
@@ -598,12 +607,13 @@ pub enum DbCommands {
             help = "Database alias to update (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias to update")]
+        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias to update")]
         alias_flag: Option<String>,
         #[arg(
             short = 'n',
             long = "new-alias",
             alias = "rename",
+            value_name = "NEW_ALIAS",
             help = "Rename database alias"
         )]
         new_alias: Option<String>,
@@ -611,6 +621,7 @@ pub enum DbCommands {
             short = 'c',
             long = "conn",
             alias = "connection-url",
+            value_name = "URL",
             help = "Updated database connection URL"
         )]
         connection_url: Option<String>,
@@ -618,6 +629,8 @@ pub enum DbCommands {
             short = 'e',
             long = "engine",
             alias = "dialect",
+            value_name = "ENGINE",
+            value_parser = ["postgres", "mysql", "mariadb", "sqlite", "libsql", "mssql", "clickhouse", "snowflake", "oracle"],
             help = "Updated dialect/engine"
         )]
         engine: Option<String>,
@@ -643,7 +656,7 @@ pub enum DbCommands {
             help = "Database alias (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
+        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias")]
         alias_flag: Option<String>,
     },
     /// Test connection to a raw database URL before registering
@@ -657,12 +670,14 @@ pub enum DbCommands {
             short = 'c',
             long = "conn",
             alias = "connection-url",
+            value_name = "URL",
             help = "Database connection URL to probe"
         )]
         url_flag: Option<String>,
         #[arg(
             short = 'a',
             long = "alias",
+            value_name = "ALIAS",
             help = "Optional existing alias to exclude from duplicate checks"
         )]
         alias: Option<String>,
@@ -678,7 +693,7 @@ pub enum DbCommands {
             help = "Database alias (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", help = "Database alias")]
+        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias")]
         alias_flag: Option<String>,
     },
 }
@@ -707,6 +722,7 @@ pub enum BlobCommands {
             short = 'n',
             long = "ns",
             alias = "namespace",
+            value_name = "NAMESPACE",
             help = "Storage namespace"
         )]
         namespace_flag: Option<String>,
@@ -715,7 +731,7 @@ pub enum BlobCommands {
             help = "Object key/path (positional or via -k/--key)"
         )]
         object_key: Option<String>,
-        #[arg(short = 'k', long = "key", help = "Object key (path)")]
+        #[arg(short = 'k', long = "key", value_name = "KEY", help = "Object key (path)")]
         key_flag: Option<String>,
     },
 }
@@ -732,7 +748,7 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Namespace name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
         name_flag: Option<String>,
     },
     /// Query live storage quota headroom and consumption statistics
@@ -742,7 +758,7 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Namespace name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
         name_flag: Option<String>,
     },
     /// Create a new storage namespace
@@ -753,13 +769,14 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Namespace name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
         name_flag: Option<String>,
         #[arg(
             short = 'b',
             long = "bytes",
             alias = "max-bytes",
             alias = "size",
+            value_name = "BYTES",
             help = "Maximum storage quota in bytes (e.g. 1073741824 for 1GB)"
         )]
         max_bytes: Option<u64>,
@@ -777,12 +794,13 @@ pub enum BlobNsCommands {
             help = "Current namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Current namespace name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Current namespace name")]
         name_flag: Option<String>,
         #[arg(
             short = 'N',
             long = "new-name",
             alias = "rename",
+            value_name = "NEW_NAME",
             help = "New namespace name"
         )]
         new_name: Option<String>,
@@ -790,6 +808,7 @@ pub enum BlobNsCommands {
             short = 'b',
             long = "bytes",
             alias = "max-bytes",
+            value_name = "BYTES",
             help = "New maximum storage quota in bytes (0 = unlimited)"
         )]
         max_bytes: Option<u64>,
@@ -808,7 +827,7 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", help = "Namespace name")]
+        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
         name_flag: Option<String>,
     },
 }
@@ -824,6 +843,7 @@ pub enum McpCommands {
         #[arg(
             short = 't',
             long = "tool",
+            value_name = "TOOL",
             help = "Tool name (e.g. db_query, blob_list, db_schema)"
         )]
         tool_flag: Option<String>,

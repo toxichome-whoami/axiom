@@ -174,25 +174,9 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
     }
 
     // Intelligent argument normalization:
-    // If user ran `axiom -h <subcommand>` or `axiom --help <subcommand>`,
-    // re-order so clap prints help for that specific subcommand instead of root help.
-    let mut normalized_args = Vec::new();
-    let mut pending_help = false;
-    for (i, arg) in args.iter().enumerate() {
-        if i == 0 {
-            normalized_args.push(arg.clone());
-            continue;
-        }
-        if (arg == "-h" || arg == "--help") && i == 1 && args.len() > 2 && !args[2].starts_with('-')
-        {
-            pending_help = true;
-            continue;
-        }
-        normalized_args.push(arg.clone());
-    }
-    if pending_help {
-        normalized_args.push("--help".to_string());
-    }
+    // Re-orders arguments so that -h or --help placed at any position or nesting depth
+    // correctly routes to the most specific subcommand's help menu.
+    let normalized_args = normalize_cli_args(&args);
 
     let cli = Cli::parse_from(&normalized_args);
     let format = if cli.jsonl {
@@ -2529,6 +2513,73 @@ async fn handle_mcp_command(
     Ok(())
 }
 
+/// Intelligently normalizes CLI arguments so that -h or --help placed at any position
+/// or nesting depth correctly routes to the most specific subcommand's help menu.
+/// For example:
+///   `axiom -h db add`         -> `axiom db add --help`
+///   `axiom db -h add`         -> `axiom db add --help`
+///   `axiom blob ns -h create` -> `axiom blob ns create --help`
+///   `axiom -U http://.. -h db`-> `axiom db --help -U http://..`
+pub fn normalize_cli_args(args: &[String]) -> Vec<String> {
+    if args.len() <= 1 {
+        return args.to_vec();
+    }
+
+    let has_help = args.iter().any(|a| a == "-h" || a == "--help");
+    if !has_help {
+        return args.to_vec();
+    }
+
+    let program = args[0].clone();
+    let rest = &args[1..];
+
+    let mut subcommands = Vec::new();
+    let mut flags = Vec::new();
+    let mut i = 0;
+
+    while i < rest.len() {
+        let arg = &rest[i];
+        if arg == "-h" || arg == "--help" {
+            i += 1;
+            continue;
+        }
+
+        // Check if this is a flag with an argument value: -U, --url, --api-key, --token
+        if arg == "-U" || arg == "--url" || arg == "--api-key" || arg == "--token" {
+            flags.push(arg.clone());
+            if i + 1 < rest.len() {
+                flags.push(rest[i + 1].clone());
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+
+        if arg.starts_with("--url=") || arg.starts_with("--api-key=") || arg.starts_with("--token=") {
+            flags.push(arg.clone());
+            i += 1;
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            flags.push(arg.clone());
+            i += 1;
+            continue;
+        }
+
+        // Positional word (subcommand path segment)
+        subcommands.push(arg.clone());
+        i += 1;
+    }
+
+    let mut normalized = vec![program];
+    normalized.extend(subcommands);
+    normalized.push("--help".to_string());
+    normalized.extend(flags);
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2596,5 +2647,74 @@ description = "Axiom Gateway = Prod #1"
         })
         .expect("render_output table should succeed");
         assert!(executed);
+    }
+
+    #[test]
+    fn test_normalize_cli_args_nested_subcommands() {
+        // Test no help flag
+        let args = vec!["axiom".to_string(), "db".to_string(), "list".to_string()];
+        assert_eq!(normalize_cli_args(&args), args);
+
+        // Test root help
+        let args_root_help = vec!["axiom".to_string(), "-h".to_string()];
+        assert_eq!(
+            normalize_cli_args(&args_root_help),
+            vec!["axiom".to_string(), "--help".to_string()]
+        );
+
+        // Test -h before subcommands
+        let args_before = vec![
+            "axiom".to_string(),
+            "-h".to_string(),
+            "db".to_string(),
+            "add".to_string(),
+        ];
+        assert_eq!(
+            normalize_cli_args(&args_before),
+            vec![
+                "axiom".to_string(),
+                "db".to_string(),
+                "add".to_string(),
+                "--help".to_string()
+            ]
+        );
+
+        // Test -h in the middle of subcommands
+        let args_mid = vec![
+            "axiom".to_string(),
+            "blob".to_string(),
+            "ns".to_string(),
+            "-h".to_string(),
+            "create".to_string(),
+        ];
+        assert_eq!(
+            normalize_cli_args(&args_mid),
+            vec![
+                "axiom".to_string(),
+                "blob".to_string(),
+                "ns".to_string(),
+                "create".to_string(),
+                "--help".to_string()
+            ]
+        );
+
+        // Test -h with options like -U
+        let args_with_opt = vec![
+            "axiom".to_string(),
+            "-U".to_string(),
+            "http://127.0.0.1:4500".to_string(),
+            "-h".to_string(),
+            "db".to_string(),
+        ];
+        assert_eq!(
+            normalize_cli_args(&args_with_opt),
+            vec![
+                "axiom".to_string(),
+                "db".to_string(),
+                "--help".to_string(),
+                "-U".to_string(),
+                "http://127.0.0.1:4500".to_string(),
+            ]
+        );
     }
 }

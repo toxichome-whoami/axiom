@@ -6,8 +6,28 @@
  * Last structural change: Intelligent argument normalization for -h <subcommand> and clean CLI schema.
  */
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BumpTarget {
+    /// Increment patch version (e.g. 0.1.21 -> 0.1.22)
+    Patch,
+    /// Increment minor version (e.g. 0.1.21 -> 0.2.0)
+    Minor,
+    /// Increment major version (e.g. 0.1.21 -> 1.0.0)
+    Major,
+}
+
+impl BumpTarget {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BumpTarget::Patch => "patch",
+            BumpTarget::Minor => "minor",
+            BumpTarget::Major => "major",
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "axiom-version")]
@@ -35,13 +55,14 @@ enum Commands {
     Get,
     /// Increment version (patch, minor, or major)
     Bump {
-        /// Target component to increment: patch, minor, or major
-        #[arg(default_value = "patch")]
-        target: String,
+        /// Target SemVer component to increment
+        #[arg(value_enum, default_value_t = BumpTarget::Patch)]
+        target: BumpTarget,
     },
     /// Set explicit version across all target files (e.g. 0.1.13)
     Set {
-        /// The new version string (e.g. 0.1.13)
+        /// Explicit version string (e.g. 0.1.13 or v0.1.13)
+        #[arg(value_name = "VERSION")]
         version: String,
     },
 }
@@ -132,14 +153,14 @@ fn main() {
 
     let (action, target_value) = match cli.command {
         Commands::Get => (Some("get"), None),
-        Commands::Bump { target } => (Some("bump"), Some(target)),
-        Commands::Set { version } => (Some("set"), Some(version)),
+        Commands::Bump { target } => (Some("bump"), Some(target.as_str())),
+        Commands::Set { ref version } => (Some("set"), Some(version.as_str())),
     };
 
     match axiom_cli::commands::version::execute_version_operation(
         &root,
         action,
-        target_value.as_deref(),
+        target_value,
         cli.dry_run,
         cli.no_cargo,
     ) {
