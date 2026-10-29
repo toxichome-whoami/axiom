@@ -20,7 +20,10 @@ pub struct SemVer {
 impl SemVer {
     pub fn parse(text: &str) -> Result<Self, String> {
         let trimmed = text.trim();
-        let s = if let Some(stripped) = trimmed.strip_prefix('v').or_else(|| trimmed.strip_prefix('V')) {
+        let s = if let Some(stripped) = trimmed
+            .strip_prefix('v')
+            .or_else(|| trimmed.strip_prefix('V'))
+        {
             stripped
         } else {
             trimmed
@@ -177,8 +180,8 @@ pub fn execute_version_operation(
         ));
     }
 
-    let cargo_content = fs::read_to_string(&cargo_path)
-        .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+    let cargo_content =
+        fs::read_to_string(&cargo_path).map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
 
     let current_ver = extract_current_version(&cargo_content)
         .ok_or_else(|| "Could not locate [workspace.package] version in Cargo.toml".to_string())?;
@@ -223,14 +226,18 @@ pub fn execute_version_operation(
     }
 
     let mut output = Vec::new();
-    output.push("========================================================================".to_string());
+    output.push(
+        "========================================================================".to_string(),
+    );
     output.push(" Axiom Automated Version Update".to_string());
     output.push(format!(" Old Version: {}", current_ver));
     output.push(format!(" New Version: {}", target_ver));
     if dry_run {
         output.push(" MODE:        DRY RUN (no files will be written)".to_string());
     }
-    output.push("========================================================================\n".to_string());
+    output.push(
+        "========================================================================\n".to_string(),
+    );
 
     let mut total_files_updated = 0;
     let mut total_replacements = 0;
@@ -301,7 +308,9 @@ pub fn execute_version_operation(
         }
     }
 
-    output.push("\n------------------------------------------------------------------------".to_string());
+    output.push(
+        "\n------------------------------------------------------------------------".to_string(),
+    );
     output.push(format!(
         "Summary: {} file(s) updated, {} total replacement(s)",
         total_files_updated, total_replacements
@@ -348,13 +357,34 @@ mod tests {
     #[test]
     fn test_semver_parse_valid() {
         let v1 = SemVer::parse("1.2.3").expect("valid");
-        assert_eq!(v1, SemVer { major: 1, minor: 2, patch: 3 });
+        assert_eq!(
+            v1,
+            SemVer {
+                major: 1,
+                minor: 2,
+                patch: 3
+            }
+        );
 
         let v2 = SemVer::parse("v0.1.12").expect("valid with v");
-        assert_eq!(v2, SemVer { major: 0, minor: 1, patch: 12 });
+        assert_eq!(
+            v2,
+            SemVer {
+                major: 0,
+                minor: 1,
+                patch: 12
+            }
+        );
 
         let v3 = SemVer::parse("  V2.0.0  ").expect("valid trimmed");
-        assert_eq!(v3, SemVer { major: 2, minor: 0, patch: 0 });
+        assert_eq!(
+            v3,
+            SemVer {
+                major: 2,
+                minor: 0,
+                patch: 0
+            }
+        );
     }
 
     #[test]
@@ -367,7 +397,11 @@ mod tests {
 
     #[test]
     fn test_semver_bump() {
-        let v = SemVer { major: 0, minor: 1, patch: 12 };
+        let v = SemVer {
+            major: 0,
+            minor: 1,
+            patch: 12,
+        };
         assert_eq!(v.bump_patch().format(), "0.1.13");
         assert_eq!(v.bump_minor().format(), "0.2.0");
         assert_eq!(v.bump_major().format(), "1.0.0");
@@ -383,7 +417,10 @@ members = ["crates/*"]
 version = "0.1.12"
 edition = "2021"
 "#;
-        assert_eq!(extract_current_version(toml_sample), Some("0.1.12".to_string()));
+        assert_eq!(
+            extract_current_version(toml_sample),
+            Some("0.1.12".to_string())
+        );
 
         let invalid_toml = "[workspace]\nmembers = []\n";
         assert_eq!(extract_current_version(invalid_toml), None);

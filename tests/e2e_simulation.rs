@@ -342,18 +342,101 @@ verify_reads = false
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("MasterOperator"));
 
-    let out = run_cli(&["--url", &base_url, "--api-key", &admin_token, "db", "list", "--json"]);
-    assert!(out.status.success(), "db list failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "db",
+        "list",
+        "--json",
+    ]);
+    assert!(
+        out.status.success(),
+        "db list failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    let out = run_cli(&["--url", &base_url, "--api-key", &admin_token, "role", "list", "--json"]);
-    assert!(out.status.success(), "role list failed: {}", String::from_utf8_lossy(&out.stderr));
+    let out = run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "role",
+        "list",
+        "--json",
+    ]);
+    assert!(
+        out.status.success(),
+        "role list failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    assert!(run_cli(&["--url", &base_url, "--api-key", &admin_token, "key", "list", "--json"]).status.success());
-    assert!(run_cli(&["--url", &base_url, "--api-key", &admin_token, "cache", "stats", "--json"]).status.success());
-    assert!(run_cli(&["--url", &base_url, "--api-key", &admin_token, "cache", "flush"]).status.success());
-    assert!(run_cli(&["--url", &base_url, "--api-key", &admin_token, "cluster", "status", "--json"]).status.success());
-    assert!(run_cli(&["--url", &base_url, "--api-key", &admin_token, "cluster", "peers", "--json"]).status.success());
-    assert!(run_cli(&["--url", &base_url, "--api-key", &admin_token, "blob", "ns", "list"]).status.success());
+    assert!(run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "key",
+        "list",
+        "--json"
+    ])
+    .status
+    .success());
+    assert!(run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "cache",
+        "stats",
+        "--json"
+    ])
+    .status
+    .success());
+    assert!(run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "cache",
+        "flush"
+    ])
+    .status
+    .success());
+    assert!(run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "cluster",
+        "status",
+        "--json"
+    ])
+    .status
+    .success());
+    assert!(run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "cluster",
+        "peers",
+        "--json"
+    ])
+    .status
+    .success());
+    assert!(run_cli(&[
+        "--url",
+        &base_url,
+        "--api-key",
+        &admin_token,
+        "blob",
+        "ns",
+        "list"
+    ])
+    .status
+    .success());
     assert!(run_cli(&["completions", "bash"]).status.success());
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -439,7 +522,10 @@ verify_reads = false
 
     // 5. Fetch rows
     let res = client
-        .get(format!("{}/api/v1/db/testdb/products/rows?limit=10", base_url))
+        .get(format!(
+            "{}/api/v1/db/testdb/products/rows?limit=10",
+            base_url
+        ))
         .bearer_auth(&admin_token)
         .send()
         .await
@@ -586,7 +672,10 @@ verify_reads = false
 
     // 10. Rotate API key
     let res = client
-        .post(format!("{}/admin/v1/keys/catalog_reader_key/rotate", base_url))
+        .post(format!(
+            "{}/admin/v1/keys/catalog_reader_key/rotate",
+            base_url
+        ))
         .bearer_auth(&admin_token)
         .send()
         .await
@@ -748,7 +837,10 @@ verify_reads = false
     assert!(res.status().is_success());
 
     let res = client
-        .put(format!("{}/api/v1/blobs/sim_priv/vault_secret.txt", base_url))
+        .put(format!(
+            "{}/api/v1/blobs/sim_priv/vault_secret.txt",
+            base_url
+        ))
         .bearer_auth(&admin_token)
         .header("Content-Type", "text/plain")
         .body("TopSecretEnterpriseEncryptionKey")
@@ -799,7 +891,10 @@ verify_reads = false
 
     // 8. Object BLAKE3 Checksum Verification
     let res = client
-        .post(format!("{}/api/v1/blobs/objects/sim_ns/verify/report.txt", base_url))
+        .post(format!(
+            "{}/api/v1/blobs/objects/sim_ns/verify/report.txt",
+            base_url
+        ))
         .bearer_auth(&admin_token)
         .send()
         .await
@@ -817,7 +912,10 @@ verify_reads = false
 
     // 10. Capability Ticket Lifecycle
     let res = client
-        .post(format!("{}/admin/v1/blobs/namespaces/sim_priv/tickets", base_url))
+        .post(format!(
+            "{}/admin/v1/blobs/namespaces/sim_priv/tickets",
+            base_url
+        ))
         .bearer_auth(&admin_token)
         .json(&json!({
             "key": "vault_secret.txt",
@@ -829,11 +927,13 @@ verify_reads = false
         .unwrap();
     assert!(res.status().is_success());
     let tkt_json: Value = res.json().await.unwrap();
-    let tkt_url = tkt_json.pointer("/data/url")
+    let tkt_url = tkt_json
+        .pointer("/data/url")
         .or_else(|| tkt_json.get("url"))
         .and_then(|v| v.as_str())
         .expect("Missing ticket url");
-    let tkt_sig = tkt_json.pointer("/data/signature")
+    let tkt_sig = tkt_json
+        .pointer("/data/signature")
         .or_else(|| tkt_json.get("signature"))
         .and_then(|v| v.as_str())
         .expect("Missing ticket signature");
@@ -842,11 +942,18 @@ verify_reads = false
     let dl_full_url = format!("{}{}", base_url, tkt_url);
     let res = client.get(&dl_full_url).send().await.unwrap();
     assert_eq!(res.status(), 200);
-    assert!(res.text().await.unwrap().contains("TopSecretEnterpriseEncryptionKey"));
+    assert!(res
+        .text()
+        .await
+        .unwrap()
+        .contains("TopSecretEnterpriseEncryptionKey"));
 
     // 10b. Revoke ticket
     let res = client
-        .post(format!("{}/admin/v1/blobs/tickets/{}/revoke", base_url, tkt_sig))
+        .post(format!(
+            "{}/admin/v1/blobs/tickets/{}/revoke",
+            base_url, tkt_sig
+        ))
         .bearer_auth(&admin_token)
         .send()
         .await
@@ -859,7 +966,10 @@ verify_reads = false
 
     // 10d. Re-enable ticket
     let res = client
-        .post(format!("{}/admin/v1/blobs/tickets/{}/enable", base_url, tkt_sig))
+        .post(format!(
+            "{}/admin/v1/blobs/tickets/{}/enable",
+            base_url, tkt_sig
+        ))
         .bearer_auth(&admin_token)
         .send()
         .await
@@ -885,7 +995,10 @@ verify_reads = false
 
     // 11. Batch Delete Objects
     let res = client
-        .post(format!("{}/api/v1/blobs/objects/sim_ns/batch-delete", base_url))
+        .post(format!(
+            "{}/api/v1/blobs/objects/sim_ns/batch-delete",
+            base_url
+        ))
         .bearer_auth(&admin_token)
         .json(&json!({
             "keys": ["report_archived.txt", "data/metrics.bin"]
@@ -954,7 +1067,11 @@ verify_reads = false
     }
 
     // Web UI route
-    let res = client.get(format!("{}/system", base_url)).send().await.unwrap();
+    let res = client
+        .get(format!("{}/system", base_url))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(res.status(), 200);
     let html = res.text().await.unwrap();
     assert!(

@@ -52,9 +52,9 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
-    let root = cli.repo_root.unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    let root = cli
+        .repo_root
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let (action, target_value) = match cli.command {
         Some(Commands::Get) => (Some("get"), None),
