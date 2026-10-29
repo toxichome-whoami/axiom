@@ -2556,7 +2556,8 @@ pub fn normalize_cli_args(args: &[String]) -> Vec<String> {
             continue;
         }
 
-        if arg.starts_with("--url=") || arg.starts_with("--api-key=") || arg.starts_with("--token=") {
+        if arg.starts_with("--url=") || arg.starts_with("--api-key=") || arg.starts_with("--token=")
+        {
             flags.push(arg.clone());
             i += 1;
             continue;

@@ -566,7 +566,12 @@ pub enum DbCommands {
             help = "Database alias (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias")]
+        #[arg(
+            short = 'a',
+            long = "alias",
+            value_name = "ALIAS",
+            help = "Database alias"
+        )]
         alias_flag: Option<String>,
         #[arg(
             short = 'c',
@@ -607,7 +612,12 @@ pub enum DbCommands {
             help = "Database alias to update (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias to update")]
+        #[arg(
+            short = 'a',
+            long = "alias",
+            value_name = "ALIAS",
+            help = "Database alias to update"
+        )]
         alias_flag: Option<String>,
         #[arg(
             short = 'n',
@@ -656,7 +666,12 @@ pub enum DbCommands {
             help = "Database alias (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias")]
+        #[arg(
+            short = 'a',
+            long = "alias",
+            value_name = "ALIAS",
+            help = "Database alias"
+        )]
         alias_flag: Option<String>,
     },
     /// Test connection to a raw database URL before registering
@@ -693,7 +708,12 @@ pub enum DbCommands {
             help = "Database alias (positional or via -a/--alias)"
         )]
         alias: Option<String>,
-        #[arg(short = 'a', long = "alias", value_name = "ALIAS", help = "Database alias")]
+        #[arg(
+            short = 'a',
+            long = "alias",
+            value_name = "ALIAS",
+            help = "Database alias"
+        )]
         alias_flag: Option<String>,
     },
 }
@@ -731,7 +751,12 @@ pub enum BlobCommands {
             help = "Object key/path (positional or via -k/--key)"
         )]
         object_key: Option<String>,
-        #[arg(short = 'k', long = "key", value_name = "KEY", help = "Object key (path)")]
+        #[arg(
+            short = 'k',
+            long = "key",
+            value_name = "KEY",
+            help = "Object key (path)"
+        )]
         key_flag: Option<String>,
     },
 }
@@ -748,7 +773,12 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
+        #[arg(
+            short = 'n',
+            long = "name",
+            value_name = "NAME",
+            help = "Namespace name"
+        )]
         name_flag: Option<String>,
     },
     /// Query live storage quota headroom and consumption statistics
@@ -758,7 +788,12 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
+        #[arg(
+            short = 'n',
+            long = "name",
+            value_name = "NAME",
+            help = "Namespace name"
+        )]
         name_flag: Option<String>,
     },
     /// Create a new storage namespace
@@ -769,7 +804,12 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
+        #[arg(
+            short = 'n',
+            long = "name",
+            value_name = "NAME",
+            help = "Namespace name"
+        )]
         name_flag: Option<String>,
         #[arg(
             short = 'b',
@@ -794,7 +834,12 @@ pub enum BlobNsCommands {
             help = "Current namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Current namespace name")]
+        #[arg(
+            short = 'n',
+            long = "name",
+            value_name = "NAME",
+            help = "Current namespace name"
+        )]
         name_flag: Option<String>,
         #[arg(
             short = 'N',
@@ -827,7 +872,12 @@ pub enum BlobNsCommands {
             help = "Namespace name (positional or via -n/--name)"
         )]
         name: Option<String>,
-        #[arg(short = 'n', long = "name", value_name = "NAME", help = "Namespace name")]
+        #[arg(
+            short = 'n',
+            long = "name",
+            value_name = "NAME",
+            help = "Namespace name"
+        )]
         name_flag: Option<String>,
     },
 }
