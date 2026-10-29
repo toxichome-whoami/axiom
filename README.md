@@ -9,7 +9,6 @@ Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · Sub-10MB RAM Fo
 
 [![Version](https://img.shields.io/badge/version-0.1.21-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![Zig](https://img.shields.io/badge/zig-0.13%2B-f7a41d.svg?style=flat-square&logo=zig&logoColor=white)](https://ziglang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](./LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Binary Size](https://img.shields.io/badge/binary-%3C15MB-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
@@ -32,7 +31,7 @@ Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · Sub-10MB RAM Fo
 - **Content-Addressed Blob Storage**: Native BLAKE3-deduplicated object storage backed by a two-tier LSM engine (Fjall + direct disk shards) with pre-signed capability tickets.
 - **Built-in Model Context Protocol (MCP)**: Governed tool and resource access (`/mcp/v1`) for AI coding agents like Claude Code, Cursor, Windsurf, and Copilot.
 - **Zero-Lock Hot Path**: Authentication and RBAC evaluated in **sub-microsecond** time via `ArcSwap` memory snapshots, eliminating database lock contention.
-- **Single Portable Binary**: Everything runs in one sub-15MB executable (<10MB idle RAM) with an embedded Web UI, self-bootstrapping Zig build pipeline, and P2P cluster mesh.
+- **Single Portable Binary**: Everything runs in one sub-15MB executable (<10MB idle RAM) with an embedded Web UI, high-speed pure Cargo build, and P2P cluster mesh.
 
 ## Supported Databases
 
@@ -207,7 +206,7 @@ Deep dive into the complete documentation suite:
 | **[CLI Reference](docs/cli.md)**                 | Complete CLI manual, short flags, dual positional/flag syntax, scripting, and shell examples |
 | **[API Reference](docs/api.md)**                 | Full REST endpoint specifications, query filters, capability tickets, and MCP reference      |
 | **[Configuration Guide](docs/configuration.md)** | Complete `config.toml` options, module reference, `.env` overrides, and production checklist |
-| **[Build & Toolchain Guide](docs/building.md)**  | Zero-bloat self-bootstrapping build pipeline with Zig (no MSVC / MinGW required)             |
+| **[Build & Toolchain Guide](docs/building.md)**  | Complete Cargo build workflows, optimization profiles, and release packaging                 |
 | **[Benchmark Report](docs/benchmarks.md)**       | Empirical Criterion.rs micro-benchmarks across all hot paths and subsystems                  |
 
 ## Support & Sponsor

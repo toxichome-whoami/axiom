@@ -406,6 +406,39 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
 
+        Some(Commands::Version(args)) => {
+            let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let (action, target_value) = match args.action {
+                Some(crate::commands::VersionSubcommand::Get) => (Some("get"), None),
+                Some(crate::commands::VersionSubcommand::Bump { target }) => (Some("bump"), Some(target)),
+                Some(crate::commands::VersionSubcommand::Set { version }) => (Some("set"), Some(version)),
+                None => {
+                    if let Some(target) = args.direct_target {
+                        if target == "get" {
+                            (Some("get"), None)
+                        } else if target == "bump" {
+                            (Some("bump"), Some("patch".to_string()))
+                        } else {
+                            (Some("set"), Some(target))
+                        }
+                    } else {
+                        (Some("get"), None)
+                    }
+                }
+            };
+
+            let output = crate::commands::version::execute_version_operation(
+                &root,
+                action,
+                target_value.as_deref(),
+                args.dry_run,
+                args.no_cargo,
+            ).map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+
+            println!("{}", output);
+            Ok(true)
+        }
+
         Some(Commands::Completions { shell }) => {
             let mut cmd = <Cli as clap::CommandFactory>::command();
             clap_complete::generate(shell, &mut cmd, "axiom", &mut std::io::stdout());

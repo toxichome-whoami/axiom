@@ -92,8 +92,6 @@ storage/.tmp/
 how_to_run.txt
 graphify-out/
 fix_imports.py
-.zig-cache
-main.obj
 
 # ----------------------------------------------------------------------
 # Rust
@@ -106,7 +104,3 @@ data/
 *.db
 
 planning-rn
-.tools/
-tools/zig/*.exe
-tools/zig/*.pdb
-tools/zig/*.obj

@@ -9,6 +9,8 @@
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Args, Parser, Subcommand};
 
+pub mod version;
+
 /// Provides ANSI terminal styles for help menus, headers, and parameter descriptions.
 pub fn cli_styles() -> Styles {
     Styles::styled()
@@ -50,6 +52,7 @@ OPERATIONS & DIAGNOSTICS:
 
 INTEGRATIONS & UTILITIES:
   mcp          Model Context Protocol (MCP) tool execution, discovery, and stdio bridge
+  version      Inspect or atomically update workspace SemVer across crates and docs
   completions  Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
   help         Print this message or the help of the given subcommand(s)
 
@@ -177,10 +180,48 @@ pub enum Commands {
         command: McpCommands,
     },
 
+    /// Inspect or atomically update workspace SemVer across crates and docs
+    Version(VersionArgs),
+
     /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
     Completions {
         #[arg(value_enum, help = "Target shell")]
         shell: clap_complete::Shell,
+    },
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct VersionArgs {
+    #[command(subcommand)]
+    pub action: Option<VersionSubcommand>,
+
+    /// Direct target version or command (e.g. "0.1.13")
+    #[arg(index = 1)]
+    pub direct_target: Option<String>,
+
+    /// Preview file changes and replacements without writing
+    #[arg(long, global = true)]
+    pub dry_run: bool,
+
+    /// Skip running cargo check to synchronize Cargo.lock
+    #[arg(long, global = true)]
+    pub no_cargo: bool,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum VersionSubcommand {
+    /// Display current workspace version from Cargo.toml
+    Get,
+    /// Increment version (patch, minor, or major)
+    Bump {
+        /// Target component to increment: patch, minor, or major
+        #[arg(default_value = "patch")]
+        target: String,
+    },
+    /// Set explicit version across all target files (e.g. 0.1.13)
+    Set {
+        /// The new version string (e.g. 0.1.13)
+        version: String,
     },
 }
 

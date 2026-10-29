@@ -6,6 +6,14 @@ authors.workspace = true
 license.workspace = true
 description = "Axiom CLI commands, client, and argument parser library"
 
+[lib]
+name = "axiom_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "axiom-version"
+path = "src/bin/version.rs"
+
 [dependencies]
 axiom-core = { workspace = true }
 axiom-metadata = { workspace = true }
