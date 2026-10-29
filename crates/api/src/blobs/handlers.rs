@@ -462,7 +462,7 @@ pub async fn get_blob_handler(
                 if is_media {
                     "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
                 } else {
-                    "default-src 'none'; frame-ancestors 'none';"
+                    "default-src 'none'; frame-ancestors 'none'; sandbox;"
                 },
             );
 
@@ -512,7 +512,7 @@ pub async fn get_blob_handler(
             if is_media {
                 "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
             } else {
-                "default-src 'none'; frame-ancestors 'none';"
+                "default-src 'none'; frame-ancestors 'none'; sandbox;"
             },
         );
 
@@ -2782,7 +2782,7 @@ pub async fn get_public_blob_handler(
                 if is_web_media {
                     "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
                 } else {
-                    "default-src 'none'; frame-ancestors 'none';"
+                    "default-src 'none'; frame-ancestors 'none'; sandbox;"
                 },
             );
 
@@ -2834,7 +2834,7 @@ pub async fn get_public_blob_handler(
                 if is_web_media {
                     "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
                 } else {
-                    "default-src 'none'; frame-ancestors 'none';"
+                    "default-src 'none'; frame-ancestors 'none'; sandbox;"
                 },
             );
 

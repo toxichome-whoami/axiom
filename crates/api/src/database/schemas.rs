@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 /// Request payload for raw SQL query execution.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct QueryRequest {
     #[serde(alias = "query")]
     pub sql: String,
@@ -31,6 +32,7 @@ pub struct ListTablesParams {
 
 /// Request payload for single or batch row insertion.
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct InsertRequest {
     pub rows: Option<Vec<HashMap<String, Value>>>,
     pub row: Option<HashMap<String, Value>>,
@@ -38,6 +40,7 @@ pub struct InsertRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateRequest {
     pub filter: HashMap<String, Value>,
     #[serde(alias = "data")]
@@ -45,6 +48,7 @@ pub struct UpdateRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct DeleteRequest {
     pub filter: HashMap<String, Value>,
 }

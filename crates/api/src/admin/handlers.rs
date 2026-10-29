@@ -241,12 +241,14 @@ pub struct AuditQuery {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetupAccountRequest {
     pub username: String,
     pub email: Option<String>,
@@ -254,6 +256,7 @@ pub struct SetupAccountRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateKeyRequest {
     pub name: String,
     pub role: Option<String>,
@@ -263,6 +266,7 @@ pub struct CreateKeyRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AddDatabaseRequest {
     pub alias: String,
     pub url: String,
@@ -276,6 +280,7 @@ pub struct AddDatabaseRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PermissionPayload {
     pub database: String,
     pub table_name: String,
@@ -285,6 +290,7 @@ pub struct PermissionPayload {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateRoleRequest {
     pub name: String,
     pub description: Option<String>,
@@ -293,6 +299,7 @@ pub struct CreateRoleRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateRoleRequest {
     pub description: Option<String>,
     pub permissions: Option<Vec<PermissionPayload>>,
@@ -501,6 +508,7 @@ pub async fn rotate_key(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateKeyRequest {
     pub role: Option<Option<String>>,
     pub rate_limit: Option<i64>,
@@ -741,6 +749,7 @@ pub async fn delete_database(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateDatabaseRequest {
     pub new_alias: Option<String>,
     pub url: Option<String>,
@@ -1369,6 +1378,7 @@ pub async fn setup_account(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TestUrlRequest {
     pub url: String,
     pub alias: Option<String>,
@@ -1892,6 +1902,7 @@ pub async fn list_users_handler(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
@@ -2012,6 +2023,7 @@ pub async fn get_user_handler(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateUserRequest {
     pub username: Option<String>,
     pub email: Option<String>,
@@ -2236,6 +2248,7 @@ pub async fn delete_user_handler(
 // Coordinates peer pairing, cluster overview metrics, and manual peer lifecycle management.
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConnectPeerRequest {
     pub url: String,
     pub cluster_secret: String,
@@ -2243,6 +2256,7 @@ pub struct ConnectPeerRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateMonikerRequest {
     pub moniker: String,
 }
@@ -2435,6 +2449,7 @@ pub async fn remove_cluster_peer(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdatePeerRequest {
     pub moniker: Option<String>,
     pub url: Option<String>,

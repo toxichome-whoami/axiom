@@ -8,6 +8,7 @@
 
 pub mod auth;
 pub mod cache;
+pub mod csrf;
 pub mod metrics;
 pub mod rate_limit;
 pub mod response;

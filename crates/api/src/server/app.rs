@@ -189,11 +189,17 @@ pub fn create_app() -> Router {
             crate::blobs::get_router().layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .layer(middleware::from_fn(auth_middleware))
+        .layer(middleware::from_fn(
+            crate::middleware::csrf::csrf_middleware,
+        ))
         .layer(middleware::from_fn(rate_limit_middleware));
 
     // Admin API versioning wrapper (auth applied inside get_router for protected routes)
     let admin_routes = crate::admin::get_router()
         .layer(query_timeout)
+        .layer(middleware::from_fn(
+            crate::middleware::csrf::csrf_middleware,
+        ))
         .layer(middleware::from_fn(rate_limit_middleware));
 
     // Model Context Protocol (MCP) versioning wrapper

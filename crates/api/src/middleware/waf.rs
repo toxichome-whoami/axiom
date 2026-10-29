@@ -7,7 +7,7 @@
  */
 
 use axiom_core::{parse_size, AxiomError, ConfigManager};
-use axum::{extract::Request, middleware::Next, response::Response};
+use axum::{extract::Request, http::header, middleware::Next, response::Response};
 use std::sync::Arc;
 
 /// Resolve effective body limit per-request (no stale OnceLock cache so
@@ -191,6 +191,28 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
             "Null byte detected",
             axum::http::StatusCode::BAD_REQUEST,
         ));
+    }
+
+    // Validate Host header syntax if present (RFC 9110 §7.2: prevent Host Header Injection / Desync)
+    if let Some(host_hdr) = req.headers().get(header::HOST) {
+        if let Ok(host_str) = host_hdr.to_str() {
+            let host_trimmed = host_str.trim();
+            if host_trimmed.is_empty()
+                || host_trimmed.contains('\0')
+                || host_trimmed.contains('\r')
+                || host_trimmed.contains('\n')
+                || host_trimmed.contains(' ')
+                || host_trimmed.contains('/')
+                || host_trimmed.contains('\\')
+                || host_trimmed.contains('@')
+            {
+                return Err(AxiomError::new(
+                    "WAF_INVALID_HOST_HEADER",
+                    "Invalid Host header syntax detected",
+                    axum::http::StatusCode::BAD_REQUEST,
+                ));
+            }
+        }
     }
 
     if query.matches('&').count() > 50 {

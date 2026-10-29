@@ -3913,3 +3913,131 @@ async fn test_master_end_to_end_crud_simulation() {
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  35. Request Tampering, Anti-CSRF, and Host Poisoning Defense Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_csrf_cross_site_rejection_and_bearer_exemption() {
+    let session_token = get_test_admin_session().await;
+    let cookie_header = format!("axiom_session={}", session_token);
+
+    // 1. Mutating POST with cookie and Sec-Fetch-Site: cross-site -> Must be 403 CSRF_CROSS_SITE_REJECTED
+    let req = Request::post("/admin/v1/roles")
+        .header("Cookie", &cookie_header)
+        .header("Sec-Fetch-Site", "cross-site")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"name":"csrf_attacker_role"}"#))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    let bytes = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["error"]["code"], "CSRF_CROSS_SITE_REJECTED");
+
+    // 2. Mutating POST with cookie and Sec-Fetch-Site: same-origin -> Must pass CSRF check
+    let req_ok = Request::post("/admin/v1/roles")
+        .header("Cookie", &cookie_header)
+        .header("Sec-Fetch-Site", "same-origin")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"name":"csrf_valid_same_origin_role"}"#))
+        .unwrap();
+    let res_ok = create_app().oneshot(req_ok).await.unwrap();
+    assert_eq!(res_ok.status(), StatusCode::CREATED);
+
+    // 3. Mutating POST with explicit Bearer token and Sec-Fetch-Site: cross-site
+    // Explicit API/Bearer credentials bypass CSRF as browsers never send them ambiently
+    let req_bearer = Request::post("/admin/v1/roles")
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Sec-Fetch-Site", "cross-site")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"name":"csrf_bearer_exempt_role"}"#))
+        .unwrap();
+    let res_bearer = create_app().oneshot(req_bearer).await.unwrap();
+    assert_eq!(res_bearer.status(), StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn test_mass_assignment_and_unknown_fields_rejection() {
+    let session_token = get_test_admin_session().await;
+
+    // Attacker sends request with unadvertised/injected parameters ("is_super_admin", "pwned")
+    let payload = serde_json::json!({
+        "username": "tampered_user_1",
+        "password": "Password123!",
+        "is_super_admin": true,
+        "pwned": "injected_field"
+    });
+
+    let req = Request::post("/admin/v1/users")
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    // Serde deny_unknown_fields causes Axum Json extractor to fail with 422 or 400
+    assert!(
+        res.status() == StatusCode::UNPROCESSABLE_ENTITY || res.status() == StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
+async fn test_waf_host_header_poisoning_rejection() {
+    // 1. Path slash traversal in Host header
+    let req_slash = Request::get("/api/v1/health")
+        .header("Host", "localhost/evil_path")
+        .body(Body::empty())
+        .unwrap();
+    let res_slash = create_app().oneshot(req_slash).await.unwrap();
+    assert_eq!(res_slash.status(), StatusCode::BAD_REQUEST);
+
+    // 2. Userinfo/at symbol in Host header
+    let req_userinfo = Request::get("/api/v1/health")
+        .header("Host", "evil.com@localhost")
+        .body(Body::empty())
+        .unwrap();
+    let res2 = create_app().oneshot(req_userinfo).await.unwrap();
+    assert_eq!(res2.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_stored_xss_sandbox_and_attachment_headers() {
+    ensure_blob_engine().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Upload an SVG file with embedded JavaScript
+    let svg_payload =
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert('xss')</script></svg>"#;
+    let upload_req = Request::put("/api/v1/blobs/default/xss_vector.svg")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "image/svg+xml")
+        .body(Body::from(svg_payload))
+        .unwrap();
+    let upload_res = create_app().oneshot(upload_req).await.unwrap();
+    assert_eq!(upload_res.status(), StatusCode::CREATED);
+
+    // 2. Fetch the SVG file and verify anti-XSS headers
+    let fetch_req = Request::get("/api/v1/blobs/default/xss_vector.svg")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let fetch_res = create_app().oneshot(fetch_req).await.unwrap();
+    assert_eq!(fetch_res.status(), StatusCode::OK);
+
+    // Must be served as attachment to prevent in-browser execution
+    let disp = fetch_res
+        .headers()
+        .get("content-disposition")
+        .and_then(|h| h.to_str().ok())
+        .unwrap();
+    assert!(disp.starts_with("attachment"));
+
+    // Must include sandbox in Content-Security-Policy
+    let csp = fetch_res
+        .headers()
+        .get("content-security-policy")
+        .and_then(|h| h.to_str().ok())
+        .unwrap();
+    assert!(csp.contains("sandbox;"));
+}
