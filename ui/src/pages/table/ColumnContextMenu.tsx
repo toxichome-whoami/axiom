@@ -12,6 +12,7 @@ import {
   Copy,
   Edit3,
   ArrowUpDown,
+  Trash2,
 } from "lucide-react";
 import { ColumnInfoApi, ForeignKeyInfoApi } from "../../types";
 import { mapSqlTypeToFormValue } from "./format";
@@ -161,6 +162,24 @@ export function ColumnContextMenu({
         <ArrowUpDown className="w-3.5 h-3.5 shrink-0 opacity-80" />
         <span>Reset width</span>
       </button>
+
+      {/* 6. Destructive Delete Column (guarded separator) */}
+      {onRequestDeleteColumn && (
+        <>
+          <div className="-mx-1.5 border-t border-[#222222] my-1" />
+          <button
+            type="button"
+            onClick={() => {
+              onRequestDeleteColumn(col);
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-80" />
+            <span>Delete column</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }

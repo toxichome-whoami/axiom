@@ -10,7 +10,7 @@
  */
 
 import React, { useEffect, useRef } from "react";
-import { Copy, Edit3, Eye, Slash } from "lucide-react";
+import { Copy, Edit3, Eye, Slash, Trash2 } from "lucide-react";
 
 export interface GridContextMenuState {
   x: number;
@@ -154,6 +154,23 @@ export function GridContextMenu({
         <Eye className="w-3.5 h-3.5 text-[#888888]" />
         <span>Inspect Row</span>
       </button>
+
+      {onDeleteRow && (
+        <>
+          <div className="-mx-1 my-1 border-t border-[#222222]" />
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onDeleteRow(menu.rowIndex);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors cursor-pointer text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+            <span>Delete Row</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   Copy,
   Share2,
   Eye,
+  Globe,
 } from "lucide-react";
 import { StorageItem, ClipboardState } from "./types";
 
@@ -111,6 +112,25 @@ export function ContextMenu({
   const clampedX = Math.min(position.x, window.innerWidth - menuWidth - 10);
   const clampedY = Math.min(position.y, window.innerHeight - menuHeight - 10);
 
+  // Dynamic section presence checks to prevent orphan leading/trailing dividers
+  const hasPrimaryActions = Boolean(
+    item &&
+    ((item.type === "folder" && onOpenFolder) ||
+      (item.type === "file" && onPreview) ||
+      (item.type === "file" && onDownload) ||
+      (item.type === "file" && onShare) ||
+      (item.type === "file" && isPublicNamespace && onCopyPublicUrl)),
+  );
+
+  const hasMutationActions = Boolean(item && (onRename || onMove || onCopy));
+  const hasDetailsAction = Boolean(item && onViewDetails);
+  const hasDeleteAction = Boolean(item && onDelete);
+
+  const hasCanvasCreations = Boolean(
+    !item && (onNewFolder || onUpload || (clipboard && onPaste)),
+  );
+  const hasRefreshAction = Boolean(!item && onRefresh);
+
   return (
     <div
       ref={menuRef}
@@ -128,6 +148,7 @@ export function ContextMenu({
             {item.name}
           </div>
 
+          {/* Group 1: Primary actions */}
           {item.type === "folder" && onOpenFolder && (
             <button
               type="button"
@@ -184,6 +205,26 @@ export function ContextMenu({
             </button>
           )}
 
+          {item.type === "file" && isPublicNamespace && onCopyPublicUrl && (
+            <button
+              type="button"
+              onClick={() => {
+                onCopyPublicUrl(item);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+            >
+              <Globe className="w-4 h-4 text-[#8c8c8c] shrink-0" />
+              <span>Copy Public URL</span>
+            </button>
+          )}
+
+          {/* Divider between Primary and Mutations */}
+          {hasPrimaryActions && hasMutationActions && (
+            <div className="h-px bg-[#222222] my-1 -mx-1" />
+          )}
+
+          {/* Group 2: Mutation actions */}
           {onRename && (
             <button
               type="button"
@@ -226,8 +267,12 @@ export function ContextMenu({
             </button>
           )}
 
-          <div className="h-px bg-[#222222] my-1 -mx-1" />
+          {/* Divider between Preceding and Details */}
+          {hasDetailsAction && (hasPrimaryActions || hasMutationActions) && (
+            <div className="h-px bg-[#222222] my-1 -mx-1" />
+          )}
 
+          {/* Group 3: Details inspection */}
           {onViewDetails && (
             <button
               type="button"
@@ -242,20 +287,26 @@ export function ContextMenu({
             </button>
           )}
 
-          <div className="h-px bg-[#222222] my-1 -mx-1" />
-
+          {/* Group 4: Destructive action with guarded separator */}
           {onDelete && (
-            <button
-              type="button"
-              onClick={() => {
-                onDelete(item);
-                onClose();
-              }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#f87171] hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded-md transition-colors cursor-pointer text-left"
-            >
-              <Trash2 className="w-4 h-4 text-[#ef4444] shrink-0" />
-              <span>Delete</span>
-            </button>
+            <>
+              {(hasPrimaryActions ||
+                hasMutationActions ||
+                hasDetailsAction) && (
+                <div className="h-px bg-[#222222] my-1 -mx-1" />
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  onDelete(item);
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#f87171] hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded-md transition-colors cursor-pointer text-left"
+              >
+                <Trash2 className="w-4 h-4 text-[#ef4444] shrink-0" />
+                <span>Delete</span>
+              </button>
+            </>
           )}
         </>
       ) : (
@@ -302,7 +353,10 @@ export function ContextMenu({
             </button>
           )}
 
-          <div className="h-px bg-[#222222] my-1 -mx-1" />
+          {/* Separator only if both creations and refresh exist */}
+          {hasCanvasCreations && hasRefreshAction && (
+            <div className="h-px bg-[#222222] my-1 -mx-1" />
+          )}
 
           {onRefresh && (
             <button
