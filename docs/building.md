@@ -107,11 +107,7 @@ cargo run -p axiom-cli --bin axiom-version -- bump major
 cargo run -p axiom-cli --bin axiom-version -- set 0.2.0
 ```
 
-The version tool can also be invoked directly through the unified gateway binary:
-```bash
-axiom version get
-axiom version bump patch
-```
+The version tool is an isolated developer binary and is intentionally excluded from the production gateway release binary (`axiom`) to eliminate developer tool bloat in production environments.
 
 ## 6. Release Optimization & Binary Footprint
 
