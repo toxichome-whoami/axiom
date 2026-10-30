@@ -36,6 +36,7 @@ pub fn get_router() -> Router {
             post(crate::database::handlers::insert_rows)
                 .get(crate::database::handlers::fetch_rows)
                 .patch(crate::database::handlers::update_rows)
+                .put(crate::database::handlers::update_rows)
                 .delete(crate::database::handlers::delete_rows),
         )
         .route(
