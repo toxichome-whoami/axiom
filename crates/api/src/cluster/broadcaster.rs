@@ -217,16 +217,20 @@ impl ClusterBroadcaster {
         loop {
             interval.tick().await;
 
+            let peers = match MetadataStore::list_peers().await {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            if peers.is_empty() {
+                continue;
+            }
+
             let identity = match MetadataStore::get_or_create_cluster_identity().await {
                 Ok(id) => id,
                 Err(_) => continue,
             };
             let (my_node_id, _moniker, cluster_secret) = identity;
-
-            let peers = match MetadataStore::list_peers().await {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
 
             for peer in peers {
                 let peer_url = peer.url.clone();

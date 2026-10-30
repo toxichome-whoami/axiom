@@ -76,7 +76,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                 .url
                 .parse::<sqlx::mysql::MySqlConnectOptions>()
                 .map_err(|e| EngineError::Connection(e.to_string()))?
-                .statement_cache_capacity(1024);
+                .statement_cache_capacity(128);
 
             let pool = MySqlPoolOptions::new()
                 .max_connections(self.config.pool_max as u32)

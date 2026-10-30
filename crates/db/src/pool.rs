@@ -46,22 +46,23 @@ impl DatabasePoolManager {
         let snap_db = snapshot.databases.get(alias)?;
         let default_pool_max = (std::thread::available_parallelism()
             .map(|n| n.get())
-            .unwrap_or(4) as i32
-            * 4)
-            .clamp(16, 128);
-        let pool_max = if snap_db.pool_max <= 0 {
-            default_pool_max
-        } else if snap_db.pool_max <= 10 {
-            default_pool_max.max(snap_db.pool_max as i32)
-        } else {
+            .unwrap_or(2) as i32
+            * 2)
+            .clamp(4, 32);
+        // Strictly honor configured pool_max if specified (> 0) to avoid socket/memory bloat;
+        // fall back to adaptive default only when unspecified or <= 0.
+        let pool_max = if snap_db.pool_max > 0 {
             snap_db.pool_max as i32
+        } else {
+            default_pool_max
         };
 
         let db_config = axiom_core::config::schema::DatabaseDefConfig {
             url: snap_db.url.clone(),
-            pool_min: snap_db.pool_min as i32,
+            pool_min: (snap_db.pool_min as i32).max(0),
             pool_max,
             connection_timeout: 5,
+            idle_timeout: 60,
             ..Default::default()
         };
 

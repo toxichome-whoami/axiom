@@ -77,7 +77,7 @@ impl DatabaseEngine for PostgresDatabaseEngine {
                 .url
                 .parse::<sqlx::postgres::PgConnectOptions>()
                 .map_err(|e| EngineError::Connection(e.to_string()))?
-                .statement_cache_capacity(2048);
+                .statement_cache_capacity(128);
 
             let pool = PgPoolOptions::new()
                 .max_connections(self.config.pool_max as u32)

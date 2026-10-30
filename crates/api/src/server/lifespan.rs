@@ -35,6 +35,8 @@ pub async fn start_daemons() {
     {
         tracing::warn!("Failed to initialize L2 cache persistence: {}", e);
     }
+    let max_mem = axiom_core::parse_size(&config.cache.max_memory).unwrap_or(100 * 1024 * 1024);
+    axiom_cache::CacheEngine::set_max_memory(max_mem);
 
     if cache_needs_turso || rl_needs_turso {
         let url = if cache_needs_turso {

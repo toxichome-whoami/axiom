@@ -105,6 +105,8 @@ static L1_CACHE: Lazy<DashMap<String, L1Entry>> = Lazy::new(DashMap::new);
 static STATS: CacheStats = CacheStats::new();
 static L2_CONN: OnceCell<libsql::Connection> = OnceCell::const_new();
 static MAX_L1_ENTRIES: AtomicU64 = AtomicU64::new(10_000);
+static APPROX_MEMORY_BYTES: AtomicU64 = AtomicU64::new(0);
+static MAX_MEMORY_BYTES: AtomicU64 = AtomicU64::new(50 * 1024 * 1024);
 
 const SAMPLE_RING_SIZE: usize = 256;
 static SAMPLE_RING: Lazy<Vec<std::sync::RwLock<Option<String>>>> = Lazy::new(|| {
@@ -140,6 +142,11 @@ fn current_unix_nanos() -> u64 {
 pub struct CacheEngine;
 
 impl CacheEngine {
+    /// Sets the maximum approximate memory bytes allowed for the L1 RAM cache.
+    pub fn set_max_memory(bytes: u64) {
+        MAX_MEMORY_BYTES.store(bytes.max(1024 * 1024), Ordering::Relaxed);
+    }
+
     /// Initializes the caching engine, creates persistent SQLite tables, and configures limits.
     /// CONTRACT:
     ///  - Precondition: `l2_url` must be a valid SQLite file path or remote Turso endpoint.
@@ -263,6 +270,8 @@ impl CacheEngine {
         Self::evict_if_needed();
 
         record_sample_key(key);
+        let entry_sz = (key.len() + value.len() + std::mem::size_of::<L1Entry>()) as u64;
+        APPROX_MEMORY_BYTES.fetch_add(entry_sz, Ordering::Relaxed);
         L1_CACHE.insert(
             key.to_string(),
             L1Entry {
@@ -307,7 +316,10 @@ impl CacheEngine {
     ///  - Side effects: Removes entry from DashMap and executes SQLite DELETE.
     ///  - Idempotent: Yes.
     pub async fn delete(key: &str) {
-        L1_CACHE.remove(key);
+        if let Some((_, entry)) = L1_CACHE.remove(key) {
+            let sz = (key.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+            APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+        }
         if let Some(conn) = L2_CONN.get() {
             let _ = conn
                 .execute("DELETE FROM cache_aof WHERE key = ?1", [key])
@@ -322,6 +334,11 @@ impl CacheEngine {
         L1_CACHE.retain(|k, _| {
             k.starts_with("rl:") || k.starts_with("ticket:revoked:") || k.starts_with("ban:")
         });
+        let mut rem_bytes = 0u64;
+        for entry in L1_CACHE.iter() {
+            rem_bytes += (entry.key().len() + entry.value().value.len() + std::mem::size_of::<L1Entry>()) as u64;
+        }
+        APPROX_MEMORY_BYTES.store(rem_bytes, Ordering::Relaxed);
         if let Some(conn) = L2_CONN.get() {
             let _ = conn.execute("DELETE FROM cache_aof WHERE key NOT LIKE 'rl:%' AND key NOT LIKE 'ticket:revoked:%' AND key NOT LIKE 'ban:%'", ()).await;
         }
@@ -329,8 +346,14 @@ impl CacheEngine {
 
     /// Resets rate-limiting and penalty counters for a specific IP address in L1 memory.
     pub fn reset_ip_rate_limit(ip: &str) {
-        L1_CACHE.remove(&format!("rl:ip:{}", ip));
-        L1_CACHE.remove(&format!("penalty:{}", ip));
+        if let Some((_, entry)) = L1_CACHE.remove(&format!("rl:ip:{}", ip)) {
+            let sz = (format!("rl:ip:{}", ip).len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+            APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+        }
+        if let Some((_, entry)) = L1_CACHE.remove(&format!("penalty:{}", ip)) {
+            let sz = (format!("penalty:{}", ip).len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+            APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+        }
     }
 
     /// Resets all active request rate-limiting and penalty counters from L1 memory.
@@ -343,27 +366,33 @@ impl CacheEngine {
 
     /// Invalidates all entries matching a specific prefix from L1 memory.
     pub fn invalidate_prefix(prefix: &str) {
-        L1_CACHE.retain(|k, _| !k.starts_with(prefix));
+        let mut freed_bytes = 0u64;
+        L1_CACHE.retain(|k, entry| {
+            if k.starts_with(prefix) {
+                freed_bytes += (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+                false
+            } else {
+                true
+            }
+        });
+        if freed_bytes > 0 {
+            APPROX_MEMORY_BYTES.fetch_sub(freed_bytes.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+        }
     }
 
     /// Hard wipe of all entries across L1 and L2 regardless of namespace.
     pub async fn flush_all() {
         L1_CACHE.clear();
+        APPROX_MEMORY_BYTES.store(0, Ordering::Relaxed);
         if let Some(conn) = L2_CONN.get() {
             let _ = conn.execute("DELETE FROM cache_aof", ()).await;
         }
     }
 
-    /// Gathers atomic performance counters and memory estimates.
+    /// Gathers atomic performance counters and memory estimates in O(1).
     pub fn stats() -> CacheStatsSnapshot {
         let entries_count = L1_CACHE.len();
-        // Approximate memory: sum of key lengths and byte buffer sizes
-        let mut memory_bytes = 0;
-        for entry in L1_CACHE.iter() {
-            memory_bytes +=
-                entry.key().len() + entry.value().value.len() + std::mem::size_of::<L1Entry>();
-        }
-
+        let memory_bytes = APPROX_MEMORY_BYTES.load(Ordering::Relaxed) as usize;
         STATS.snapshot(entries_count, memory_bytes)
     }
 
@@ -371,8 +400,24 @@ impl CacheEngine {
     /// CONTRACT:
     ///  - Side effects: Retains only unexpired items in DashMap and executes batch DELETE on SQLite.
     pub async fn sweep_expired() {
+        if L1_CACHE.is_empty() && L2_CONN.get().is_none() {
+            return;
+        }
         let now = current_unix_secs();
-        L1_CACHE.retain(|_, entry| entry.expires_at > now);
+        if !L1_CACHE.is_empty() {
+            let mut freed_bytes = 0u64;
+            L1_CACHE.retain(|k, entry| {
+                if entry.expires_at > now {
+                    true
+                } else {
+                    freed_bytes += (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+                    false
+                }
+            });
+            if freed_bytes > 0 {
+                APPROX_MEMORY_BYTES.fetch_sub(freed_bytes.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+            }
+        }
 
         if let Some(conn) = L2_CONN.get() {
             let _ = conn
@@ -531,8 +576,10 @@ impl CacheEngine {
     ///  5. Atomically increments eviction counter in CacheStats.
     fn evict_if_needed() {
         let max = MAX_L1_ENTRIES.load(Ordering::Relaxed) as usize;
+        let max_bytes = MAX_MEMORY_BYTES.load(Ordering::Relaxed);
         let current_len = L1_CACHE.len();
-        if current_len >= max {
+        let current_bytes = APPROX_MEMORY_BYTES.load(Ordering::Relaxed);
+        if current_len >= max || current_bytes >= max_bytes {
             let mut sample: Vec<(String, u64)> = Vec::with_capacity(64);
 
             if current_len <= 64 {
@@ -576,7 +623,9 @@ impl CacheEngine {
                     (current_len.saturating_sub(max) + 1).max(if max > 64 { 8 } else { 1 });
                 let to_evict = target_evictions.min(sample.len()).min(current_len);
                 for (k, _) in sample.into_iter().take(to_evict) {
-                    if L1_CACHE.remove(&k).is_some() {
+                    if let Some((_, entry)) = L1_CACHE.remove(&k) {
+                        let sz = (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+                        APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
                         STATS.evictions.fetch_add(1, Ordering::Relaxed);
                     }
                 }

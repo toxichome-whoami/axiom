@@ -44,6 +44,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             workers = w;
         }
     }
+    // Adaptive worker thread sizing: clamp default to [2, 8] to avoid thread/stack bloat on large machines
+    if workers == 0 {
+        let available = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2);
+        workers = available.clamp(2, 8);
+    }
     let rt = if workers == 1 {
         let mut builder = tokio::runtime::Builder::new_current_thread();
         builder.enable_all();
@@ -52,9 +59,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         let mut builder = tokio::runtime::Builder::new_multi_thread();
         builder.enable_all();
-        if workers > 1 {
-            builder.worker_threads(workers);
-        }
+        builder.worker_threads(workers);
+        // Cap blocking thread pool to 32 (Tokio default is 512) to conserve OS thread handles and stacks
+        builder.max_blocking_threads(32);
         builder.build()?
     };
     rt.block_on(async {

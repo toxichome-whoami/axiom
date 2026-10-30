@@ -85,8 +85,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let _ = socket.set_reuse_port(true);
     socket.set_nonblocking(true)?;
     socket.set_nodelay(true)?;
-    let _ = socket.set_recv_buffer_size(1024 * 1024);
-    let _ = socket.set_send_buffer_size(1024 * 1024);
+    // Allow OS dynamic TCP buffer auto-tuning rather than hardcoding 1MB pins to conserve kernel RAM
     socket.bind(&addr.into())?;
     socket.listen(1024)?;
 

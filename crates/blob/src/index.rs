@@ -49,7 +49,11 @@ impl BlobIndex {
     ///  - Returns `BlobIndex` with `meta`, `content`, `inline`, `namespaces`, and `uploads` keyspaces ready.
     ///  - Idempotent: Yes.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, BlobError> {
-        let db = Database::builder(path.as_ref()).open()?;
+        let db = Database::builder(path.as_ref())
+            .cache_size(16 * 1024 * 1024)
+            .worker_threads(1)
+            .max_cached_files(Some(64))
+            .open()?;
 
         let meta_keyspace = db.keyspace("meta", KeyspaceCreateOptions::default)?;
         let content_keyspace = db.keyspace("content", KeyspaceCreateOptions::default)?;
