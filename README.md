@@ -7,7 +7,7 @@
 **Put a secure REST API & MCP layer between your applications and SQL databases.**  
 Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · ~16–24 MB Idle RSS
 
-[![Version](https://img.shields.io/badge/version-0.1.22-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.23-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](./LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
@@ -66,7 +66,7 @@ irm https://raw.githubusercontent.com/toxichome-whoami/axiom/main/install.ps1 | 
 **Docker:**
 
 ```bash
-docker run -d -p 4500:4500 -v axiom-data:/app/data --name axiom ghcr.io/toxichome-whoami/axiom:0.1.22
+docker run -d -p 4500:4500 -v axiom-data:/app/data --name axiom ghcr.io/toxichome-whoami/axiom:0.1.23
 ```
 
 ### 2. Launch the Gateway

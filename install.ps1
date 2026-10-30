@@ -13,7 +13,7 @@ if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
 }
 
 Write-Host "==> Detecting latest release of Axiom..." -ForegroundColor Cyan
-$LatestTag = "v0.1.22"
+$LatestTag = "v0.1.23"
 try {
     $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -TimeoutSec 5
     if ($Release.tag_name) {
