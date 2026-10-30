@@ -855,6 +855,7 @@ export function AuditLog() {
       <DataTable
         columns={activeColumns}
         data={filteredRecords}
+        keyExtractor={(item) => String(item.id)}
         isLoading={isLoading}
         ariaLabel="Control Plane Audit Trail"
         emptyMessage="No audit log records found matching your filters."

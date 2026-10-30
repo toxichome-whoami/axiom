@@ -351,7 +351,6 @@ export function Keys() {
 
   const isCreateDirty = Boolean(
     newName.trim().length > 0 ||
-    newRole.trim().length > 0 ||
     newExpiresAt !== null ||
     newRateLimit !== 1000,
   );
@@ -1016,7 +1015,7 @@ export function Keys() {
         title="Generate Machine API Key"
         subtitle="Issue an authorized cryptographic credential with attached RBAC role"
       >
-        <div className="flex-1 p-5 pb-36 overflow-y-auto space-y-4">
+        <div className="flex-1 p-5 overflow-y-auto space-y-4">
           {createdSecret ? (
             <div className="space-y-4">
               <div className="rounded-lg border border-[#30a46c]/30 bg-[#30a46c]/10 p-4 space-y-2">

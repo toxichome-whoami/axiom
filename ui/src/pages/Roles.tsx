@@ -23,7 +23,6 @@ import {
   Database,
   HardDrive,
   Trash2,
-  Sparkles,
   Package,
 } from "lucide-react";
 import {
@@ -52,76 +51,6 @@ export interface RoleBlobRule {
 
 const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE"] as const;
 const BLOB_OPERATIONS = ["READ", "WRITE", "DELETE"] as const;
-
-interface RolePreset {
-  label: string;
-  name: string;
-  description: string;
-  dbRules: RoleDatabaseRule[];
-  blobRules: RoleBlobRule[];
-}
-
-const ROLE_PRESETS: RolePreset[] = [
-  {
-    label: "DB Read-Only",
-    name: "db_readonly",
-    description: "Read-only SELECT access across all relational databases",
-    dbRules: [
-      {
-        database: "*",
-        table_name: "*",
-        operations: ["SELECT"],
-        rls_filter: "",
-      },
-    ],
-    blobRules: [],
-  },
-  {
-    label: "DB Read-Write",
-    name: "db_readwrite",
-    description: "Full CRUD mutations across all relational databases",
-    dbRules: [
-      {
-        database: "*",
-        table_name: "*",
-        operations: ["SELECT", "INSERT", "UPDATE", "DELETE"],
-        rls_filter: "",
-      },
-    ],
-    blobRules: [],
-  },
-  {
-    label: "Blob Read-Only",
-    name: "blob_viewer",
-    description:
-      "Download, range stream, and view objects across all blob namespaces",
-    dbRules: [],
-    blobRules: [{ namespace: "*", operations: ["READ"] }],
-  },
-  {
-    label: "Blob Full Access",
-    name: "blob_manager",
-    description:
-      "Upload, multipart, range stream, and delete blob storage objects",
-    dbRules: [],
-    blobRules: [{ namespace: "*", operations: ["READ", "WRITE", "DELETE"] }],
-  },
-  {
-    label: "Universal Admin",
-    name: "universal_admin",
-    description:
-      "Full administrative access to both SQL databases and native blob storage",
-    dbRules: [
-      {
-        database: "*",
-        table_name: "*",
-        operations: ["SELECT", "INSERT", "UPDATE", "DELETE"],
-        rls_filter: "",
-      },
-    ],
-    blobRules: [{ namespace: "*", operations: ["READ", "WRITE", "DELETE"] }],
-  },
-];
 
 function isBlobPermission(database: string, operations: string[]): boolean {
   if (database.toLowerCase().startsWith("blob:")) return true;
@@ -1789,41 +1718,6 @@ export function Roles() {
             <p className="text-[13px] text-[#8c8c8c] mt-0.5">
               Specify role identifier, description, and permission grant rules.
             </p>
-          </div>
-
-          {/* Quick Role Templates */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[12px] font-medium text-[#a3a3a3]">
-              <Sparkles className="w-3.5 h-3.5 text-[#8c8c8c]" />
-              <span>Quick Role Presets</span>
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ROLE_PRESETS.map((preset) => (
-                <button
-                  key={preset.name}
-                  type="button"
-                  onClick={() => {
-                    if (!newRoleName.trim()) setNewRoleName(preset.name);
-                    if (!newRoleDesc.trim()) setNewRoleDesc(preset.description);
-                    setNewDbRules(
-                      preset.dbRules.map((r) => ({
-                        ...r,
-                        operations: [...r.operations],
-                      })),
-                    );
-                    setNewBlobRules(
-                      preset.blobRules.map((r) => ({
-                        ...r,
-                        operations: [...r.operations],
-                      })),
-                    );
-                  }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-[12px] font-medium bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] text-[#cccccc] hover:text-white transition-colors cursor-pointer touch-manipulation font-sans"
-                >
-                  <span>{preset.label}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="space-y-4">
