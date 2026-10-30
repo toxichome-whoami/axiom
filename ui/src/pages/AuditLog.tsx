@@ -24,7 +24,6 @@ import {
   Copy,
   AlertTriangle,
   ChevronDown,
-  Eye,
 } from "lucide-react";
 import { api, AuditRecordApi } from "../api/client";
 import { FilterRule, matchesRule } from "../utils/filters";
@@ -467,10 +466,9 @@ export function AuditLog() {
           <button
             type="button"
             onClick={() => setSelectedRecord(row)}
-            className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+            className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
             title="Inspect audit event details"
           >
-            <Eye className="w-3.5 h-3.5" />
             Inspect
           </button>
         </div>
