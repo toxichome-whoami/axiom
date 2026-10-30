@@ -6,7 +6,7 @@
 
 **Sub-Microsecond Hot Paths · Zero-Lock Snapshots · Constant-Time Auth**
 
-[![Version](https://img.shields.io/badge/version-0.1.20%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.22-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Criterion](https://img.shields.io/badge/criterion.rs-0.5-111827.svg?style=flat-square)](https://bheisler.github.io/criterion.rs/book/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
@@ -144,6 +144,19 @@ End-to-end request/response latency through the Axum router, WAF, authentication
 | `http_pipeline/get_health_endpoint`          | `< 50 µs`      | **18.0 µs** (0.018 ms) | `[17.78 µs ... 18.31 µs]` |
 | `http_pipeline/unauthorized_admin_rejection` | `< 50 µs`      | **19.7 µs** (0.020 ms) | `[19.46 µs ... 20.01 µs]` |
 | `http_pipeline/unauthorized_blob_rejection`  | `< 50 µs`      | **22.5 µs** (0.023 ms) | `[21.87 µs ... 23.38 µs]` |
+
+### 5.1 Admin Control Plane Throughput & Latency
+
+Measured across 500 requests per endpoint on release binary with an active administrative session:
+
+| Endpoint | Throughput (RPS) | Mean Latency | P50 Latency | P99 Latency | Storage Mode |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `GET /admin/v1/status` | **6,731.4** | **0.139 ms** | **0.133 ms** | **0.241 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/keys` | **6,786.1** | **0.145 ms** | **0.138 ms** | **0.232 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/databases` | **6,714.2** | **0.146 ms** | **0.139 ms** | **0.245 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/roles` | **6,777.5** | **0.145 ms** | **0.138 ms** | **0.217 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/auth/me` | **3,896.7** | **0.253 ms** | **0.224 ms** | **0.313 ms** | L1 cache memoized |
+| `GET /admin/v1/audit?limit=10` | **3,812.1** | **0.260 ms** | **0.247 ms** | **0.345 ms** | Fast cursor pagination |
 
 ## 6. Architectural Comparison
 

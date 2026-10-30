@@ -6,7 +6,7 @@
 
 **Single Binary Gateway · Immutable Startup Configuration · Lock-Free Arc Access**
 
-[![Version](https://img.shields.io/badge/version-0.1.22%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.22-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
@@ -126,7 +126,7 @@ Every module, key, and default. Copy what you need; omitted keys fall back to de
 [server]
 host = "127.0.0.1"                 # TCP interface to bind
 port = 4500                        # TCP port for HTTP traffic
-workers = 0                        # Tokio worker threads (0 = auto-detect CPU cores)
+workers = 0                        # Tokio worker threads (0 = adaptively clamps between 2 and 8)
 max_connections = 10000            # Ceiling for simultaneous TCP sockets
 request_timeout = 30               # Global request timeout (seconds)
 body_limit = "10mb"                # Max single HTTP request payload
@@ -209,7 +209,7 @@ verify_reads = false               # Recompute BLAKE3 on every read
 | ------------------ | ----------- | ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------ |
 | `host`             | string      | `"127.0.0.1"`          | IPv4 or IPv6          | Interface to bind. `"0.0.0.0"` listens on all interfaces.                                              |
 | `port`             | integer     | `4500`                 | `1`–`65535`           | HTTP listen port.                                                                                      |
-| `workers`          | integer     | `0`                    | `0`–`256`             | Tokio worker threads. `0` = one per logical CPU.                                                       |
+| `workers`          | integer     | `0`                    | `0`–`256`             | Tokio worker threads. `0` = adaptively clamps available cores to `[2, 8]` to conserve thread stack memory. Explicit integer `N` is honored. |
 | `max_connections`  | integer     | `10000`                | `100`–`100000`        | Concurrent TCP connection ceiling.                                                                     |
 | `request_timeout`  | integer (s) | `30`                   | `1`–`300`             | Cancels requests that run longer than this.                                                            |
 | `body_limit`       | size        | `"10mb"`               | e.g. `"2mb"`, `"1gb"` | Max request body, enforced by the WAF.                                                                 |
@@ -267,7 +267,7 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 | `backend`            | string      | `"memory"`             | `memory`, `hybrid` | `hybrid` adds an L2 disk tier behind the L1 RAM cache. |
 | `turso_url`          | string      | `"file:data/cache.db"` | path or LibSQL URL | L2 location when `backend = "hybrid"`.                 |
 | `turso_token`        | string      | `""`                   |                    | Auth token for a remote L2 instance.                   |
-| `max_memory`         | size        | `"100mb"`              | e.g. `"512mb"`     | L1 memory ceiling.                                     |
+| `max_memory`         | size        | `"100mb"`              | e.g. `"50mb"`, `"512mb"` | L1 memory ceiling (actively enforced via sampled LRU eviction).        |
 | `default_ttl`        | integer (s) | `60`                   | `1`–`86400`        | Default lifetime for general items.                    |
 | `query_cache`        | bool        | `true`                 |                    | Cache SELECT results and parsed ASTs.                  |
 | `idempotency_ttl`    | integer (s) | `86400`                | `60`–`604800`      | How long `Idempotency-Key` responses are replayable.   |

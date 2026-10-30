@@ -5,7 +5,7 @@
 ### High-Performance Database Access Gateway & Object Engine, Written in Rust
 
 **Put a secure REST API & MCP layer between your applications and SQL databases.**  
-Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · Sub-10MB RAM Footprint
+Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · ~16–24 MB Idle RSS
 
 [![Version](https://img.shields.io/badge/version-0.1.22-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
@@ -31,7 +31,7 @@ Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · Sub-10MB RAM Fo
 - **Content-Addressed Blob Storage**: Native BLAKE3-deduplicated object storage backed by a two-tier LSM engine (Fjall + direct disk shards) with pre-signed capability tickets.
 - **Built-in Model Context Protocol (MCP)**: Governed tool and resource access (`/mcp/v1`) for AI coding agents like Claude Code, Cursor, Windsurf, and Copilot.
 - **Zero-Lock Hot Path**: Authentication and RBAC evaluated in **sub-microsecond** time via `ArcSwap` memory snapshots, eliminating database lock contention.
-- **Single Portable Binary**: Everything runs in one sub-15MB executable (<10MB idle RAM) with an embedded Web UI, high-speed pure Cargo build, and P2P cluster mesh.
+- **Single Portable Binary**: Everything runs in one sub-15MB executable (~16–24 MB idle RAM) with an embedded Web UI, pure Cargo build, and P2P cluster mesh.
 
 ## Supported Databases
 
@@ -159,7 +159,7 @@ flowchart LR
         A3["Admin UI & CLI"]
     end
 
-    subgraph Axiom["Axiom Gateway (Single Binary, <10MB RAM)"]
+    subgraph Axiom["Axiom Gateway (Single Binary, ~20MB RAM)"]
         WAF["WAF & Rate Limiter"]
         AUTH["Zero-Lock RBAC (ArcSwap)"]
         SQL["SQL AST Engine & L1 Cache"]
