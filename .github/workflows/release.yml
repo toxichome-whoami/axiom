@@ -86,14 +86,14 @@ jobs:
             archive: tar.gz
 
           # macOS Intel (cross-compiled from the Apple Silicon runner)
-          - os: macos-14
+          - os: macos-15
             target: x86_64-apple-darwin
             platform: darwin_amd64
             bin: axiom
             archive: tar.gz
 
           # macOS Apple Silicon
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             platform: darwin_arm64
             bin: axiom
