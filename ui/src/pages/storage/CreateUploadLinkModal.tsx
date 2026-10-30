@@ -169,7 +169,6 @@ export function CreateUploadLinkModal({
     }
   };
 
-
   const handleConfirmDelete = async () => {
     if (!ticketToDelete) return;
     const signature = ticketToDelete.signature;

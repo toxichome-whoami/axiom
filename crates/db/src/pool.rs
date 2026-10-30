@@ -48,7 +48,7 @@ impl DatabasePoolManager {
             .map(|n| n.get())
             .unwrap_or(2) as i32
             * 2)
-            .clamp(4, 32);
+        .clamp(4, 32);
         // Strictly honor configured pool_max if specified (> 0) to avoid socket/memory bloat;
         // fall back to adaptive default only when unspecified or <= 0.
         let pool_max = if snap_db.pool_max > 0 {

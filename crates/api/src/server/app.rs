@@ -96,7 +96,10 @@ struct FastRequestId;
 static REQ_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl tower_http::request_id::MakeRequestId for FastRequestId {
-    fn make_request_id<B>(&mut self, _request: &axum::http::Request<B>) -> Option<tower_http::request_id::RequestId> {
+    fn make_request_id<B>(
+        &mut self,
+        _request: &axum::http::Request<B>,
+    ) -> Option<tower_http::request_id::RequestId> {
         let id = REQ_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut buf = [0u8; 20];
         let mut n = id;
@@ -117,7 +120,9 @@ impl tower_http::request_id::MakeRequestId for FastRequestId {
             }
             len = tlen;
         }
-        axum::http::HeaderValue::from_bytes(&buf[..len]).ok().map(tower_http::request_id::RequestId::new)
+        axum::http::HeaderValue::from_bytes(&buf[..len])
+            .ok()
+            .map(tower_http::request_id::RequestId::new)
     }
 }
 

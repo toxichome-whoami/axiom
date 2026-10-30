@@ -288,7 +288,8 @@ impl CacheEngine {
             && matches!(
                 durability,
                 Durability::Journaled | Durability::Snapshot | Durability::JournaledAndSnapshot
-            ) {
+            )
+        {
             if let Some(conn) = L2_CONN.get() {
                 let key_owned = key.to_string();
                 let val_vec = value.to_vec();
@@ -318,7 +319,10 @@ impl CacheEngine {
     pub async fn delete(key: &str) {
         if let Some((_, entry)) = L1_CACHE.remove(key) {
             let sz = (key.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
-            APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+            APPROX_MEMORY_BYTES.fetch_sub(
+                sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)),
+                Ordering::Relaxed,
+            );
         }
         if let Some(conn) = L2_CONN.get() {
             let _ = conn
@@ -336,7 +340,9 @@ impl CacheEngine {
         });
         let mut rem_bytes = 0u64;
         for entry in L1_CACHE.iter() {
-            rem_bytes += (entry.key().len() + entry.value().value.len() + std::mem::size_of::<L1Entry>()) as u64;
+            rem_bytes += (entry.key().len()
+                + entry.value().value.len()
+                + std::mem::size_of::<L1Entry>()) as u64;
         }
         APPROX_MEMORY_BYTES.store(rem_bytes, Ordering::Relaxed);
         if let Some(conn) = L2_CONN.get() {
@@ -347,12 +353,22 @@ impl CacheEngine {
     /// Resets rate-limiting and penalty counters for a specific IP address in L1 memory.
     pub fn reset_ip_rate_limit(ip: &str) {
         if let Some((_, entry)) = L1_CACHE.remove(&format!("rl:ip:{}", ip)) {
-            let sz = (format!("rl:ip:{}", ip).len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
-            APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+            let sz = (format!("rl:ip:{}", ip).len()
+                + entry.value.len()
+                + std::mem::size_of::<L1Entry>()) as u64;
+            APPROX_MEMORY_BYTES.fetch_sub(
+                sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)),
+                Ordering::Relaxed,
+            );
         }
         if let Some((_, entry)) = L1_CACHE.remove(&format!("penalty:{}", ip)) {
-            let sz = (format!("penalty:{}", ip).len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
-            APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+            let sz = (format!("penalty:{}", ip).len()
+                + entry.value.len()
+                + std::mem::size_of::<L1Entry>()) as u64;
+            APPROX_MEMORY_BYTES.fetch_sub(
+                sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)),
+                Ordering::Relaxed,
+            );
         }
     }
 
@@ -369,14 +385,18 @@ impl CacheEngine {
         let mut freed_bytes = 0u64;
         L1_CACHE.retain(|k, entry| {
             if k.starts_with(prefix) {
-                freed_bytes += (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+                freed_bytes +=
+                    (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
                 false
             } else {
                 true
             }
         });
         if freed_bytes > 0 {
-            APPROX_MEMORY_BYTES.fetch_sub(freed_bytes.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+            APPROX_MEMORY_BYTES.fetch_sub(
+                freed_bytes.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)),
+                Ordering::Relaxed,
+            );
         }
     }
 
@@ -410,12 +430,16 @@ impl CacheEngine {
                 if entry.expires_at > now {
                     true
                 } else {
-                    freed_bytes += (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+                    freed_bytes +=
+                        (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
                     false
                 }
             });
             if freed_bytes > 0 {
-                APPROX_MEMORY_BYTES.fetch_sub(freed_bytes.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+                APPROX_MEMORY_BYTES.fetch_sub(
+                    freed_bytes.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)),
+                    Ordering::Relaxed,
+                );
             }
         }
 
@@ -624,8 +648,12 @@ impl CacheEngine {
                 let to_evict = target_evictions.min(sample.len()).min(current_len);
                 for (k, _) in sample.into_iter().take(to_evict) {
                     if let Some((_, entry)) = L1_CACHE.remove(&k) {
-                        let sz = (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
-                        APPROX_MEMORY_BYTES.fetch_sub(sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)), Ordering::Relaxed);
+                        let sz =
+                            (k.len() + entry.value.len() + std::mem::size_of::<L1Entry>()) as u64;
+                        APPROX_MEMORY_BYTES.fetch_sub(
+                            sz.min(APPROX_MEMORY_BYTES.load(Ordering::Relaxed)),
+                            Ordering::Relaxed,
+                        );
                         STATS.evictions.fetch_add(1, Ordering::Relaxed);
                     }
                 }

@@ -216,7 +216,6 @@ export function ShareTicketModal({
     }
   };
 
-
   const handleConfirmDelete = async () => {
     if (!ticketToDelete) return;
     const sig = ticketToDelete.signature;

@@ -3523,7 +3523,10 @@ async fn test_blob_ticket_immediate_deletion_enforcement_read_and_write() {
     let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
     let write_tkt_json: Value = serde_json::from_slice(&body).unwrap();
     let write_url = write_tkt_json["data"]["url"].as_str().unwrap().to_string();
-    let write_sig = write_tkt_json["data"]["signature"].as_str().unwrap().to_string();
+    let write_sig = write_tkt_json["data"]["signature"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // 11. Upload with WRITE capability ticket: MUST succeed
     let write_payload = "Client uploaded data via valid ticket";

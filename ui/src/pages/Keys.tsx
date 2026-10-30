@@ -350,9 +350,7 @@ export function Keys() {
   );
 
   const isCreateDirty = Boolean(
-    newName.trim().length > 0 ||
-    newExpiresAt !== null ||
-    newRateLimit !== 1000,
+    newName.trim().length > 0 || newExpiresAt !== null || newRateLimit !== 1000,
   );
 
   function requestCloseCreate() {

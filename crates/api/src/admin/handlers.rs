@@ -349,7 +349,11 @@ pub async fn get_status(
         "error": Value::Null
     });
     let bytes = serde_json::to_vec(&envelope).map_err(|e| {
-        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+        AxiomError::new(
+            "SERIALIZATION_FAILED",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
     })?;
 
     axum::response::Response::builder()
@@ -357,7 +361,13 @@ pub async fn get_status(
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
         .body(axum::body::Body::from(bytes))
-        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "HTTP_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 /// Triggers an immediate reload and publication of the metadata snapshot from SQLite.
@@ -422,7 +432,11 @@ pub async fn list_keys(
             created_at: k.created_at,
         })
         .collect();
-    keys.sort_by(|a, b| b.created_at.cmp(&a.created_at).then_with(|| a.name.cmp(&b.name)));
+    keys.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| a.name.cmp(&b.name))
+    });
 
     let envelope = json!({
         "success": true,
@@ -432,7 +446,11 @@ pub async fn list_keys(
         "error": Value::Null
     });
     let bytes = serde_json::to_vec(&envelope).map_err(|e| {
-        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+        AxiomError::new(
+            "SERIALIZATION_FAILED",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
     })?;
 
     axum::response::Response::builder()
@@ -440,7 +458,13 @@ pub async fn list_keys(
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
         .body(axum::body::Body::from(bytes))
-        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "HTTP_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 /// Generates a new API key, stores its BLAKE3 hash, and returns the single-use plaintext token.
@@ -959,7 +983,11 @@ pub async fn list_roles(
         "error": Value::Null
     });
     let bytes = serde_json::to_vec(&envelope).map_err(|e| {
-        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+        AxiomError::new(
+            "SERIALIZATION_FAILED",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
     })?;
 
     axum::response::Response::builder()
@@ -967,7 +995,13 @@ pub async fn list_roles(
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
         .body(axum::body::Body::from(bytes))
-        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "HTTP_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 /// Creates a new role and defines its initial permission grants.
@@ -1183,7 +1217,9 @@ pub async fn get_audit_log(
         let more = logs.len() == limit;
         (0i64, more)
     } else {
-        let count = MetadataStore::count_audit_log(search_term).await.unwrap_or(0);
+        let count = MetadataStore::count_audit_log(search_term)
+            .await
+            .unwrap_or(0);
         let more = offset + logs.len() < count as usize;
         (count, more)
     };
@@ -1923,14 +1959,24 @@ pub async fn get_me_handler(
                 "error": Value::Null
             });
             let bytes = serde_json::to_vec(&envelope).map_err(|e| {
-                AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+                AxiomError::new(
+                    "SERIALIZATION_FAILED",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
             })?;
             return axum::response::Response::builder()
                 .status(StatusCode::OK)
                 .header(axum::http::header::CONTENT_TYPE, "application/json")
                 .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
                 .body(axum::body::Body::from(bytes))
-                .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+                .map_err(|e| {
+                    AxiomError::new(
+                        "HTTP_ERROR",
+                        &e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                });
         }
     }
 
@@ -1957,7 +2003,11 @@ pub async fn get_me_handler(
         "error": Value::Null
     });
     let bytes = serde_json::to_vec(&envelope).map_err(|e| {
-        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+        AxiomError::new(
+            "SERIALIZATION_FAILED",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
     })?;
 
     axum::response::Response::builder()
@@ -1965,7 +2015,13 @@ pub async fn get_me_handler(
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
         .body(axum::body::Body::from(bytes))
-        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "HTTP_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 /// Revokes an active administrative session.

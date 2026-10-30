@@ -424,10 +424,7 @@ impl BlobEngine {
     ///  - Returns `BlobError::NotFound` if missing.
     ///  - If `verify_reads` is enabled, validates BLAKE3 hash for inline payload before returning.
     /// Retrieves payload data for an already-resolved BlobMetadata, avoiding redundant index lookups.
-    pub async fn get_data_for_meta(
-        &self,
-        meta: &BlobMetadata,
-    ) -> Result<BlobData, BlobError> {
+    pub async fn get_data_for_meta(&self, meta: &BlobMetadata) -> Result<BlobData, BlobError> {
         if meta.inline {
             let bytes_vec =
                 self.index
