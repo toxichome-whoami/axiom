@@ -257,6 +257,13 @@ pub async fn get_blob_handler(
     let last_modified =
         chrono::DateTime::from_timestamp(meta.created_at, 0).map(|dt| dt.to_rfc2822());
 
+    let is_ticket_auth = auth.role.as_deref() == Some("ticket")
+        || auth.api_key_name.starts_with("ticket:")
+        || raw_query
+            .as_deref()
+            .map(|q| q.contains("ticket_sig="))
+            .unwrap_or(false);
+
     // 2. Conditional GET: check If-None-Match for cache revalidation
     if let Some(inm) = headers
         .get(header::IF_NONE_MATCH)
@@ -266,6 +273,12 @@ pub async fn get_blob_handler(
             let mut res_builder = Response::builder()
                 .status(StatusCode::NOT_MODIFIED)
                 .header(header::ETAG, &etag_val);
+            if is_ticket_auth {
+                res_builder = res_builder
+                    .header(header::CACHE_CONTROL, "private, no-cache, no-store, must-revalidate, max-age=0")
+                    .header(header::PRAGMA, "no-cache")
+                    .header(header::EXPIRES, "0");
+            }
             if let Some(ref lm) = last_modified {
                 res_builder = res_builder.header(header::LAST_MODIFIED, lm.as_str());
             }
@@ -289,6 +302,12 @@ pub async fn get_blob_handler(
                 let mut res_builder = Response::builder()
                     .status(StatusCode::NOT_MODIFIED)
                     .header(header::ETAG, &etag_val);
+                if is_ticket_auth {
+                    res_builder = res_builder
+                        .header(header::CACHE_CONTROL, "private, no-cache, no-store, must-revalidate, max-age=0")
+                        .header(header::PRAGMA, "no-cache")
+                        .header(header::EXPIRES, "0");
+                }
                 if let Some(ref lm) = last_modified {
                     res_builder = res_builder.header(header::LAST_MODIFIED, lm.as_str());
                 }
@@ -339,7 +358,9 @@ pub async fn get_blob_handler(
         format!("attachment; filename=\"{}\"", safe_filename)
     };
 
-    let cache_control = if is_media {
+    let cache_control = if is_ticket_auth {
+        "private, no-cache, no-store, must-revalidate, max-age=0"
+    } else if is_media {
         "public, max-age=86400, stale-while-revalidate=604800"
     } else {
         "public, max-age=3600, must-revalidate"
@@ -466,6 +487,12 @@ pub async fn get_blob_handler(
                 },
             );
 
+        if is_ticket_auth {
+            response_builder = response_builder
+                .header(header::PRAGMA, "no-cache")
+                .header(header::EXPIRES, "0");
+        }
+
         if let Some(ref lm) = last_modified {
             response_builder = response_builder.header(header::LAST_MODIFIED, lm.as_str());
         }
@@ -516,6 +543,12 @@ pub async fn get_blob_handler(
             },
         );
 
+    if is_ticket_auth {
+        response_builder = response_builder
+            .header(header::PRAGMA, "no-cache")
+            .header(header::EXPIRES, "0");
+    }
+
     if let Some(ref lm) = last_modified {
         response_builder = response_builder.header(header::LAST_MODIFIED, lm.as_str());
     }
@@ -549,12 +582,20 @@ pub async fn get_blob_handler(
 /// Retrieves metadata only for a blob.
 pub async fn head_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
+    RawQuery(raw_query): RawQuery,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<Response, AxiomError> {
     PolicyEngine::evaluate_blob(&auth, &namespace, &key, "READ")?;
 
     let engine = get_blob_engine()?;
     let meta = engine.head(&namespace, &key).map_err(map_blob_error)?;
+
+    let is_ticket_auth = auth.role.as_deref() == Some("ticket")
+        || auth.api_key_name.starts_with("ticket:")
+        || raw_query
+            .as_deref()
+            .map(|q| q.contains("ticket_sig="))
+            .unwrap_or(false);
 
     let filename = key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
     let safe_filename: String = filename
@@ -563,21 +604,34 @@ pub async fn head_blob_handler(
         .collect();
     let disposition = format!("attachment; filename=\"{}\"", safe_filename);
 
-    Response::builder()
+    let cache_control = if is_ticket_auth {
+        "private, no-cache, no-store, must-revalidate, max-age=0"
+    } else {
+        "public, max-age=3600, must-revalidate"
+    };
+
+    let mut builder = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, meta.content_type)
         .header(header::CONTENT_LENGTH, meta.size.to_string())
         .header(header::ETAG, format!("\"{}\"", meta.hash))
+        .header(header::CACHE_CONTROL, cache_control)
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .header(header::CONTENT_DISPOSITION, disposition)
-        .body(Body::empty())
-        .map_err(|e| {
-            AxiomError::new(
-                "RESPONSE_BUILD_FAILED",
-                &e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })
+        .header(header::CONTENT_DISPOSITION, disposition);
+
+    if is_ticket_auth {
+        builder = builder
+            .header(header::PRAGMA, "no-cache")
+            .header(header::EXPIRES, "0");
+    }
+
+    builder.body(Body::empty()).map_err(|e| {
+        AxiomError::new(
+            "RESPONSE_BUILD_FAILED",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })
 }
 
 /// Deletes a blob from storage.

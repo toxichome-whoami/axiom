@@ -3378,6 +3378,177 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+
+    // Verify immediate access rejection after deletion
+    let req = Request::get(format!(
+        "/api/v1/blobs/objects/{}/report.pdf?ticket_sig={}&ticket_exp=9999999999",
+        ns_name, sig
+    ))
+    .body(Body::empty())
+    .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_blob_ticket_immediate_deletion_enforcement_read_and_write() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let admin_session = format!("Bearer {}", get_test_admin_session().await);
+
+    let ns_name = "ticket-sec-test";
+
+    // 1. Create a private namespace
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", &admin_session)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns_name,
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let _ = create_app().oneshot(req).await.unwrap();
+
+    // 2. Upload test blob
+    let test_key = "secure_doc.txt";
+    let test_content = "Confidential payload for ticket security verification";
+    let req = Request::put(format!("/api/v1/blobs/objects/{}/{}", ns_name, test_key))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "text/plain")
+        .body(Body::from(test_content))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert!(res.status().is_success());
+
+    // 3. Mint READ capability ticket
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": test_key,
+                "operation": "READ",
+                "ttl_seconds": 3600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let tkt_json: Value = serde_json::from_slice(&body).unwrap();
+    let read_url = tkt_json["data"]["url"].as_str().unwrap().to_string();
+    let read_sig = tkt_json["data"]["signature"].as_str().unwrap().to_string();
+
+    // 4. Access GET using READ ticket: must succeed and return no-store cache headers
+    let req = Request::get(&read_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let cc_header = res
+        .headers()
+        .get("cache-control")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        cc_header.contains("no-store") && cc_header.contains("no-cache"),
+        "Capability ticket response must enforce no-store/no-cache headers to prevent browser caching: got {}",
+        cc_header
+    );
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert_eq!(body, test_content.as_bytes());
+
+    // 5. Access HEAD using READ ticket: must succeed and return no-store
+    let req = Request::head(&read_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let head_cc = res
+        .headers()
+        .get("cache-control")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        head_cc.contains("no-store"),
+        "HEAD response for capability ticket must contain no-store: got {}",
+        head_cc
+    );
+
+    // 6. Delete the READ ticket
+    let req = Request::delete(format!("/api/v1/blobs/tickets/{}/{}", ns_name, read_sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 7. Immediate GET with deleted ticket: MUST return 403 Forbidden
+    let req = Request::get(&read_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 8. Immediate HEAD with deleted ticket: MUST return 403 Forbidden
+    let req = Request::head(&read_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 9. Immediate GET even with ambient admin session: MUST still return 403 Forbidden
+    let req = Request::get(&read_url)
+        .header("Authorization", &admin_session)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 10. Mint WRITE upload capability ticket
+    let write_key = "client_uploaded.bin";
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": write_key,
+                "operation": "WRITE",
+                "ttl_seconds": 3600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let write_tkt_json: Value = serde_json::from_slice(&body).unwrap();
+    let write_url = write_tkt_json["data"]["url"].as_str().unwrap().to_string();
+    let write_sig = write_tkt_json["data"]["signature"].as_str().unwrap().to_string();
+
+    // 11. Upload with WRITE capability ticket: MUST succeed
+    let write_payload = "Client uploaded data via valid ticket";
+    let req = Request::put(&write_url)
+        .header("Content-Type", "text/plain")
+        .body(Body::from(write_payload))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert!(res.status().is_success());
+
+    // 12. Delete the WRITE capability ticket
+    let req = Request::delete(format!("/api/v1/blobs/tickets/{}/{}", ns_name, write_sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 13. Attempt to upload with deleted WRITE ticket: MUST return 403 Forbidden
+    let req = Request::put(&write_url)
+        .header("Content-Type", "text/plain")
+        .body(Body::from("Illegal write after ticket deletion"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

@@ -15,7 +15,6 @@ import {
   Code2,
   RefreshCw,
   Trash2,
-  Ban,
 } from "lucide-react";
 import { BlobTicket, CreateBlobTicketResponse } from "../../types";
 import { api } from "../../api/client";
@@ -81,7 +80,6 @@ export function CreateUploadLinkModal({
   const [tickets, setTickets] = useState<BlobTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [manageError, setManageError] = useState<string | null>(null);
-  const [revokingSigs, setRevokingSigs] = useState<Set<string>>(new Set());
   const [deletingSigs, setDeletingSigs] = useState<Set<string>>(new Set());
   const [ticketToDelete, setTicketToDelete] = useState<BlobTicket | null>(null);
 
@@ -171,23 +169,6 @@ export function CreateUploadLinkModal({
     }
   };
 
-  const handleRevoke = async (signature: string) => {
-    setRevokingSigs((prev) => new Set(prev).add(signature));
-    try {
-      await api.revokeBlobTicket(namespace, signature);
-      await loadTickets();
-    } catch (err: unknown) {
-      alert(
-        err instanceof Error ? err.message : "Failed to revoke upload link",
-      );
-    } finally {
-      setRevokingSigs((prev) => {
-        const next = new Set(prev);
-        next.delete(signature);
-        return next;
-      });
-    }
-  };
 
   const handleConfirmDelete = async () => {
     if (!ticketToDelete) return;
@@ -538,7 +519,6 @@ export function CreateUploadLinkModal({
                 <div className="max-h-64 overflow-y-auto rounded-[6px] border border-[#222222] divide-y divide-[#1e1e1e] bg-[#0e0e0e]">
                   {tickets.map((t) => {
                     const timeRem = formatTimeRemaining(t.expires_at);
-                    const isRevoking = revokingSigs.has(t.signature);
                     const isDeleting = deletingSigs.has(t.signature);
                     const fullUrl = `${window.location.origin}${t.url || ""}`;
                     const targetFile = t.key.split("/").pop() || "file";
@@ -615,19 +595,6 @@ export function CreateUploadLinkModal({
                             )}
                             <span className="hidden sm:inline">cURL</span>
                           </button>
-
-                          {!t.revoked && !timeRem.isExpired && (
-                            <button
-                              type="button"
-                              onClick={() => handleRevoke(t.signature)}
-                              disabled={isRevoking}
-                              title="Revoke upload capability immediately"
-                              className="flex items-center gap-1 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#f5a623] hover:text-[#f7b955] bg-[#2a1b0a] hover:bg-[#3d270f] border border-[#593814] transition-colors cursor-pointer disabled:opacity-40"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Revoke</span>
-                            </button>
-                          )}
 
                           <button
                             type="button"

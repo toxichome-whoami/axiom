@@ -116,9 +116,13 @@ export function ShareViewerPage() {
       return;
     }
 
-    const headUrl = `/api/v1/blobs/objects/${encodeURIComponent(params.namespace)}/${encodeURIComponent(params.key)}?ticket_sig=${encodeURIComponent(params.ticket_sig || "")}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
+    const sanitizedKey = params.key
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    const headUrl = `/api/v1/blobs/objects/${encodeURIComponent(params.namespace)}/${sanitizedKey}?ticket_sig=${encodeURIComponent(params.ticket_sig || "")}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
 
-    fetch(headUrl, { method: "HEAD" })
+    fetch(headUrl, { method: "HEAD", cache: "no-store" })
       .then((res) => {
         if (!res.ok) {
           if (res.status === 401 || res.status === 403) {

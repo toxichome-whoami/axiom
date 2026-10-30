@@ -16,8 +16,6 @@ import {
   AlertTriangle,
   Download,
   Trash2,
-  Ban,
-  CheckCircle2,
   Link as LinkIcon,
   Globe,
   Play,
@@ -105,8 +103,6 @@ export function ShareTicketModal({
   const [tickets, setTickets] = useState<BlobTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
   const [manageError, setManageError] = useState<string | null>(null);
-  const [revokingSigs, setRevokingSigs] = useState<Set<string>>(new Set());
-  const [enablingSigs, setEnablingSigs] = useState<Set<string>>(new Set());
   const [deletingSigs, setDeletingSigs] = useState<Set<string>>(new Set());
   const [ticketToDelete, setTicketToDelete] = useState<BlobTicket | null>(null);
 
@@ -220,39 +216,6 @@ export function ShareTicketModal({
     }
   };
 
-  const handleRevoke = async (signature: string) => {
-    setRevokingSigs((prev) => new Set(prev).add(signature));
-    try {
-      await api.revokeBlobTicket(namespace, signature);
-      await loadTickets();
-      onTicketChanged?.();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to revoke ticket");
-    } finally {
-      setRevokingSigs((prev) => {
-        const next = new Set(prev);
-        next.delete(signature);
-        return next;
-      });
-    }
-  };
-
-  const handleEnable = async (signature: string) => {
-    setEnablingSigs((prev) => new Set(prev).add(signature));
-    try {
-      await api.enableBlobTicket(namespace, signature);
-      await loadTickets();
-      onTicketChanged?.();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to enable ticket");
-    } finally {
-      setEnablingSigs((prev) => {
-        const next = new Set(prev);
-        next.delete(signature);
-        return next;
-      });
-    }
-  };
 
   const handleConfirmDelete = async () => {
     if (!ticketToDelete) return;
@@ -1172,7 +1135,6 @@ export function ShareTicketModal({
                   <div className="max-h-64 overflow-y-auto space-y-2 pr-0.5">
                     {tickets.map((t) => {
                       const timeRem = formatTimeRemaining(t.expires_at);
-                      const isRevoking = revokingSigs.has(t.signature);
                       const isDeleting = deletingSigs.has(t.signature);
                       const fullUrl = `${window.location.origin}${t.url || ""}`;
 
@@ -1230,43 +1192,6 @@ export function ShareTicketModal({
                               )}
                               <span>Copy</span>
                             </button>
-
-                            {!t.revoked && !timeRem.isExpired && (
-                              <button
-                                type="button"
-                                onClick={() => handleRevoke(t.signature)}
-                                disabled={isRevoking}
-                                title="Revoke access immediately"
-                                className="h-7 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
-                              >
-                                <Ban className="w-3.5 h-3.5" />
-                                <span>Revoke</span>
-                              </button>
-                            )}
-
-                            {t.revoked && (
-                              <button
-                                type="button"
-                                onClick={() => handleEnable(t.signature)}
-                                disabled={
-                                  enablingSigs.has(t.signature) ||
-                                  timeRem.isExpired
-                                }
-                                title={
-                                  timeRem.isExpired
-                                    ? "Cannot re-enable an expired link"
-                                    : "Re-enable capability share link"
-                                }
-                                className="h-7 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>
-                                  {enablingSigs.has(t.signature)
-                                    ? "Enabling..."
-                                    : "Enable"}
-                                </span>
-                              </button>
-                            )}
 
                             <button
                               type="button"
