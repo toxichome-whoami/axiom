@@ -523,7 +523,7 @@ pub async fn get_blob_handler(
         };
     }
 
-    let (meta, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
+    let data = engine.get_data_for_meta(&meta).await.map_err(map_blob_error)?;
 
     let mut response_builder = Response::builder()
         .status(StatusCode::OK)
@@ -2898,7 +2898,7 @@ pub async fn get_public_blob_handler(
         builder
     };
 
-    let (_, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
+    let data = engine.get_data_for_meta(&meta).await.map_err(map_blob_error)?;
     let mut resp = match data {
         BlobData::Inline(bytes) => response_builder.body(Body::from(bytes)),
         BlobData::File(file, len) => {

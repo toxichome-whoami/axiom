@@ -423,6 +423,42 @@ impl BlobEngine {
     ///  - Precondition: `namespace` and `key` must be valid.
     ///  - Returns `BlobError::NotFound` if missing.
     ///  - If `verify_reads` is enabled, validates BLAKE3 hash for inline payload before returning.
+    /// Retrieves payload data for an already-resolved BlobMetadata, avoiding redundant index lookups.
+    pub async fn get_data_for_meta(
+        &self,
+        meta: &BlobMetadata,
+    ) -> Result<BlobData, BlobError> {
+        if meta.inline {
+            let bytes_vec =
+                self.index
+                    .get_inline_payload(&meta.hash)?
+                    .ok_or_else(|| BlobError::NotFound {
+                        namespace: String::new(),
+                        key: String::new(),
+                    })?;
+
+            if self.verify_reads {
+                let actual = hash_bytes(&bytes_vec);
+                if !constant_time_eq(&actual, &meta.hash) {
+                    return Err(BlobError::ChecksumMismatch {
+                        expected: meta.hash.clone(),
+                        actual,
+                    });
+                }
+            }
+
+            Ok(BlobData::Inline(Bytes::from(bytes_vec)))
+        } else {
+            let file = self.store.open(&meta.hash).await?;
+            Ok(BlobData::File(file, meta.size))
+        }
+    }
+
+    /// Retrieves an object's metadata and data stream.
+    /// CONTRACT:
+    ///  - Precondition: `namespace` and `key` must be valid.
+    ///  - Returns `BlobError::NotFound` if missing.
+    ///  - If `verify_reads` is enabled, validates BLAKE3 hash for inline payload before returning.
     pub async fn get(
         &self,
         namespace: &str,
@@ -439,30 +475,8 @@ impl BlobEngine {
                 key: key.to_string(),
             })?;
 
-        if meta.inline {
-            let bytes_vec =
-                self.index
-                    .get_inline_payload(&meta.hash)?
-                    .ok_or_else(|| BlobError::NotFound {
-                        namespace: namespace.to_string(),
-                        key: key.to_string(),
-                    })?;
-
-            if self.verify_reads {
-                let actual = hash_bytes(&bytes_vec);
-                if !constant_time_eq(&actual, &meta.hash) {
-                    return Err(BlobError::ChecksumMismatch {
-                        expected: meta.hash,
-                        actual,
-                    });
-                }
-            }
-
-            Ok((meta, BlobData::Inline(Bytes::from(bytes_vec))))
-        } else {
-            let file = self.store.open(&meta.hash).await?;
-            Ok((meta.clone(), BlobData::File(file, meta.size)))
-        }
+        let data = self.get_data_for_meta(&meta).await?;
+        Ok((meta, data))
     }
 
     /// Reads an entire object into memory.

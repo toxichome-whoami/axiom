@@ -224,32 +224,39 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
     }
 
     // Fast path: skip expensive WAF decode allocations for normal clean requests
-    if path.contains('%')
-        || path.contains('.')
-        || path.contains(' ')
-        || path.contains('\t')
-        || query.contains('%')
-        || query.contains('.')
-        || query.contains(' ')
-        || query.contains('\t')
+    let has_encoding = path.contains('%') || query.contains('%');
+    let has_traversal_token = raw_uri.contains("..") || raw_uri.contains('\u{ff0e}');
+    let has_suspicious_char = has_encoding
+        || has_traversal_token
+        || path.contains(';')
         || query.contains(';')
-        || raw_uri.contains("..")
-        || raw_uri.contains('\u{ff0e}')
-    {
-        let mut combined = format!("{}?{}", path, query).to_lowercase();
-        // Decode up to 5 times to prevent multi-encoding bypasses (cap length to avoid DoS)
-        for _ in 0..5 {
-            if combined.len() > 8192 {
-                break;
+        || path.contains('\'')
+        || query.contains('\'')
+        || path.contains('"')
+        || query.contains('"')
+        || raw_uri.contains("--")
+        || raw_uri.contains("/*");
+
+    if has_suspicious_char {
+        let combined = if has_encoding {
+            let mut c = format!("{}?{}", path, query).to_lowercase();
+            // Decode up to 5 times to prevent multi-encoding bypasses (cap length to avoid DoS)
+            for _ in 0..5 {
+                if c.len() > 8192 {
+                    break;
+                }
+                let decoded = urlencoding::decode(&c)
+                    .unwrap_or(std::borrow::Cow::Borrowed(&c))
+                    .to_string();
+                if decoded == c {
+                    break;
+                }
+                c = decoded.to_lowercase();
             }
-            let decoded = urlencoding::decode(&combined)
-                .unwrap_or(std::borrow::Cow::Borrowed(&combined))
-                .to_string();
-            if decoded == combined {
-                break;
-            }
-            combined = decoded.to_lowercase();
-        }
+            c
+        } else {
+            format!("{}?{}", path, query).to_lowercase()
+        };
 
         if combined.contains('\0') || combined.contains("%00") || combined.contains("%u0000") {
             return Err(AxiomError::new(

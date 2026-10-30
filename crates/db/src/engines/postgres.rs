@@ -77,7 +77,7 @@ impl DatabaseEngine for PostgresDatabaseEngine {
                 .url
                 .parse::<sqlx::postgres::PgConnectOptions>()
                 .map_err(|e| EngineError::Connection(e.to_string()))?
-                .statement_cache_capacity(1024);
+                .statement_cache_capacity(2048);
 
             let pool = PgPoolOptions::new()
                 .max_connections(self.config.pool_max as u32)
@@ -375,13 +375,7 @@ impl DatabaseEngine for PostgresDatabaseEngine {
                 let val = match column_kinds[idx] {
                     PgColKind::String => {
                         if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
-                            if (s.starts_with('{') && s.ends_with('}'))
-                                || (s.starts_with('[') && s.ends_with(']'))
-                            {
-                                serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
-                            } else {
-                                Value::String(s)
-                            }
+                            Value::String(s)
                         } else {
                             Value::Null
                         }

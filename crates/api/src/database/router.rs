@@ -40,6 +40,13 @@ pub fn get_router() -> Router {
                 .delete(crate::database::handlers::delete_rows),
         )
         .route(
+            "/:db_name/:table_name/rows/:id",
+            get(crate::database::handlers::fetch_row_by_id)
+                .patch(crate::database::handlers::update_row_by_id)
+                .put(crate::database::handlers::update_row_by_id)
+                .delete(crate::database::handlers::delete_row_by_id),
+        )
+        .route(
             "/:db_name/:table_name/columns",
             get(crate::database::handlers::describe_table)
                 .post(crate::database::handlers::add_column),

@@ -28,6 +28,8 @@ pub fn normalize_path(path: &str) -> &'static str {
             return "/api/v1/db/:alias/tables";
         } else if trimmed.ends_with("/rows") {
             return "/api/v1/db/:alias/:table/rows";
+        } else if trimmed.contains("/rows/") {
+            return "/api/v1/db/:alias/:table/rows/:id";
         } else if trimmed.ends_with("/columns") {
             return "/api/v1/db/:alias/:table/columns";
         } else if trimmed.contains("/columns/") {

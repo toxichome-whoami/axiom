@@ -90,6 +90,37 @@ async fn prometheus_metrics(
         .unwrap_or_else(|_| axum::response::Response::default()))
 }
 
+#[derive(Clone, Copy, Default)]
+struct FastRequestId;
+
+static REQ_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+impl tower_http::request_id::MakeRequestId for FastRequestId {
+    fn make_request_id<B>(&mut self, _request: &axum::http::Request<B>) -> Option<tower_http::request_id::RequestId> {
+        let id = REQ_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut buf = [0u8; 20];
+        let mut n = id;
+        let len;
+        if n == 0 {
+            buf[0] = b'0';
+            len = 1;
+        } else {
+            let mut temp = [0u8; 20];
+            let mut tlen = 0;
+            while n > 0 {
+                temp[tlen] = b'0' + (n % 10) as u8;
+                n /= 10;
+                tlen += 1;
+            }
+            for i in 0..tlen {
+                buf[i] = temp[tlen - 1 - i];
+            }
+            len = tlen;
+        }
+        axum::http::HeaderValue::from_bytes(&buf[..len]).ok().map(tower_http::request_id::RequestId::new)
+    }
+}
+
 pub fn create_app() -> Router {
     let config = ConfigManager::get();
 
@@ -274,7 +305,7 @@ pub fn create_app() -> Router {
         ))
         .layer(tower_http::request_id::PropagateRequestIdLayer::x_request_id())
         .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(
-            tower_http::request_id::MakeRequestUuid,
+            FastRequestId,
         ))
         .layer(axum::extract::DefaultBodyLimit::max(
             axiom_core::parse_size(&config.server.body_limit).unwrap_or(10 * 1024 * 1024) as usize,

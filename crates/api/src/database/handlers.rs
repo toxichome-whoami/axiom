@@ -1,3 +1,5 @@
+static POINT_LOOKUP_PREPARED_CACHE: once_cell::sync::Lazy<dashmap::DashMap<String, (String, bool)>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
 /*
  * Database HTTP API route handlers, AST validation, and query execution pipeline.
  * Owned by: api/database
@@ -1196,11 +1198,7 @@ impl QueryExecutionPipeline {
                         let json_bytes = bytes::Bytes::from(b);
                         if !is_mutation {
                             if let Some(ref key) = cache_key {
-                                let durability =
-                                    match config.cache.backend.to_ascii_lowercase().as_str() {
-                                        "hybrid" | "hybird" => axiom_cache::Durability::Journaled,
-                                        _ => axiom_cache::Durability::MemoryOnly,
-                                    };
+                                let durability = axiom_cache::Durability::MemoryOnly;
                                 // Differentiated Negative Caching TTL:
                                 // Empty results (0 rows) use negative_cache_ttl (default 5s) to absorb
                                 // bursts on missing keys without polluting the bounded L1 LRU cache.
@@ -1579,7 +1577,35 @@ pub async fn fetch_rows(
             None
         };
 
-        if let Some(sort_col) = default_sort_col {
+        let is_pk_equality = if let (Some(ref cols), Some(ref filter_str)) = (&table_cols, &params.filter) {
+            if limit == 1 && params.cursor.is_none() {
+                if let Ok(filter_map) = serde_json::from_str::<std::collections::HashMap<String, Value>>(filter_str) {
+                    if filter_map.len() == 1 {
+                        let (k, v) = filter_map.iter().next().unwrap();
+                        let is_pk = cols.iter().any(|c| (c.primary_key || c.name.eq_ignore_ascii_case("id")) && c.name.eq_ignore_ascii_case(k));
+                        let is_eq = match v {
+                            Value::Object(obj) => obj.len() == 1 && (obj.contains_key("eq") || obj.contains_key("$eq")),
+                            _ => true,
+                        };
+                        is_pk && is_eq
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if is_pk_equality {
+            // Point lookup fast-path: primary key equality matches at most 1 row.
+            // Omit ORDER BY to bypass Postgres/relational sorting planner overhead.
+            ("".to_string(), None)
+        } else if let Some(sort_col) = default_sort_col {
             let quoted_col =
                 crate::database::filter_builder::quote_ident_dialect(&sort_col, dialect);
             let raw_col = crate::database::filter_builder::sanitize_ident(&sort_col).into_owned();
@@ -1813,6 +1839,7 @@ pub async fn fetch_rows(
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
             .header(axum::http::header::ETAG, &etag_val)
             .header(
                 axum::http::header::CACHE_CONTROL,
@@ -1828,6 +1855,317 @@ pub async fn fetch_rows(
                 )
             })
     }
+}
+
+pub async fn fetch_row_by_id(
+    axum::extract::Path((db_name, table_name, id)): axum::extract::Path<(String, String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+) -> Result<axum::response::Response, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "SELECT")?;
+
+    let engine = DatabasePoolManager::get_engine(&db_name).await.ok_or_else(|| {
+        AxiomError::new("DB_NOT_FOUND", "Database engine not available", StatusCode::SERVICE_UNAVAILABLE)
+    })?;
+    let dialect = engine.dialect();
+
+    let prep_cache_key = format!("{}:{}:{}", dialect, db_name, table_name);
+    let (base_sql, is_numeric) = match POINT_LOOKUP_PREPARED_CACHE.get(&prep_cache_key) {
+        Some(cached) => cached.clone(),
+        None => {
+            let table_cols = get_cached_table_columns(&engine, &db_name, &table_name).await;
+            let pk_col = if let Some(ref cols) = table_cols {
+                cols.iter()
+                    .find(|c| c.primary_key)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| "id".to_string())
+            } else {
+                "id".to_string()
+            };
+
+            let numeric = table_cols
+                .as_ref()
+                .map(|cols| {
+                    cols.iter().any(|c| {
+                        c.name.eq_ignore_ascii_case(&pk_col)
+                            && (c.r#type.to_lowercase().contains("int")
+                                || c.r#type.to_lowercase().contains("serial")
+                                || c.r#type.to_lowercase().contains("num")
+                                || c.r#type.to_lowercase().contains("dec")
+                                || c.r#type.to_lowercase().contains("float")
+                                || c.r#type.to_lowercase().contains("double"))
+                    })
+                })
+                .unwrap_or(false);
+
+            let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
+            let quoted_pk = crate::database::filter_builder::quote_ident_dialect(&pk_col, dialect);
+
+            let formatted_placeholder = if dialect == "postgres" || dialect == "any" {
+                "$1"
+            } else if dialect == "oracle" {
+                ":1"
+            } else {
+                "?"
+            };
+
+            let sql = if dialect == "oracle" {
+                format!("SELECT * FROM {} WHERE {} = {} AND ROWNUM <= 1", quoted_table, quoted_pk, formatted_placeholder)
+            } else {
+                format!("SELECT * FROM {} WHERE {} = {} LIMIT 1", quoted_table, quoted_pk, formatted_placeholder)
+            };
+
+            POINT_LOOKUP_PREPARED_CACHE.insert(prep_cache_key, (sql.clone(), numeric));
+            (sql, numeric)
+        }
+    };
+
+    let val = if is_numeric {
+        if let Ok(i) = id.trim().parse::<i64>() {
+            Value::Number(i.into())
+        } else if let Ok(f) = id.trim().parse::<f64>() {
+            serde_json::Number::from_f64(f)
+                .map(Value::Number)
+                .unwrap_or_else(|| Value::String(id.clone()))
+        } else {
+            Value::String(id.clone())
+        }
+    } else {
+        Value::String(id.clone())
+    };
+
+    let config = axiom_core::ConfigManager::get();
+    let cache_enabled = config.cache.enabled && config.cache.query_cache;
+    let cache_key = if cache_enabled {
+        Some(format!("qc:{}:{}:{}:id:{}", auth.api_key_name, db_name, table_name, id))
+    } else {
+        None
+    };
+
+    if let Some(ref key) = cache_key {
+        if let Some(bytes) = axiom_cache::CacheEngine::get(key).await {
+            return axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
+                .header(axum::http::header::CACHE_CONTROL, "private, max-age=5, must-revalidate")
+                .body(axum::body::Body::from(bytes))
+                .map_err(|e| AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+        }
+    }
+
+    let final_sql = if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "SELECT") {
+        if base_sql.contains(" LIMIT 1") {
+            base_sql.replace(" LIMIT 1", &format!(" AND ({}) LIMIT 1", rls_pred))
+        } else {
+            format!("{} AND ({})", base_sql, rls_pred)
+        }
+    } else {
+        base_sql
+    };
+
+    let result = engine.execute(&final_sql, &[val]).await.map_err(|e| {
+        AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::BAD_REQUEST)
+    })?;
+
+    let row = result.rows.as_ref().and_then(|r| r.first());
+    match row {
+        Some(r) => {
+            let envelope = serde_json::json!({
+                "success": true,
+                "data": r,
+                "error": serde_json::Value::Null
+            });
+            let bytes = serde_json::to_vec(&envelope).map_err(|e| {
+                AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+            })?;
+
+            if let Some(ref key) = cache_key {
+                axiom_cache::CacheEngine::set(
+                    key,
+                    bytes.clone().into(),
+                    config.cache.query_results_ttl as u64,
+                    axiom_cache::Durability::MemoryOnly,
+                ).await;
+            }
+
+            axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
+                .header(axum::http::header::CACHE_CONTROL, "private, max-age=5, must-revalidate")
+                .body(axum::body::Body::from(bytes))
+                .map_err(|e| AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        }
+        None => Err(AxiomError::new("NOT_FOUND", "Row not found", StatusCode::NOT_FOUND)),
+    }
+}
+
+pub async fn update_row_by_id(
+    axum::extract::Path((db_name, table_name, id)): axum::extract::Path<(String, String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::Json(payload): axum::Json<Value>,
+) -> Result<axum::Json<Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "UPDATE")?;
+
+    let engine = DatabasePoolManager::get_engine(&db_name).await.ok_or_else(|| {
+        AxiomError::new("DB_NOT_FOUND", "Database engine not available", StatusCode::SERVICE_UNAVAILABLE)
+    })?;
+    let table_cols = get_cached_table_columns(&engine, &db_name, &table_name).await;
+
+    let pk_col = if let Some(ref cols) = table_cols {
+        cols.iter()
+            .find(|c| c.primary_key)
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| "id".to_string())
+    } else {
+        "id".to_string()
+    };
+
+    let mut update_data: std::collections::HashMap<String, Value> = match payload {
+        Value::Object(map) => map.into_iter().collect(),
+        _ => return Err(AxiomError::new("BAD_REQUEST", "Expected JSON object for update", StatusCode::BAD_REQUEST)),
+    };
+
+    if update_data.is_empty() {
+        return Err(AxiomError::new("BAD_REQUEST", "Update requires non-empty update fields", StatusCode::BAD_REQUEST));
+    }
+
+    if let Some(ref cols) = table_cols {
+        crate::database::filter_builder::coerce_record_values(&mut update_data, cols);
+    }
+
+    let is_numeric = table_cols
+        .as_ref()
+        .map(|cols| {
+            cols.iter().any(|c| {
+                c.name.eq_ignore_ascii_case(&pk_col)
+                    && (c.r#type.to_lowercase().contains("int")
+                        || c.r#type.to_lowercase().contains("serial")
+                        || c.r#type.to_lowercase().contains("num")
+                        || c.r#type.to_lowercase().contains("dec")
+                        || c.r#type.to_lowercase().contains("float")
+                        || c.r#type.to_lowercase().contains("double"))
+            })
+        })
+        .unwrap_or(false);
+
+    let id_val = if is_numeric {
+        if let Ok(i) = id.trim().parse::<i64>() {
+            Value::Number(i.into())
+        } else {
+            Value::String(id.clone())
+        }
+    } else {
+        Value::String(id.clone())
+    };
+
+    let filter = std::collections::HashMap::from([(pk_col, id_val)]);
+    let dialect = engine.dialect();
+    let (mut sql, values) = crate::database::filter_builder::construct_update_dialect(&table_name, &update_data, &filter, dialect);
+
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "UPDATE") {
+        if sql.contains(" WHERE ") {
+            sql = format!("{} AND ({})", sql, rls_pred);
+        } else {
+            sql = format!("{} WHERE ({})", sql, rls_pred);
+        }
+    }
+
+    let result = engine.execute(&sql, &values).await.map_err(|e| {
+        AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::BAD_REQUEST)
+    })?;
+
+    // Invalidate cached point lookup
+    let config = axiom_core::ConfigManager::get();
+    if config.cache.enabled && config.cache.query_cache {
+        axiom_cache::CacheEngine::delete(&format!("qc:{}:{}:{}:id:{}", auth.api_key_name, db_name, table_name, id)).await;
+    }
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "affected_rows": result.affected_rows,
+        "data": {
+            "affected_rows": result.affected_rows
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+pub async fn delete_row_by_id(
+    axum::extract::Path((db_name, table_name, id)): axum::extract::Path<(String, String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+) -> Result<axum::Json<Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DELETE")?;
+
+    let engine = DatabasePoolManager::get_engine(&db_name).await.ok_or_else(|| {
+        AxiomError::new("DB_NOT_FOUND", "Database engine not available", StatusCode::SERVICE_UNAVAILABLE)
+    })?;
+    let table_cols = get_cached_table_columns(&engine, &db_name, &table_name).await;
+
+    let pk_col = if let Some(ref cols) = table_cols {
+        cols.iter()
+            .find(|c| c.primary_key)
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| "id".to_string())
+    } else {
+        "id".to_string()
+    };
+
+    let is_numeric = table_cols
+        .as_ref()
+        .map(|cols| {
+            cols.iter().any(|c| {
+                c.name.eq_ignore_ascii_case(&pk_col)
+                    && (c.r#type.to_lowercase().contains("int")
+                        || c.r#type.to_lowercase().contains("serial")
+                        || c.r#type.to_lowercase().contains("num")
+                        || c.r#type.to_lowercase().contains("dec")
+                        || c.r#type.to_lowercase().contains("float")
+                        || c.r#type.to_lowercase().contains("double"))
+            })
+        })
+        .unwrap_or(false);
+
+    let id_val = if is_numeric {
+        if let Ok(i) = id.trim().parse::<i64>() {
+            Value::Number(i.into())
+        } else {
+            Value::String(id.clone())
+        }
+    } else {
+        Value::String(id.clone())
+    };
+
+    let filter = std::collections::HashMap::from([(pk_col, id_val)]);
+    let dialect = engine.dialect();
+    let (mut sql, values) = crate::database::filter_builder::construct_delete_dialect(&table_name, &filter, dialect);
+
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "DELETE") {
+        if sql.contains(" WHERE ") {
+            sql = format!("{} AND ({})", sql, rls_pred);
+        } else {
+            sql = format!("{} WHERE ({})", sql, rls_pred);
+        }
+    }
+
+    let result = engine.execute(&sql, &values).await.map_err(|e| {
+        AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::BAD_REQUEST)
+    })?;
+
+    // Invalidate cached point lookup
+    let config = axiom_core::ConfigManager::get();
+    if config.cache.enabled && config.cache.query_cache {
+        axiom_cache::CacheEngine::delete(&format!("qc:{}:{}:{}:id:{}", auth.api_key_name, db_name, table_name, id)).await;
+    }
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "affected_rows": result.affected_rows,
+        "data": {
+            "affected_rows": result.affected_rows
+        },
+        "error": serde_json::Value::Null
+    })))
 }
 
 pub async fn update_rows(

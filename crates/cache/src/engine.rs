@@ -208,36 +208,40 @@ impl CacheEngine {
         }
 
         // 2. Check L2 persistent store (disk / Turso)
-        if let Some(conn) = L2_CONN.get() {
-            let query = "SELECT value, expires_at, durability FROM cache_aof WHERE key = ?1 AND expires_at > ?2";
-            if let Ok(mut rows) = conn.query(query, libsql::params![key, now as i64]).await {
-                if let Ok(Some(row)) = rows.next().await {
-                    if let Ok(blob) = row.get::<Vec<u8>>(0) {
-                        let expires_at = row.get::<i64>(1).unwrap_or(0) as u64;
-                        let durability_str: String = row.get(2).unwrap_or_default();
-                        let durability = match durability_str.as_str() {
-                            "journaled" => Durability::Journaled,
-                            "snapshot" => Durability::Snapshot,
-                            "journaled_and_snapshot" => Durability::JournaledAndSnapshot,
-                            _ => Durability::MemoryOnly,
-                        };
+        // Optimization: Query results ("qc:*") are strictly transient and belong purely in L1 memory.
+        // Bypassing L2 SQLite disk lookups on query misses prevents connection lock contention and disk I/O.
+        if !key.starts_with("qc:") {
+            if let Some(conn) = L2_CONN.get() {
+                let query = "SELECT value, expires_at, durability FROM cache_aof WHERE key = ?1 AND expires_at > ?2";
+                if let Ok(mut rows) = conn.query(query, libsql::params![key, now as i64]).await {
+                    if let Ok(Some(row)) = rows.next().await {
+                        if let Ok(blob) = row.get::<Vec<u8>>(0) {
+                            let expires_at = row.get::<i64>(1).unwrap_or(0) as u64;
+                            let durability_str: String = row.get(2).unwrap_or_default();
+                            let durability = match durability_str.as_str() {
+                                "journaled" => Durability::Journaled,
+                                "snapshot" => Durability::Snapshot,
+                                "journaled_and_snapshot" => Durability::JournaledAndSnapshot,
+                                _ => Durability::MemoryOnly,
+                            };
 
-                        let val_bytes = Bytes::from(blob);
+                            let val_bytes = Bytes::from(blob);
 
-                        // Promote L2 entry to L1
-                        Self::evict_if_needed();
-                        L1_CACHE.insert(
-                            key.to_string(),
-                            L1Entry {
-                                value: val_bytes.clone(),
-                                expires_at,
-                                last_accessed: AtomicU64::new(current_unix_nanos()),
-                                durability,
-                            },
-                        );
+                            // Promote L2 entry to L1
+                            Self::evict_if_needed();
+                            L1_CACHE.insert(
+                                key.to_string(),
+                                L1Entry {
+                                    value: val_bytes.clone(),
+                                    expires_at,
+                                    last_accessed: AtomicU64::new(current_unix_nanos()),
+                                    durability,
+                                },
+                            );
 
-                        STATS.hits_l2.fetch_add(1, Ordering::Relaxed);
-                        return Some(val_bytes);
+                            STATS.hits_l2.fetch_add(1, Ordering::Relaxed);
+                            return Some(val_bytes);
+                        }
                     }
                 }
             }
@@ -269,11 +273,12 @@ impl CacheEngine {
             },
         );
 
-        // Write to L2 disk storage if durability level requires persistence
-        if matches!(
-            durability,
-            Durability::Journaled | Durability::Snapshot | Durability::JournaledAndSnapshot
-        ) {
+        // Write to L2 disk storage if durability level requires persistence (and not transient query cache)
+        if !key.starts_with("qc:")
+            && matches!(
+                durability,
+                Durability::Journaled | Durability::Snapshot | Durability::JournaledAndSnapshot
+            ) {
             if let Some(conn) = L2_CONN.get() {
                 let key_owned = key.to_string();
                 let val_vec = value.to_vec();
