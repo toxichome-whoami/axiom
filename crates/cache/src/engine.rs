@@ -208,9 +208,9 @@ impl CacheEngine {
         }
 
         // 2. Check L2 persistent store (disk / Turso)
-        // Optimization: Query results ("qc:*") are strictly transient and belong purely in L1 memory.
-        // Bypassing L2 SQLite disk lookups on query misses prevents connection lock contention and disk I/O.
-        if !key.starts_with("qc:") {
+        // Optimization: Query results ("qc:*") and transient sessions ("sess:*") belong purely in L1 memory.
+        // Bypassing L2 SQLite disk lookups on misses prevents connection lock contention and disk I/O.
+        if !key.starts_with("qc:") && !key.starts_with("sess:") {
             if let Some(conn) = L2_CONN.get() {
                 let query = "SELECT value, expires_at, durability FROM cache_aof WHERE key = ?1 AND expires_at > ?2";
                 if let Ok(mut rows) = conn.query(query, libsql::params![key, now as i64]).await {
@@ -273,8 +273,9 @@ impl CacheEngine {
             },
         );
 
-        // Write to L2 disk storage if durability level requires persistence (and not transient query cache)
+        // Write to L2 disk storage if durability level requires persistence (and not transient query cache or sessions)
         if !key.starts_with("qc:")
+            && !key.starts_with("sess:")
             && matches!(
                 durability,
                 Durability::Journaled | Durability::Snapshot | Durability::JournaledAndSnapshot

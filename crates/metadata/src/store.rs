@@ -32,6 +32,11 @@ static AUDIT_CHANNEL: OnceCell<tokio::sync::mpsc::Sender<AuditTask>> = OnceCell:
 static CLUSTER_IDENTITY_CACHE: Lazy<tokio::sync::RwLock<Option<(String, String, String)>>> =
     Lazy::new(|| tokio::sync::RwLock::new(None));
 
+// In-memory cache for system secrets (e.g. trusted_device_hmac_key).
+// Eliminates recurring SQLite queries on authentication hot-paths.
+static SYSTEM_SECRETS_CACHE: Lazy<std::sync::RwLock<HashMap<String, String>>> =
+    Lazy::new(|| std::sync::RwLock::new(HashMap::new()));
+
 struct AuditTask {
     timestamp: i64,
     actor: String,
@@ -305,17 +310,21 @@ impl MetadataStore {
         // 1. Load roles and permissions
         let mut roles_map: HashMap<String, RoleSnapshot> = HashMap::new();
         let mut role_rows = conn
-            .query("SELECT name FROM roles", ())
+            .query("SELECT name, description, created_at FROM roles", ())
             .await
             .map_err(|e| format!("Query roles failed: {}", e))?;
 
         while let Ok(Some(row)) = role_rows.next().await {
             if let Ok(name) = row.get_str(0) {
+                let description: Option<String> = row.get(1).ok();
+                let created_at: i64 = row.get(2).unwrap_or(0);
                 roles_map.insert(
                     name.to_string(),
                     RoleSnapshot {
                         name: name.to_string(),
+                        description,
                         permissions: Vec::new(),
+                        created_at,
                     },
                 );
             }
@@ -357,7 +366,7 @@ impl MetadataStore {
         let mut keys_map: HashMap<String, ApiKeySnapshot> = HashMap::new();
         let mut key_rows = conn
             .query(
-                "SELECT name, secret_hash, role_name, rate_limit, expires_at FROM api_keys",
+                "SELECT name, secret_hash, role_name, rate_limit, expires_at, created_at FROM api_keys",
                 (),
             )
             .await
@@ -370,6 +379,7 @@ impl MetadataStore {
                 row.get(2).ok().filter(|s: &String| !s.trim().is_empty());
             let rate_limit: i64 = row.get(3).unwrap_or(0);
             let expires_at: Option<i64> = row.get(4).ok();
+            let created_at: i64 = row.get(5).unwrap_or(0);
 
             if hash_blob.len() == 32 {
                 let mut secret_hash = [0u8; 32];
@@ -383,6 +393,7 @@ impl MetadataStore {
                         role_name,
                         rate_limit_override: rate_limit as u32,
                         expires_at,
+                        created_at,
                     },
                 );
             }
@@ -392,7 +403,7 @@ impl MetadataStore {
         let mut dbs_map: HashMap<String, DatabaseSnapshot> = HashMap::new();
         let mut db_rows = conn
             .query(
-                "SELECT alias, url, engine, pool_min, pool_max FROM databases",
+                "SELECT alias, url, engine, pool_min, pool_max, created_at FROM databases",
                 (),
             )
             .await
@@ -404,6 +415,7 @@ impl MetadataStore {
             let engine: String = row.get(2).map_err(|e| e.to_string())?;
             let pool_min: i64 = row.get(3).unwrap_or(1);
             let pool_max: i64 = row.get(4).unwrap_or(10);
+            let created_at: i64 = row.get(5).unwrap_or(0);
 
             dbs_map.insert(
                 alias.clone(),
@@ -413,6 +425,7 @@ impl MetadataStore {
                     engine,
                     pool_min: pool_min as u32,
                     pool_max: pool_max as u32,
+                    created_at,
                 },
             );
         }
@@ -2464,6 +2477,12 @@ impl MetadataStore {
     ///  - Side effects: Inserts a new 64-character hex-encoded cryptographic secret if none exists.
     ///  - Idempotency: Yes (subsequent calls with the same key return the identical stored secret).
     pub async fn get_or_create_system_secret(key: &str) -> Result<String, String> {
+        if let Ok(cache) = SYSTEM_SECRETS_CACHE.read() {
+            if let Some(val) = cache.get(key) {
+                return Ok(val.clone());
+            }
+        }
+
         let conn = Self::get_conn().await?;
 
         let mut rows = conn
@@ -2475,6 +2494,9 @@ impl MetadataStore {
             let val: String = row
                 .get(0)
                 .map_err(|e| format!("Failed to read system secret: {}", e))?;
+            if let Ok(mut cache) = SYSTEM_SECRETS_CACHE.write() {
+                cache.insert(key.to_string(), val.clone());
+            }
             return Ok(val);
         }
 
@@ -2498,6 +2520,10 @@ impl MetadataStore {
         )
         .await
         .map_err(|e| format!("Failed to persist system secret for key '{}': {}", key, e))?;
+
+        if let Ok(mut cache) = SYSTEM_SECRETS_CACHE.write() {
+            cache.insert(key.to_string(), new_secret.clone());
+        }
 
         tracing::info!("Initialized and persisted system secret for '{}'", key);
         Ok(new_secret)

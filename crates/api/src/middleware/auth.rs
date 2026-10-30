@@ -356,6 +356,14 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                             });
                         }
                     }
+
+                    // 4. System permissions synthesis for administrative control-plane
+                    permissions.push(axiom_core::PermissionSnapshot {
+                        database: "system".to_string(),
+                        table_name: "*".to_string(),
+                        operations: user_rec.permissions.system.clone(),
+                        rls_filter: None,
+                    });
                 }
             }
 
@@ -579,12 +587,14 @@ mod tests {
             "admin".to_string(),
             RoleSnapshot {
                 name: "admin".to_string(),
+                description: None,
                 permissions: vec![PermissionSnapshot {
                     database: "*".to_string(),
                     table_name: "*".to_string(),
                     operations: vec!["*".to_string()],
                     rls_filter: None,
                 }],
+                created_at: 0,
             },
         );
 
@@ -596,6 +606,7 @@ mod tests {
                 role_name: Some("admin".to_string()),
                 rate_limit_override: 50,
                 expires_at: None,
+                created_at: 0,
             },
         );
 
@@ -629,6 +640,7 @@ mod tests {
                 role_name: None,
                 rate_limit_override: 0,
                 expires_at: None,
+                created_at: 0,
             },
         );
 
@@ -657,6 +669,7 @@ mod tests {
                 role_name: None,
                 rate_limit_override: 0,
                 expires_at: Some(1), // epoch + 1s, firmly in past
+                created_at: 0,
             },
         );
 

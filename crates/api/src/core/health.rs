@@ -29,8 +29,9 @@ static SYSTEM: Lazy<Mutex<System>> = Lazy::new(|| {
 pub fn get_system_stats() -> (f32, u64) {
     if let Ok(mut sys) = SYSTEM.lock() {
         let pid = sysinfo::Pid::from_u32(std::process::id());
-        // Refresh process stats to get actual server footprint
-        sys.refresh_all();
+        // Targeted refresh of current server process only, avoiding expensive full-system scans
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        sys.refresh_memory();
         if let Some(process) = sys.process(pid) {
             (process.cpu_usage(), process.memory() / 1024 / 1024)
         } else {

@@ -21,6 +21,8 @@ pub struct ApiKeySnapshot {
     pub role_name: Option<String>,
     pub rate_limit_override: u32,
     pub expires_at: Option<i64>,
+    #[serde(default)]
+    pub created_at: i64,
 }
 
 pub use axiom_core::PermissionSnapshot;
@@ -28,7 +30,11 @@ pub use axiom_core::PermissionSnapshot;
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RoleSnapshot {
     pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
     pub permissions: Vec<PermissionSnapshot>,
+    #[serde(default)]
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -38,6 +44,8 @@ pub struct DatabaseSnapshot {
     pub engine: String,
     pub pool_min: u32,
     pub pool_max: u32,
+    #[serde(default)]
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -90,6 +98,7 @@ mod tests {
                 role_name: Some("readonly".to_string()),
                 rate_limit_override: 100,
                 expires_at: None,
+                created_at: 0,
             },
         );
 

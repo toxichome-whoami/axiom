@@ -95,7 +95,20 @@ pub async fn check_permission(auth: &AuthContext, required: &str) -> Result<(), 
         return Ok(());
     }
 
-    // Check operator's granular capabilities
+    // In-memory fast-path: Check granular system capabilities synthesized in AuthContext
+    let has_in_memory_perm = auth.permissions.iter().any(|p| {
+        (p.database == "system" || p.database == "*")
+            && p.operations.iter().any(|op| {
+                op == "*"
+                    || op == required
+                    || (op.ends_with(".*") && required.starts_with(op.trim_end_matches('*')))
+            })
+    });
+    if has_in_memory_perm {
+        return Ok(());
+    }
+
+    // Fallback: Check operator's granular capabilities from metadata store
     let actor = auth
         .api_key_name
         .strip_prefix("user:")
@@ -323,7 +336,7 @@ pub async fn get_status(
         .unwrap_or_default()
         .as_secs() as i64;
 
-    Ok(Json(json!({
+    let envelope = json!({
         "success": true,
         "data": {
             "version": env!("CARGO_PKG_VERSION"),
@@ -334,7 +347,17 @@ pub async fn get_status(
             "current_time": now
         },
         "error": Value::Null
-    })))
+    });
+    let bytes = serde_json::to_vec(&envelope).map_err(|e| {
+        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
+
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Triggers an immediate reload and publication of the metadata snapshot from SQLite.
@@ -380,23 +403,44 @@ pub async fn reload_metadata(
     })))
 }
 
-/// Lists all registered API keys (with secret hashes safely redacted).
+/// Lists all registered API keys (served directly from the atomic in-memory snapshot with secret hashes redacted).
 pub async fn list_keys(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
     check_permission(&auth, "keys.view").await?;
 
-    let keys = MetadataStore::list_keys()
-        .await
-        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
+    let mut keys: Vec<axiom_metadata::ApiKeyRecord> = snapshot
+        .keys
+        .values()
+        .map(|k| axiom_metadata::ApiKeyRecord {
+            name: k.name.clone(),
+            secret_hash: Vec::new(),
+            role_name: k.role_name.clone(),
+            rate_limit: k.rate_limit_override as i64,
+            expires_at: k.expires_at,
+            created_at: k.created_at,
+        })
+        .collect();
+    keys.sort_by(|a, b| b.created_at.cmp(&a.created_at).then_with(|| a.name.cmp(&b.name)));
 
-    Ok(Json(json!({
+    let envelope = json!({
         "success": true,
         "data": {
             "keys": keys
         },
         "error": Value::Null
-    })))
+    });
+    let bytes = serde_json::to_vec(&envelope).map_err(|e| {
+        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
+
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Generates a new API key, stores its BLAKE3 hash, and returns the single-use plaintext token.
@@ -574,9 +618,20 @@ pub async fn list_databases(
         ));
     }
 
-    let databases = MetadataStore::list_databases()
-        .await
-        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
+    let mut databases: Vec<axiom_metadata::DatabaseRecord> = snapshot
+        .databases
+        .values()
+        .map(|d| axiom_metadata::DatabaseRecord {
+            alias: d.alias.clone(),
+            url: d.url.clone(),
+            engine: d.engine.clone(),
+            pool_min: d.pool_min as i64,
+            pool_max: d.pool_max as i64,
+            created_at: d.created_at,
+        })
+        .collect();
+    databases.sort_by(|a, b| a.alias.cmp(&b.alias));
 
     let filtered_dbs: Vec<_> = if has_granular_db {
         let aliases: Vec<String> = databases.iter().map(|d| d.alias.clone()).collect();
@@ -863,22 +918,56 @@ pub async fn test_database(
 ///  - Precondition: Verified admin AuthContext.
 ///  - Returns list of role records and their operations.
 ///  - Idempotent: Yes.
+/// Lists all registered roles and their permission grants directly from the atomic in-memory snapshot.
 pub async fn list_roles(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
     check_permission(&auth, "roles.view").await?;
 
-    let roles = MetadataStore::list_roles()
-        .await
-        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
+    let mut roles: Vec<axiom_metadata::RoleRecord> = snapshot
+        .roles
+        .values()
+        .map(|r| {
+            let perms = r
+                .permissions
+                .iter()
+                .map(|p| axiom_metadata::PermissionRecord {
+                    id: 0,
+                    role_name: r.name.clone(),
+                    database: p.database.clone(),
+                    table_name: p.table_name.clone(),
+                    operations: p.operations.clone(),
+                    rls_filter: p.rls_filter.clone(),
+                })
+                .collect();
+            axiom_metadata::RoleRecord {
+                name: r.name.clone(),
+                description: r.description.clone(),
+                created_at: r.created_at,
+                permissions: perms,
+            }
+        })
+        .collect();
+    roles.sort_by(|a, b| a.name.cmp(&b.name));
 
-    Ok(Json(json!({
+    let envelope = json!({
         "success": true,
         "data": {
             "roles": roles
         },
         "error": Value::Null
-    })))
+    });
+    let bytes = serde_json::to_vec(&envelope).map_err(|e| {
+        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
+
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Creates a new role and defines its initial permission grants.
@@ -1089,11 +1178,16 @@ pub async fn get_audit_log(
             AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
         })?;
 
-    let total = MetadataStore::count_audit_log(search_term)
-        .await
-        .unwrap_or(0);
+    let (total, has_more) = if before_id.is_some() {
+        // Fast-path: In cursor pagination, has_more is determined by window saturation without full-table COUNT(*) scan
+        let more = logs.len() == limit;
+        (0i64, more)
+    } else {
+        let count = MetadataStore::count_audit_log(search_term).await.unwrap_or(0);
+        let more = offset + logs.len() < count as usize;
+        (count, more)
+    };
 
-    let has_more = offset + logs.len() < total as usize;
     let next_cursor = if has_more {
         logs.last().map(|r| r.id)
     } else {
@@ -1819,6 +1913,27 @@ pub async fn get_me_handler(
         .api_key_name
         .strip_prefix("user:")
         .unwrap_or(&auth.api_key_name);
+
+    let user_cache_key = format!("sess:user:{}", actor);
+    if let Some(user_bytes) = axiom_cache::CacheEngine::get(&user_cache_key).await {
+        if let Ok(user) = serde_json::from_slice::<axiom_metadata::UserRecord>(&user_bytes) {
+            let envelope = json!({
+                "success": true,
+                "data": user,
+                "error": Value::Null
+            });
+            let bytes = serde_json::to_vec(&envelope).map_err(|e| {
+                AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+            })?;
+            return axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
+                .body(axum::body::Body::from(bytes))
+                .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+        }
+    }
+
     let user = MetadataStore::get_user_by_username(actor)
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
@@ -1826,11 +1941,31 @@ pub async fn get_me_handler(
             AxiomError::new("NOT_FOUND", "User record not found", StatusCode::NOT_FOUND)
         })?;
 
-    Ok(Json(json!({
+    if let Ok(bytes) = serde_json::to_vec(&user) {
+        axiom_cache::CacheEngine::set(
+            &user_cache_key,
+            bytes::Bytes::from(bytes),
+            60,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
+
+    let envelope = json!({
         "success": true,
         "data": user,
         "error": Value::Null
-    })))
+    });
+    let bytes = serde_json::to_vec(&envelope).map_err(|e| {
+        AxiomError::new("SERIALIZATION_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
+
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Revokes an active administrative session.

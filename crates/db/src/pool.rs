@@ -340,6 +340,7 @@ mod tests {
             engine: "sqlite".to_string(),
             pool_min: 1,
             pool_max: 2,
+            created_at: 0,
         };
         let mut databases = snapshot.databases.clone();
         databases.insert("unit_test_mem_db".to_string(), db_snap);
