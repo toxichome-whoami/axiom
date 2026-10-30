@@ -14,7 +14,6 @@ import {
   Check,
   Server,
   Shield,
-  Info,
   Code2,
   Cpu,
   Layers,
@@ -37,9 +36,7 @@ export interface ApiRouteItem {
 }
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<"server" | "routes" | "about">(
-    "server",
-  );
+  const [activeTab, setActiveTab] = useState<"server" | "routes">("server");
   const [statusData, setStatusData] = useState<SystemStatusData | null>(null);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [isReloading, setIsReloading] = useState(false);
@@ -663,19 +660,6 @@ export function Settings() {
             {allEndpoints.length}
           </span>
         </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("about")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
-            activeTab === "about"
-              ? "bg-[#161616] text-white border border-[#333333]"
-              : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
-          }`}
-        >
-          <Info className="w-3.5 h-3.5 shrink-0" />
-          <span>About</span>
-        </button>
       </div>
 
       {/* TAB 1: SERVER INFO */}
@@ -1074,92 +1058,6 @@ export function Settings() {
         </div>
       )}
 
-      {/* TAB 4: ABOUT */}
-      {activeTab === "about" && (
-        <div className="space-y-5">
-          {/* Hero App Banner */}
-          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4 min-w-0">
-              <div className="w-12 h-12 rounded-[8px] bg-gradient-to-br from-[#1d4ed8] to-[#2563eb] flex items-center justify-center shrink-0 shadow-sm border border-[#3b82f6]/30">
-                <span className="font-['Montserrat',sans-serif] font-bold text-[18px] text-white tracking-wider">
-                  AX
-                </span>
-              </div>
-              <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="text-[16px] font-semibold text-white tracking-tight">
-                    Axiom Gateway
-                  </h2>
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-[4px] bg-[#161616] text-[#8c8c8c] border border-[#2a2a2a]">
-                    v{statusData?.version || "0.1.22"}
-                  </span>
-                </div>
-                <p className="text-[13px] text-[#8c8c8c] font-normal leading-relaxed">
-                  Turn any SQL database or storage namespace into a secure,
-                  low-latency REST API. Single binary, zero external runtime
-                  dependencies.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Technical Specifications Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 space-y-1.5 hover:border-[#333333] transition-colors">
-              <span className="text-[12px] font-normal text-[#8c8c8c] block">
-                Core Technology
-              </span>
-              <div className="text-[13px] text-white font-medium">
-                Rust 2021 + Axum 0.7 + Tokio multi-threaded
-              </div>
-              <p className="text-[12px] text-[#737373]">
-                Engineered for sub-millisecond query routing and minimal memory
-                footprint.
-              </p>
-            </div>
-
-            <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 space-y-1.5 hover:border-[#333333] transition-colors">
-              <span className="text-[12px] font-normal text-[#8c8c8c] block">
-                Frontend Architecture
-              </span>
-              <div className="text-[13px] text-white font-medium">
-                React 19 + TypeScript + Vite + Tailwind CSS
-              </div>
-              <p className="text-[12px] text-[#737373]">
-                Embedded directly into the release binary via rust-embed.
-              </p>
-            </div>
-
-            <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 space-y-1.5 hover:border-[#333333] transition-colors">
-              <span className="text-[12px] font-normal text-[#8c8c8c] block">
-                Supported SQL Engines
-              </span>
-              <div className="text-[13px] text-white font-medium">
-                PostgreSQL, MySQL, MariaDB, MSSQL, LibSQL, ClickHouse,
-                Snowflake, Oracle
-              </div>
-              <p className="text-[12px] text-[#737373]">
-                Native driver multiplexing with per-alias connection pools and
-                circuit breakers.
-              </p>
-            </div>
-
-            <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 space-y-1.5 hover:border-[#333333] transition-colors">
-              <span className="text-[12px] font-normal text-[#8c8c8c] block">
-                Security & Protocols
-              </span>
-              <div className="text-[13px] text-white font-medium">
-                RBAC, Model Context Protocol (MCP), AST SQL Firewall, L1/L2
-                Cache
-              </div>
-              <p className="text-[12px] text-[#737373]">
-                Zero-trust policy enforcement, constant-time hashing, and AI
-                agent integration.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
