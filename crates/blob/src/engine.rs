@@ -418,12 +418,11 @@ impl BlobEngine {
         }
     }
 
-    /// Retrieves an object's metadata and data stream.
+    /// Retrieves payload data for an already-resolved BlobMetadata, avoiding redundant index lookups.
     /// CONTRACT:
-    ///  - Precondition: `namespace` and `key` must be valid.
+    ///  - Precondition: `meta` must point to valid inline payload or physical blob file.
     ///  - Returns `BlobError::NotFound` if missing.
     ///  - If `verify_reads` is enabled, validates BLAKE3 hash for inline payload before returning.
-    /// Retrieves payload data for an already-resolved BlobMetadata, avoiding redundant index lookups.
     pub async fn get_data_for_meta(&self, meta: &BlobMetadata) -> Result<BlobData, BlobError> {
         if meta.inline {
             let bytes_vec =

@@ -149,14 +149,14 @@ End-to-end request/response latency through the Axum router, WAF, authentication
 
 Measured across 500 requests per endpoint on release binary with an active administrative session:
 
-| Endpoint | Throughput (RPS) | Mean Latency | P50 Latency | P99 Latency | Storage Mode |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `GET /admin/v1/status` | **6,731.4** | **0.139 ms** | **0.133 ms** | **0.241 ms** | Zero-disk RAM snapshot |
-| `GET /admin/v1/keys` | **6,786.1** | **0.145 ms** | **0.138 ms** | **0.232 ms** | Zero-disk RAM snapshot |
-| `GET /admin/v1/databases` | **6,714.2** | **0.146 ms** | **0.139 ms** | **0.245 ms** | Zero-disk RAM snapshot |
-| `GET /admin/v1/roles` | **6,777.5** | **0.145 ms** | **0.138 ms** | **0.217 ms** | Zero-disk RAM snapshot |
-| `GET /admin/v1/auth/me` | **3,896.7** | **0.253 ms** | **0.224 ms** | **0.313 ms** | L1 cache memoized |
-| `GET /admin/v1/audit?limit=10` | **3,812.1** | **0.260 ms** | **0.247 ms** | **0.345 ms** | Fast cursor pagination |
+| Endpoint                       | Throughput (RPS) | Mean Latency | P50 Latency  | P99 Latency  | Storage Mode           |
+| :----------------------------- | :--------------- | :----------- | :----------- | :----------- | :--------------------- |
+| `GET /admin/v1/status`         | **6,731.4**      | **0.139 ms** | **0.133 ms** | **0.241 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/keys`           | **6,786.1**      | **0.145 ms** | **0.138 ms** | **0.232 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/databases`      | **6,714.2**      | **0.146 ms** | **0.139 ms** | **0.245 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/roles`          | **6,777.5**      | **0.145 ms** | **0.138 ms** | **0.217 ms** | Zero-disk RAM snapshot |
+| `GET /admin/v1/auth/me`        | **3,896.7**      | **0.253 ms** | **0.224 ms** | **0.313 ms** | L1 cache memoized      |
+| `GET /admin/v1/audit?limit=10` | **3,812.1**      | **0.260 ms** | **0.247 ms** | **0.345 ms** | Fast cursor pagination |
 
 ## 6. Architectural Comparison
 

@@ -47,12 +47,14 @@ fn setup_test_metadata() {
         "admin".to_string(),
         RoleSnapshot {
             name: "admin".to_string(),
+            description: Some("Integration test admin".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "*".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["*".to_string()],
                 rls_filter: None,
             }],
+            created_at: 0,
         },
     );
     keys.insert(
@@ -63,6 +65,7 @@ fn setup_test_metadata() {
             role_name: Some("admin".to_string()),
             rate_limit_override: 100_000,
             expires_at: None,
+            created_at: 0,
         },
     );
 
@@ -71,12 +74,14 @@ fn setup_test_metadata() {
         "readonly_role".to_string(),
         RoleSnapshot {
             name: "readonly_role".to_string(),
+            description: Some("Integration test read-only".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "db_alpha".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["SELECT".to_string()],
                 rls_filter: None,
             }],
+            created_at: 0,
         },
     );
     keys.insert(
@@ -87,6 +92,7 @@ fn setup_test_metadata() {
             role_name: Some("readonly_role".to_string()),
             rate_limit_override: 0,
             expires_at: None,
+            created_at: 0,
         },
     );
 
@@ -99,6 +105,7 @@ fn setup_test_metadata() {
             role_name: Some("readonly_role".to_string()),
             rate_limit_override: 0,
             expires_at: Some(1000), // unix timestamp far in the past
+            created_at: 0,
         },
     );
 
@@ -107,12 +114,14 @@ fn setup_test_metadata() {
         "blob_reader_role".to_string(),
         RoleSnapshot {
             name: "blob_reader_role".to_string(),
+            description: Some("Integration test blob reader".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "blob:reports".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["READ".to_string()],
                 rls_filter: None,
             }],
+            created_at: 0,
         },
     );
     keys.insert(
@@ -123,6 +132,7 @@ fn setup_test_metadata() {
             role_name: Some("blob_reader_role".to_string()),
             rate_limit_override: 0,
             expires_at: None,
+            created_at: 0,
         },
     );
 
@@ -131,12 +141,14 @@ fn setup_test_metadata() {
         "blob_wildcard_role".to_string(),
         RoleSnapshot {
             name: "blob_wildcard_role".to_string(),
+            description: Some("Integration test blob wildcard".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "blob:*".to_string(),
                 table_name: "media/*".to_string(),
                 operations: vec!["READ".to_string(), "WRITE".to_string()],
                 rls_filter: None,
             }],
+            created_at: 0,
         },
     );
     keys.insert(
@@ -147,6 +159,7 @@ fn setup_test_metadata() {
             role_name: Some("blob_wildcard_role".to_string()),
             rate_limit_override: 0,
             expires_at: None,
+            created_at: 0,
         },
     );
 
@@ -159,6 +172,7 @@ fn setup_test_metadata() {
             engine: "sqlite".to_string(),
             pool_min: 1,
             pool_max: 5,
+            created_at: 0,
         },
     );
 
@@ -171,6 +185,7 @@ fn setup_test_metadata() {
             engine: "postgres".to_string(),
             pool_min: 1,
             pool_max: 5,
+            created_at: 0,
         },
     );
 
@@ -179,12 +194,14 @@ fn setup_test_metadata() {
         "items_reader_role".to_string(),
         RoleSnapshot {
             name: "items_reader_role".to_string(),
+            description: Some("Integration test items reader".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "testdb".to_string(),
                 table_name: "items".to_string(),
                 operations: vec!["SELECT".to_string()],
                 rls_filter: None,
             }],
+            created_at: 0,
         },
     );
     keys.insert(
@@ -195,6 +212,7 @@ fn setup_test_metadata() {
             role_name: Some("items_reader_role".to_string()),
             rate_limit_override: 0,
             expires_at: None,
+            created_at: 0,
         },
     );
 

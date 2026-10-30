@@ -937,12 +937,11 @@ pub async fn test_database(
 // RBAC administrative endpoints allowing definition and assignment of fine-grained
 // table and operation permissions. Updates immediately sync to the ArcSwap snapshot.
 
-/// Lists all configured RBAC roles with their attached permission grants.
+/// Lists all configured RBAC roles with their attached permission grants directly from the atomic in-memory snapshot.
 /// CONTRACT:
 ///  - Precondition: Verified admin AuthContext.
 ///  - Returns list of role records and their operations.
 ///  - Idempotent: Yes.
-/// Lists all registered roles and their permission grants directly from the atomic in-memory snapshot.
 pub async fn list_roles(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {

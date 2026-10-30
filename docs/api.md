@@ -120,7 +120,12 @@ List endpoints use **keyset (cursor) pagination**: pass `limit` and `cursor`; re
 | GET                              | `/db/:db/:table/rows`                       | Query rows (keyset pagination, JSON filters, sorting)               |
 | POST                             | `/db/:db/:table/rows`                       | Insert one or many rows (`Idempotency-Key` supported)               |
 | PATCH                            | `/db/:db/:table/rows`                       | Update rows (filter required)                                       |
+| PUT                              | `/db/:db/:table/rows`                       | Update rows (alias for PATCH, filter required)                      |
 | DELETE                           | `/db/:db/:table/rows`                       | Delete rows (filter required)                                       |
+| GET                              | `/db/:db/:table/rows/:id`                   | Fast point lookup single row by primary key                         |
+| PATCH                            | `/db/:db/:table/rows/:id`                   | Update single row by primary key                                    |
+| PUT                              | `/db/:db/:table/rows/:id`                   | Update single row by primary key (alias for PATCH)                  |
+| DELETE                           | `/db/:db/:table/rows/:id`                   | Delete single row by primary key                                    |
 | GET                              | `/db/:db/:table/columns`                    | Inspect schema (types, nullability, PKs, FKs)                       |
 | POST                             | `/db/:db/:table/columns`                    | Add a column (DDL)                                                  |
 | PATCH                            | `/db/:db/:table/columns/:column`            | Modify type or rename a column (DDL)                                |
@@ -164,6 +169,7 @@ List endpoints use **keyset (cursor) pagination**: pass `limit` and `cursor`; re
 | Area             | Method               | Path                               | Description                                                         |
 | ---------------- | -------------------- | ---------------------------------- | ------------------------------------------------------------------- |
 | **Auth**         | POST                 | `/auth/login`                      | Authenticate and issue a session token                              |
+|                  | GET                  | `/auth/me`                         | Current admin session details and permissions                       |
 |                  | POST                 | `/auth/logout`                     | Revoke the session token and clear the cookie                       |
 | **Setup**        | GET / POST           | `/setup/begin`                     | Check / initialize the first-run wizard                             |
 |                  | POST                 | `/setup/account`                   | Create the initial root administrator                               |
@@ -311,6 +317,47 @@ X-Axiom-Key: <TOKEN>
 Content-Type: application/json
 
 { "filter": { "status": { "eq": "expired" } } }
+```
+
+### Point lookups and mutations by ID (`/rows/:id`)
+
+When operating directly on a single record by primary key, use the `/rows/:id` sub-resource. This executes a point lookup directly on the primary key, returning a single object (or `404 Not Found` if missing) rather than an array.
+
+**Fetch single row by ID**
+
+```http
+GET /api/v1/db/main_pg/users/rows/42
+X-Axiom-Key: <TOKEN>
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 42,
+    "email": "alice@example.com",
+    "status": "active"
+  }
+}
+```
+
+**Update single row by ID** (`PATCH` or `PUT`)
+
+```http
+PATCH /api/v1/db/main_pg/users/rows/42
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+
+{ "data": { "status": "suspended" } }
+```
+
+**Delete single row by ID**
+
+```http
+DELETE /api/v1/db/main_pg/users/rows/42
+X-Axiom-Key: <TOKEN>
 ```
 
 ### Schema inspection and DDL

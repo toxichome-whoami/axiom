@@ -103,10 +103,9 @@ impl tower_http::request_id::MakeRequestId for FastRequestId {
         let id = REQ_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut buf = [0u8; 20];
         let mut n = id;
-        let len;
-        if n == 0 {
+        let len = if n == 0 {
             buf[0] = b'0';
-            len = 1;
+            1
         } else {
             let mut temp = [0u8; 20];
             let mut tlen = 0;
@@ -118,8 +117,8 @@ impl tower_http::request_id::MakeRequestId for FastRequestId {
             for i in 0..tlen {
                 buf[i] = temp[tlen - 1 - i];
             }
-            len = tlen;
-        }
+            tlen
+        };
         axum::http::HeaderValue::from_bytes(&buf[..len])
             .ok()
             .map(tower_http::request_id::RequestId::new)

@@ -13,7 +13,6 @@ use argon2::{
 use libsql::{Builder, Connection, Database};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, OnceCell};
@@ -37,9 +36,6 @@ static CLUSTER_IDENTITY_CACHE: Lazy<tokio::sync::RwLock<Option<(String, String, 
 // Eliminates recurring SQLite queries on authentication hot-paths.
 static SYSTEM_SECRETS_CACHE: Lazy<std::sync::RwLock<HashMap<String, String>>> =
     Lazy::new(|| std::sync::RwLock::new(HashMap::new()));
-
-// Tracks SQLite data version to skip redundant periodic snapshot syncs when idle.
-static LAST_DATA_VERSION: AtomicI64 = AtomicI64::new(-1);
 
 struct AuditTask {
     timestamp: i64,
@@ -443,22 +439,7 @@ impl MetadataStore {
     }
 
     /// Loads the latest state from SQLite and atomically publishes the new ArcSwap snapshot.
-    /// Optimizes idle resource usage: checks PRAGMA data_version and skips table queries if unchanged.
     pub async fn sync_snapshot() -> Result<(), String> {
-        {
-            let conn = Self::get_conn().await?;
-            if let Ok(mut rows) = conn.query("PRAGMA data_version;", ()).await {
-                if let Ok(Some(row)) = rows.next().await {
-                    if let Ok(ver) = row.get::<i64>(0) {
-                        let prev = LAST_DATA_VERSION.load(Ordering::Relaxed);
-                        if prev != -1 && ver == prev {
-                            return Ok(());
-                        }
-                        LAST_DATA_VERSION.store(ver, Ordering::Relaxed);
-                    }
-                }
-            }
-        }
         let snapshot = Self::load_snapshot().await?;
         update_snapshot(snapshot);
         Ok(())

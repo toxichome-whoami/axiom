@@ -205,20 +205,20 @@ verify_reads = false               # Recompute BLAKE3 on every read
 
 ### 6.1 `[server]`: network, limits, TLS, CORS
 
-| Key                | Type        | Default                | Range / values        | Description                                                                                            |
-| ------------------ | ----------- | ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------ |
-| `host`             | string      | `"127.0.0.1"`          | IPv4 or IPv6          | Interface to bind. `"0.0.0.0"` listens on all interfaces.                                              |
-| `port`             | integer     | `4500`                 | `1`–`65535`           | HTTP listen port.                                                                                      |
+| Key                | Type        | Default                | Range / values        | Description                                                                                                                                 |
+| ------------------ | ----------- | ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`             | string      | `"127.0.0.1"`          | IPv4 or IPv6          | Interface to bind. `"0.0.0.0"` listens on all interfaces.                                                                                   |
+| `port`             | integer     | `4500`                 | `1`–`65535`           | HTTP listen port.                                                                                                                           |
 | `workers`          | integer     | `0`                    | `0`–`256`             | Tokio worker threads. `0` = adaptively clamps available cores to `[2, 8]` to conserve thread stack memory. Explicit integer `N` is honored. |
-| `max_connections`  | integer     | `10000`                | `100`–`100000`        | Concurrent TCP connection ceiling.                                                                     |
-| `request_timeout`  | integer (s) | `30`                   | `1`–`300`             | Cancels requests that run longer than this.                                                            |
-| `body_limit`       | size        | `"10mb"`               | e.g. `"2mb"`, `"1gb"` | Max request body, enforced by the WAF.                                                                 |
-| `tls_cert`         | path        | `""`                   | PEM file              | Certificate for native TLS. Empty disables TLS.                                                        |
-| `tls_key`          | path        | `""`                   | PEM file              | Private key matching `tls_cert`.                                                                       |
-| `allowed_ips`      | string[]    | `[]` / `["127.0.0.1"]` | Exact IPs or CIDR     | Exempt from rate limiting and auto-bans (`[]` compiled default; `init` template uses `["127.0.0.1"]`). |
-| `trusted_proxies`  | string[]    | `["127.0.0.1"]`        | IPs or CIDR           | Proxies whose `X-Forwarded-For` is believed.                                                           |
-| `cors_origins`     | string[]    | `[]` / `["*"]`         | Origins or `"*"`      | Allowed CORS origins (`[]` compiled default allows local dev ports; `init` template uses `["*"]`).     |
-| `shutdown_timeout` | integer (s) | `30`                   | `1`–`120`             | Drain period on SIGTERM / SIGINT.                                                                      |
+| `max_connections`  | integer     | `10000`                | `100`–`100000`        | Concurrent TCP connection ceiling.                                                                                                          |
+| `request_timeout`  | integer (s) | `30`                   | `1`–`300`             | Cancels requests that run longer than this.                                                                                                 |
+| `body_limit`       | size        | `"10mb"`               | e.g. `"2mb"`, `"1gb"` | Max request body, enforced by the WAF.                                                                                                      |
+| `tls_cert`         | path        | `""`                   | PEM file              | Certificate for native TLS. Empty disables TLS.                                                                                             |
+| `tls_key`          | path        | `""`                   | PEM file              | Private key matching `tls_cert`.                                                                                                            |
+| `allowed_ips`      | string[]    | `[]` / `["127.0.0.1"]` | Exact IPs or CIDR     | Exempt from rate limiting and auto-bans (`[]` compiled default; `init` template uses `["127.0.0.1"]`).                                      |
+| `trusted_proxies`  | string[]    | `["127.0.0.1"]`        | IPs or CIDR           | Proxies whose `X-Forwarded-For` is believed.                                                                                                |
+| `cors_origins`     | string[]    | `[]` / `["*"]`         | Origins or `"*"`      | Allowed CORS origins (`[]` compiled default allows local dev ports; `init` template uses `["*"]`).                                          |
+| `shutdown_timeout` | integer (s) | `30`                   | `1`–`120`             | Drain period on SIGTERM / SIGINT.                                                                                                           |
 
 > [!WARNING]
 > **Never set `trusted_proxies = ["*"]` in production.** It lets any client forge `X-Forwarded-For`, bypassing IP rate limits and bans. List only your real proxy or load-balancer addresses.
@@ -261,19 +261,19 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 
 ### 6.4 `[cache]`
 
-| Key                  | Type        | Default                | Range / values     | Description                                            |
-| -------------------- | ----------- | ---------------------- | ------------------ | ------------------------------------------------------ |
-| `enabled`            | bool        | `true`                 |                    | Master toggle.                                         |
-| `backend`            | string      | `"memory"`             | `memory`, `hybrid` | `hybrid` adds an L2 disk tier behind the L1 RAM cache. |
-| `turso_url`          | string      | `"file:data/cache.db"` | path or LibSQL URL | L2 location when `backend = "hybrid"`.                 |
-| `turso_token`        | string      | `""`                   |                    | Auth token for a remote L2 instance.                   |
-| `max_memory`         | size        | `"100mb"`              | e.g. `"50mb"`, `"512mb"` | L1 memory ceiling (actively enforced via sampled LRU eviction).        |
-| `default_ttl`        | integer (s) | `60`                   | `1`–`86400`        | Default lifetime for general items.                    |
-| `query_cache`        | bool        | `true`                 |                    | Cache SELECT results and parsed ASTs.                  |
-| `idempotency_ttl`    | integer (s) | `86400`                | `60`–`604800`      | How long `Idempotency-Key` responses are replayable.   |
-| `response_cache_ttl` | integer (s) | `30`                   | `1`–`3600`         | TTL for cached GET responses.                          |
-| `query_results_ttl`  | integer (s) | `5`                    | `1`–`300`          | TTL for repeated SELECT results.                       |
-| `negative_cache_ttl` | integer (s) | `5`                    | `1`–`60`           | TTL for 404 and empty lookups.                         |
+| Key                  | Type        | Default                | Range / values           | Description                                                     |
+| -------------------- | ----------- | ---------------------- | ------------------------ | --------------------------------------------------------------- |
+| `enabled`            | bool        | `true`                 |                          | Master toggle.                                                  |
+| `backend`            | string      | `"memory"`             | `memory`, `hybrid`       | `hybrid` adds an L2 disk tier behind the L1 RAM cache.          |
+| `turso_url`          | string      | `"file:data/cache.db"` | path or LibSQL URL       | L2 location when `backend = "hybrid"`.                          |
+| `turso_token`        | string      | `""`                   |                          | Auth token for a remote L2 instance.                            |
+| `max_memory`         | size        | `"100mb"`              | e.g. `"50mb"`, `"512mb"` | L1 memory ceiling (actively enforced via sampled LRU eviction). |
+| `default_ttl`        | integer (s) | `60`                   | `1`–`86400`              | Default lifetime for general items.                             |
+| `query_cache`        | bool        | `true`                 |                          | Cache SELECT results and parsed ASTs.                           |
+| `idempotency_ttl`    | integer (s) | `86400`                | `60`–`604800`            | How long `Idempotency-Key` responses are replayable.            |
+| `response_cache_ttl` | integer (s) | `30`                   | `1`–`3600`               | TTL for cached GET responses.                                   |
+| `query_results_ttl`  | integer (s) | `5`                    | `1`–`300`                | TTL for repeated SELECT results.                                |
+| `negative_cache_ttl` | integer (s) | `5`                    | `1`–`60`                 | TTL for 404 and empty lookups.                                  |
 
 > [!TIP]
 > Cached responses report `"cached": true` in the response `meta`. Flush all caches at runtime with `POST /admin/v1/cache/flush`; no restart is needed.

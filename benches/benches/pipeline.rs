@@ -290,12 +290,14 @@ fn bench_auth_verification(c: &mut Criterion) {
         "admin".to_string(),
         RoleSnapshot {
             name: "admin".to_string(),
+            description: Some("Benchmark administrator".to_string()),
             permissions: vec![axiom_metadata::snapshot::PermissionSnapshot {
                 database: "*".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["*".to_string()],
                 rls_filter: None,
             }],
+            created_at: 0,
         },
     );
 
@@ -307,6 +309,7 @@ fn bench_auth_verification(c: &mut Criterion) {
             role_name: Some("admin".to_string()),
             rate_limit_override: 0,
             expires_at: None,
+            created_at: 0,
         },
     );
 
@@ -443,12 +446,14 @@ fn bench_metadata_snapshot(c: &mut Criterion) {
             format!("role_{}", i),
             RoleSnapshot {
                 name: format!("role_{}", i),
+                description: None,
                 permissions: vec![axiom_metadata::snapshot::PermissionSnapshot {
                     database: "db".to_string(),
                     table_name: "tbl".to_string(),
                     operations: vec!["SELECT".to_string()],
                     rls_filter: None,
                 }],
+                created_at: 0,
             },
         );
     }
