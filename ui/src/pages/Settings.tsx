@@ -27,10 +27,7 @@ import {
   Network,
   Search,
   X,
-  Zap,
   Trash2,
-  CheckCircle2,
-  AlertCircle,
 } from "lucide-react";
 import {
   api,
@@ -984,158 +981,108 @@ export function Settings() {
       {/* TAB 2: SECURITY & MAINTENANCE */}
       {activeTab === "security" && (
         <div className="space-y-6">
-          {/* Section 1: Query & Schema Cache Invalidation */}
-          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
-            <div className="px-5 py-4 border-b border-[#222222] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-[6px] bg-[#141414] border border-[#262626] text-amber-400 shrink-0">
-                  <Zap className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="text-[14px] font-medium text-white tracking-tight">
-                    Database Query & Schema Cache Invalidation
-                  </h2>
-                  <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                    Clear prepared statements, AST query plans, and cached schema definitions across all active database drivers.
-                  </p>
+          {/* Cache Telemetry Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors">
+              <span className="text-[12px] font-normal text-[#8c8c8c] block">
+                Cached query plans
+              </span>
+              <div className="my-2">
+                <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight font-mono">
+                  {(cacheStats?.entries_count ?? cacheStats?.entries ?? 0).toLocaleString()}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!canFlushCache || isFlushingCache}
-                  onClick={() => setIsFlushConfirmOpen(true)}
-                  className="flex items-center gap-2 h-8 px-3 rounded-[6px] bg-[#1a1410] border border-[#432310] hover:border-amber-500/50 text-amber-300 hover:text-amber-200 text-[12.5px] font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>{isFlushingCache ? "Flushing..." : "Flush Query Cache"}</span>
-                </button>
-              </div>
+              <span className="text-[12px] text-[#737373] block">
+                Prepared statements in memory
+              </span>
             </div>
 
-            <div className="p-5 space-y-4 font-sans">
-              {/* Telemetry Metrics */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-3.5 rounded-[6px] bg-[#121212] border border-[#222222]">
-                  <div className="text-[12px] font-medium text-[#8c8c8c]">Cached Queries & ASTs</div>
-                  <div className="text-[18px] font-semibold text-white mt-1 font-mono">
-                    {(cacheStats?.entries_count ?? cacheStats?.entries ?? 0).toLocaleString()}
-                  </div>
-                  <div className="text-[11px] text-[#666666] mt-0.5">In-memory statement plans</div>
-                </div>
-                <div className="p-3.5 rounded-[6px] bg-[#121212] border border-[#222222]">
-                  <div className="text-[12px] font-medium text-[#8c8c8c]">Cache Hit Ratio</div>
-                  <div className="text-[18px] font-semibold text-emerald-400 mt-1 font-mono">
-                    {cacheStats?.hit_rate_pct != null
-                      ? `${cacheStats.hit_rate_pct.toFixed(1)}%`
-                      : cacheStats?.hit_ratio != null
-                        ? `${(cacheStats.hit_ratio * 100).toFixed(1)}%`
-                        : "0.0%"}
-                  </div>
-                  <div className="text-[11px] text-[#666666] mt-0.5">Hit efficiency vs miss recompile</div>
-                </div>
-                <div className="p-3.5 rounded-[6px] bg-[#121212] border border-[#222222]">
-                  <div className="text-[12px] font-medium text-[#8c8c8c]">Lifetime Evictions</div>
-                  <div className="text-[18px] font-semibold text-[#cccccc] mt-1 font-mono">
-                    {(cacheStats?.evictions ?? 0).toLocaleString()}
-                  </div>
-                  <div className="text-[11px] text-[#666666] mt-0.5">TTL expiry or manual clears</div>
+            <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors">
+              <span className="text-[12px] font-normal text-[#8c8c8c] block">
+                Cache hit rate
+              </span>
+              <div className="my-2">
+                <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight font-mono">
+                  {cacheStats?.hit_rate_pct != null
+                    ? `${cacheStats.hit_rate_pct.toFixed(1)}%`
+                    : "0.0%"}
                 </div>
               </div>
+              <span className="text-[12px] text-[#737373] block">
+                Hit efficiency vs recompile
+              </span>
+            </div>
 
-              {/* Security/PBAC Note & Feedback */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-[12.5px] text-[#737373]">
-                <div>
-                  Protected by <code className="text-[#a1a1aa] bg-[#18181b] px-1.5 py-0.5 rounded border border-[#27272a] font-mono text-[11px]">settings.flush_cache</code> PBAC permission capability.
+            <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors">
+              <span className="text-[12px] font-normal text-[#8c8c8c] block">
+                Total evictions
+              </span>
+              <div className="my-2">
+                <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight font-mono">
+                  {(cacheStats?.evictions ?? 0).toLocaleString()}
                 </div>
-                {!canFlushCache && (
-                  <span className="text-amber-500/90 text-[12px]">
-                    Your account lacks permission to execute cache flush.
-                  </span>
-                )}
               </div>
+              <span className="text-[12px] text-[#737373] block">
+                TTL expirations and manual clears
+              </span>
+            </div>
+          </div>
 
+          {/* Flush Cache Action */}
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
+            <div className="p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h3 className="text-[14px] font-medium text-white">Flush Query Cache</h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5 max-w-xl">
+                  Clear prepared statements, AST query plans, and cached schema definitions across all database drivers.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={!canFlushCache || isFlushingCache}
+                onClick={() => setIsFlushConfirmOpen(true)}
+                className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-[6px] bg-[#161616] hover:bg-[#202020] text-[#ededed] hover:text-white text-[13px] font-medium border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                <span>{isFlushingCache ? "Flushing..." : "Flush Cache"}</span>
+              </button>
+            </div>
+            <div className="px-5 py-2.5 bg-[#0e0e0e] border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#737373]">
+              <span>Permission: settings.flush_cache</span>
               {flushFeedback && (
-                <div
-                  className={`flex items-center gap-2 p-3 rounded-[6px] text-[12.5px] border ${
-                    flushFeedback.type === "success"
-                      ? "bg-emerald-950/20 text-emerald-300 border-emerald-900/40"
-                      : "bg-rose-950/20 text-rose-300 border-rose-900/40"
-                  }`}
-                >
-                  {flushFeedback.type === "success" ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                  )}
-                  <span>{flushFeedback.text}</span>
-                </div>
+                <span className={flushFeedback.type === "success" ? "text-emerald-400" : "text-rose-400"}>
+                  {flushFeedback.text}
+                </span>
               )}
             </div>
           </div>
 
-          {/* Section 2: Login Anti-Bot & CAPTCHA Verification */}
+          {/* Login Anti-Bot Verification */}
           <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
-            <div className="px-5 py-4 border-b border-[#222222] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-[6px] bg-[#141414] border border-[#262626] text-blue-400 shrink-0">
-                  <ShieldCheck className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="text-[14px] font-medium text-white tracking-tight">
-                    Login Anti-Bot Verification
-                  </h2>
-                  <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                    Require mathematical and perceptual CAPTCHA challenges during administrator login to block automated brute-force attacks.
-                  </p>
-                </div>
+            <div className="p-5 flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-[14px] font-medium text-white">Login Anti-Bot Verification</h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5 max-w-xl">
+                  Require CAPTCHA verification challenges during login to block automated brute-force attempts.
+                </p>
               </div>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${
-                    systemSettings?.login_captcha_enabled
-                      ? "bg-emerald-950/40 text-emerald-300 border-emerald-800/40"
-                      : "bg-[#18181b] text-[#737373] border-[#27272a]"
-                  }`}
-                >
-                  {systemSettings?.login_captcha_enabled ? "Active Protection" : "Disabled"}
-                </span>
-                <Switch
-                  checked={Boolean(systemSettings?.login_captcha_enabled)}
-                  disabled={!canManageSecurity || isUpdatingCaptcha}
-                  onCheckedChange={handleToggleCaptcha}
-                  aria-label="Toggle login CAPTCHA verification"
-                />
-              </div>
+              <Switch
+                checked={Boolean(systemSettings?.login_captcha_enabled)}
+                disabled={!canManageSecurity || isUpdatingCaptcha}
+                onCheckedChange={handleToggleCaptcha}
+                aria-label="Toggle login CAPTCHA verification"
+              />
             </div>
-
-            <div className="p-5 space-y-4 font-sans">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[12.5px] text-[#737373]">
-                <div>
-                  Enforces challenge response on <code className="text-[#a1a1aa] bg-[#18181b] px-1.5 py-0.5 rounded border border-[#27272a] font-mono text-[11px]">/login</code> authentication route. Requires <code className="text-[#a1a1aa] bg-[#18181b] px-1.5 py-0.5 rounded border border-[#27272a] font-mono text-[11px]">settings.manage_security</code> permission capability.
-                </div>
-                {!canManageSecurity && (
-                  <span className="text-amber-500/90 text-[12px]">
-                    Your account lacks permission to modify security settings.
-                  </span>
-                )}
-              </div>
-
-              {captchaFeedback && (
-                <div
-                  className={`flex items-center gap-2 p-3 rounded-[6px] text-[12.5px] border ${
-                    captchaFeedback.type === "success"
-                      ? "bg-emerald-950/20 text-emerald-300 border-emerald-900/40"
-                      : "bg-rose-950/20 text-rose-300 border-rose-900/40"
-                  }`}
-                >
-                  {captchaFeedback.type === "success" ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                  )}
-                  <span>{captchaFeedback.text}</span>
-                </div>
+            <div className="px-5 py-2.5 bg-[#0e0e0e] border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#737373]">
+              <span>Permission: settings.manage_security</span>
+              {captchaFeedback ? (
+                <span className={captchaFeedback.type === "success" ? "text-emerald-400" : "text-rose-400"}>
+                  {captchaFeedback.text}
+                </span>
+              ) : (
+                <span>
+                  Status: {systemSettings?.login_captcha_enabled ? "Enforced" : "Disabled"}
+                </span>
               )}
             </div>
           </div>
