@@ -2436,18 +2436,28 @@ export function StoragePage() {
 
         {/* Floating Bulk Action Bar */}
         {selectedItemsList.length > 0 && (
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#0c0c0c] border border-[#262626] shadow-2xl rounded-[8px] px-2.5 py-1.5 flex items-center gap-2 font-sans text-[13px] animate-in slide-in-from-bottom-2 duration-150">
-            <div className="flex items-center gap-2 pr-2 border-r border-[#222222]">
-              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-[#161616] text-[#cccccc] border border-[#2a2a2a] font-medium tabular-nums text-[12px] font-sans">
-                {selectedItemsList.length} selected
+          <div className="absolute bottom-4 sm:bottom-5 left-1/2 -translate-x-1/2 z-30 max-w-[calc(100vw-1.5rem)] sm:max-w-max bg-[#0c0c0c] border border-[#262626] shadow-2xl rounded-[8px] px-2 sm:px-2.5 py-1.5 flex items-center gap-1 sm:gap-2 font-sans text-[13px] animate-in slide-in-from-bottom-2 duration-150 overflow-x-auto scrollbar-none">
+            <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2 border-r border-[#222222] shrink-0">
+              <span className="inline-flex items-center justify-center px-1.5 sm:px-2 py-0.5 rounded-[4px] bg-[#161616] text-[#cccccc] border border-[#2a2a2a] font-medium tabular-nums text-[11px] sm:text-[12px] font-sans shrink-0">
+                <span className="hidden sm:inline">
+                  {selectedItemsList.length} selected
+                </span>
+                <span className="sm:hidden">
+                  {selectedItemsList.length}
+                </span>
               </span>
               {selectedKeys.size < allVisibleItems.length && (
                 <button
                   type="button"
                   onClick={handleSelectAll}
-                  className="text-[#8c8c8c] hover:text-white transition-colors cursor-pointer text-[12px] font-sans"
+                  className="text-[#8c8c8c] hover:text-white transition-colors cursor-pointer text-[11px] sm:text-[12px] font-sans whitespace-nowrap shrink-0"
                 >
-                  Select all ({allVisibleItems.length})
+                  <span className="hidden sm:inline">
+                    Select all ({allVisibleItems.length})
+                  </span>
+                  <span className="sm:hidden">
+                    All ({allVisibleItems.length})
+                  </span>
                 </button>
               )}
             </div>
@@ -2458,10 +2468,11 @@ export function StoragePage() {
               onClick={handleBatchDownload}
               disabled={selectedItemsList.every((it) => it.type === "folder")}
               title="Download selected files"
-              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Download selected files"
+              className="flex items-center justify-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
-              <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
-              <span>Download</span>
+              <Download className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+              <span className="hidden sm:inline">Download</span>
             </button>
 
             {/* Action: Move */}
@@ -2470,10 +2481,11 @@ export function StoragePage() {
                 type="button"
                 onClick={() => setIsBatchMoveOpen(true)}
                 title="Move selected items"
-                className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+                aria-label="Move selected items"
+                className="flex items-center justify-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer shrink-0"
               >
-                <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                <span>Move</span>
+                <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                <span className="hidden sm:inline">Move</span>
               </button>
             )}
 
@@ -2483,10 +2495,11 @@ export function StoragePage() {
                 type="button"
                 onClick={() => setIsBatchCopyOpen(true)}
                 title="Copy selected items"
-                className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+                aria-label="Copy selected items"
+                className="flex items-center justify-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer shrink-0"
               >
-                <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                <span>Copy</span>
+                <Copy className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                <span className="hidden sm:inline">Copy</span>
               </button>
             )}
 
@@ -2496,10 +2509,11 @@ export function StoragePage() {
                 type="button"
                 onClick={() => setIsBatchDeleteOpen(true)}
                 title="Delete selected items"
-                className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer"
+                aria-label="Delete selected items"
+                className="flex items-center justify-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer shrink-0"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete</span>
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Delete</span>
               </button>
             )}
 
@@ -2508,7 +2522,8 @@ export function StoragePage() {
               type="button"
               onClick={handleClearSelection}
               title="Clear selection (Esc)"
-              className="h-8 w-8 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#181818] border border-transparent hover:border-[#262626] transition-colors cursor-pointer flex items-center justify-center ml-0.5"
+              aria-label="Clear selection"
+              className="h-8 w-8 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#181818] border border-transparent hover:border-[#262626] transition-colors cursor-pointer flex items-center justify-center shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>
