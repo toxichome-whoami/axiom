@@ -672,7 +672,7 @@ export function MediaPlayer({
 
     return (
       <div
-        className={`p-6 bg-[#0c0c0c] border border-[#222222] rounded-[8px] flex flex-col items-center max-w-xl mx-auto shadow-2xl font-sans ${className}`}
+        className={`bg-[#0c0c0c] border border-[#222222] rounded-[8px] flex flex-col items-center max-w-xl w-full mx-auto shadow-2xl font-sans overflow-hidden ${className}`}
       >
         <audio
           ref={audioRef}
@@ -699,66 +699,68 @@ export function MediaPlayer({
           onPause={() => setIsAudioPlaying(false)}
         />
 
-        {/* Clean Monochrome Audio Card */}
-        <div className="w-16 h-16 rounded-[8px] bg-[#141414] border border-[#262626] flex items-center justify-center mb-3 text-white">
-          <div className="flex items-center gap-1 h-6">
-            <span
-              className={`w-1 bg-[#8c8c8c] rounded-full transition-all duration-300 ${isAudioPlaying ? "h-5" : "h-2"}`}
-            />
-            <span
-              className={`w-1 bg-white rounded-full transition-all duration-200 ${isAudioPlaying ? "h-6" : "h-3"}`}
-            />
-            <span
-              className={`w-1 bg-[#cccccc] rounded-full transition-all duration-300 ${isAudioPlaying ? "h-4" : "h-2"}`}
-            />
-            <span
-              className={`w-1 bg-white rounded-full transition-all duration-150 ${isAudioPlaying ? "h-5" : "h-3"}`}
-            />
-          </div>
-        </div>
-
-        <h3 className="text-white text-[16px] font-sans font-semibold truncate max-w-full text-center">
-          {name}
-        </h3>
-        <p className="text-[13.5px] text-[#8c8c8c] font-sans font-normal mt-1 mb-4">
-          {getFileExtension(name)} &bull; {formatBytes(size || 0)}
-        </p>
-
-        {/* Timeline */}
-        <div className="w-full space-y-1 mb-4">
-          <div className="relative group w-full h-2 flex items-center cursor-pointer">
-            <div className="w-full h-1 bg-[#222222] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-white rounded-full transition-all"
-                style={{ width: `${audioProgress}%` }}
+        {/* Clean Monochrome Audio Body */}
+        <div className="p-6 pb-4 w-full flex flex-col items-center">
+          <div className="w-16 h-16 rounded-[8px] bg-[#141414] border border-[#262626] flex items-center justify-center mb-3 text-white shadow-inner">
+            <div className="flex items-center gap-1 h-6">
+              <span
+                className={`w-1 bg-[#8c8c8c] rounded-full transition-all duration-300 ${isAudioPlaying ? "h-5" : "h-2"}`}
+              />
+              <span
+                className={`w-1 bg-white rounded-full transition-all duration-200 ${isAudioPlaying ? "h-6" : "h-3"}`}
+              />
+              <span
+                className={`w-1 bg-[#cccccc] rounded-full transition-all duration-300 ${isAudioPlaying ? "h-4" : "h-2"}`}
+              />
+              <span
+                className={`w-1 bg-white rounded-full transition-all duration-150 ${isAudioPlaying ? "h-5" : "h-3"}`}
               />
             </div>
-            <input
-              type="range"
-              min={0}
-              max={audioDuration || 100}
-              step={0.1}
-              value={audioCurrentTime}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                if (audioRef.current) {
-                  audioRef.current.currentTime = val;
-                  setAudioCurrentTime(val);
-                }
-              }}
-              aria-label="Seek audio timeline"
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
           </div>
 
-          <div className="flex items-center justify-between text-[12px] font-sans font-medium tabular-nums text-[#8c8c8c]">
-            <span>{formatDuration(audioCurrentTime)}</span>
-            <span>{formatDuration(audioDuration)}</span>
+          <h3 className="text-white text-[16px] font-sans font-semibold truncate max-w-full text-center">
+            {name}
+          </h3>
+          <p className="text-[13.5px] text-[#8c8c8c] font-sans font-normal mt-1 mb-4">
+            {getFileExtension(name)} &bull; {formatBytes(size || 0)}
+          </p>
+
+          {/* Timeline */}
+          <div className="w-full space-y-1">
+            <div className="relative group w-full h-2 flex items-center cursor-pointer">
+              <div className="w-full h-1 bg-[#222222] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-white rounded-full transition-all"
+                  style={{ width: `${audioProgress}%` }}
+                />
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={audioDuration || 100}
+                step={0.1}
+                value={audioCurrentTime}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (audioRef.current) {
+                    audioRef.current.currentTime = val;
+                    setAudioCurrentTime(val);
+                  }
+                }}
+                aria-label="Seek audio timeline"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[12px] font-sans font-medium tabular-nums text-[#8c8c8c]">
+              <span>{formatDuration(audioCurrentTime)}</span>
+              <span>{formatDuration(audioDuration)}</span>
+            </div>
           </div>
         </div>
 
-        {/* Controls row */}
-        <div className="flex items-center justify-between w-full pt-2 border-t border-[#1a1a1a]">
+        {/* Controls row - Edge to Edge */}
+        <div className="w-full px-6 py-3.5 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
               type="button"
