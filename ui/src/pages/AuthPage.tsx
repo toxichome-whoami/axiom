@@ -10,6 +10,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Stepper, StepItem } from "../components/shared/Stepper";
 import { CustomSelect } from "../components/shared/CustomSelect";
 import { Captcha, CaptchaRef } from "../components/shared/Captcha";
+import { Switch } from "../components/ui/Switch";
 import {
   SslMode,
   SSL_MODE_OPTIONS,
@@ -582,19 +583,21 @@ export function AuthPage({
               />
             </div>
 
-            {/* Remember Device Checkbox */}
+            {/* Remember Device Toggle */}
             <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberDevice}
-                  onChange={(e) => setRememberDevice(e.target.checked)}
-                  className="w-4 h-4 rounded border-[#262626] bg-[#141414] text-[#2563eb] focus:ring-0 focus:ring-offset-0 cursor-pointer"
-                />
-                <span className="text-[13px] text-[#8c8c8c] hover:text-[#cccccc] transition-colors">
+              <div
+                onClick={() => setRememberDevice((prev) => !prev)}
+                className="flex items-center justify-between w-full cursor-pointer select-none group py-0.5"
+              >
+                <span className="text-[13px] text-[#8c8c8c] group-hover:text-[#cccccc] transition-colors">
                   Remember this device
                 </span>
-              </label>
+                <Switch
+                  checked={rememberDevice}
+                  onCheckedChange={setRememberDevice}
+                  aria-label="Remember this device"
+                />
+              </div>
             </div>
 
             {/* Submit Action */}
