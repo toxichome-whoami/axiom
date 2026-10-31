@@ -25,6 +25,7 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
     ref,
   ) => {
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
       if (disabled) return;
       onCheckedChange?.(!checked);
       onClick?.(e);

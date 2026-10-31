@@ -29,6 +29,7 @@ import {
 import { RowInspectorSlideOver } from "./table/RowInspectorSlideOver";
 import { ColumnSlideOver } from "./table/ColumnSlideOver";
 import { TableEditSlideOver } from "./table/TableEditSlideOver";
+import { DeleteTableDialog } from "./table/DeleteTableDialog";
 import { TableSidebar } from "./table/TableSidebar";
 import { TableToolbar } from "./table/TableToolbar";
 import { TableGridView } from "./table/TableGridView";
@@ -428,10 +429,9 @@ export function TableEditor() {
   const [deleteTableTarget, setDeleteTableTarget] = useState<string | null>(
     null,
   );
-  const [dropCascade, setDropCascade] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
 
-  const handleDeleteTable = async () => {
+  const handleDeleteTable = async (cascade: boolean) => {
     if (!selectedDb || !deleteTableTarget) return;
     setIsDeletingTable(true);
     try {
@@ -440,7 +440,7 @@ export function TableEditor() {
 
       let dropSql = "";
       if (engineType.includes("mysql") || engineType.includes("mariadb")) {
-        dropSql = dropCascade
+        dropSql = cascade
           ? `SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`; SET FOREIGN_KEY_CHECKS = 1;`
           : `DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`;`;
       } else if (
@@ -452,16 +452,16 @@ export function TableEditor() {
         engineType.includes("sqlite") ||
         engineType.includes("libsql")
       ) {
-        dropSql = dropCascade
+        dropSql = cascade
           ? `PRAGMA foreign_keys = OFF; DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}"; PRAGMA foreign_keys = ON;`
           : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
       } else if (engineType.includes("oracle")) {
-        dropSql = dropCascade
+        dropSql = cascade
           ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE CONSTRAINTS;`
           : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
       } else {
         // PostgreSQL, CockroachDB, Snowflake, etc.
-        dropSql = dropCascade
+        dropSql = cascade
           ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE;`
           : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
       }
@@ -472,7 +472,6 @@ export function TableEditor() {
       delete allDbTablesSchema[deleteTableTarget];
       const target = deleteTableTarget;
       setDeleteTableTarget(null);
-      setDropCascade(false);
       setIsTableEditOpen(false);
       setEditingTableTarget("");
 
@@ -1614,44 +1613,13 @@ export function TableEditor() {
       />
 
       {/* ─── Delete Table Confirm Dialog ─── */}
-      <ConfirmDialog
+      <DeleteTableDialog
         isOpen={!!deleteTableTarget}
-        title={`Delete table "${deleteTableTarget}"?`}
-        description={
-          <div className="space-y-3 font-sans">
-            <p className="text-[13px] text-[#8c8c8c] leading-relaxed">
-              Are you sure you want to delete table{" "}
-              <code className="text-white font-mono">{deleteTableTarget}</code> from
-              database <code className="text-white font-mono">{selectedDb}</code>? All
-              records, constraints, and schemas in this table will be permanently deleted.
-              This action cannot be undone.
-            </p>
-            <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none group">
-              <input
-                type="checkbox"
-                checked={dropCascade}
-                onChange={(e) => setDropCascade(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded-[4px] border border-[#333333] bg-[#161616] text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#2563eb]"
-              />
-              <div className="flex flex-col">
-                <span className="text-[13px] font-medium text-[#e0e0e0] group-hover:text-white transition-colors">
-                  Drop table with cascade?
-                </span>
-                <span className="text-[12px] text-[#8c8c8c] leading-normal">
-                  Deletes the table and its dependent objects
-                </span>
-              </div>
-            </label>
-          </div>
-        }
-        confirmLabel={isDeletingTable ? "Deleting..." : "Delete table"}
-        cancelLabel="Cancel"
-        variant="danger"
+        targetTable={deleteTableTarget}
+        database={selectedDb}
+        isDeleting={isDeletingTable}
         onConfirm={handleDeleteTable}
-        onClose={() => {
-          setDeleteTableTarget(null);
-          setDropCascade(false);
-        }}
+        onClose={() => setDeleteTableTarget(null)}
       />
 
       {/* ─── Supabase Studio-style Create / Update Table SlideOver ─── */}
