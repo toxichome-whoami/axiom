@@ -1161,10 +1161,10 @@ export function Roles() {
         }
         return (
           <span
-            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#1c140d] text-amber-300 border border-[#4d2d14] shrink-0"
+            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] shrink-0"
             title={`Assigned to: ${assigned.join(", ")}`}
           >
-            <Key className="w-3 h-3 text-amber-400 shrink-0" />
+            <Key className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
             <span>
               {assigned.length} {assigned.length === 1 ? "key" : "keys"}
             </span>
@@ -1710,9 +1710,9 @@ export function Roles() {
                         {selectedRoleAssignedKeys.map((keyName) => (
                           <span
                             key={keyName}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] bg-[#120a04] border border-[#52290b] text-[12px] font-mono text-amber-200"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] bg-[#141414] border border-[#262626] text-[12px] font-mono text-[#cccccc]"
                           >
-                            <Key className="w-3.5 h-3.5 text-amber-400" />
+                            <Key className="w-3.5 h-3.5 text-[#8c8c8c]" />
                             {keyName}
                           </span>
                         ))}
