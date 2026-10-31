@@ -1165,6 +1165,7 @@ pub async fn flush_cache(
     check_permission(&auth, "settings.flush_cache").await?;
 
     axiom_cache::CacheEngine::flush().await;
+    crate::database::handlers::flush_database_caches();
 
     let actor = if !auth.api_key_name.is_empty() {
         &auth.api_key_name

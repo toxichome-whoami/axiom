@@ -131,6 +131,12 @@ pub fn invalidate_table_schema(db_name: &str, table_name: &str) {
     SCHEMA_CATALOG.remove(&key);
 }
 
+/// Flushes all in-memory AST query plans and cached table schema definitions.
+pub fn flush_database_caches() {
+    AST_CACHE.clear();
+    SCHEMA_CATALOG.clear();
+}
+
 pub async fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
