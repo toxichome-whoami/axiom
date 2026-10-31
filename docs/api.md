@@ -19,8 +19,9 @@
 4. [Endpoint Index](#4-endpoint-index)
 5. [Database Data API](#5-database-data-api-apiv1db)
 6. [Blob Storage API](#6-blob-storage-api-apiv1blobs)
-7. [Model Context Protocol (MCP)](#7-model-context-protocol-mcp)
-8. [Errors](#8-errors)
+7. [Control Plane API](#7-control-plane-api-adminv1)
+8. [Model Context Protocol (MCP)](#8-model-context-protocol-mcp)
+9. [Errors](#9-errors)
 
 ## 1. Quick Start
 
@@ -51,6 +52,23 @@ Axiom has four planes, each with its own credential.
 | **Control**           | `/admin/v1/*`    | `Authorization: Bearer <session-token>`  | 32-character token from `POST /admin/v1/auth/login` |
 | **Cluster mesh**      | `/internal/v1/*` | `X-Axiom-Signature: <hex(HMAC-SHA256)>`  | Node-to-node only; not for application use          |
 | **Capability ticket** | blob URLs        | `?ticket=v1.<ns>.<key>.<op>.<exp>.<sig>` | Pre-signed, time-limited, delegated access          |
+
+### Administrative PBAC
+
+Control plane requests (`/admin/v1/*`) authenticate with bearer session tokens and are authorized via Permission-Based Access Control (PBAC). Root administrators (`is_super_admin: true` or `*`) have full access. Scoped administrators are restricted to granted capabilities:
+
+| Capability Group | Capability | Scope |
+| ---------------- | ---------- | ----- |
+| **Settings**     | `settings.view`            | Read diagnostics, metrics, route catalog, and system settings |
+|                  | `settings.flush_cache`     | Invalidate query, AST, and schema caches (`POST /admin/v1/cache/flush`) |
+|                  | `settings.manage_security` | Modify runtime security policies (`PATCH /admin/v1/settings`) |
+|                  | `settings.manage`          | Administrative overrides and metadata snapshot reload (`POST /admin/v1/reload`) |
+| **Users**        | `users.view`, `users.create`, `users.update`, `users.delete` | Manage administrative operator identities and PBAC assignments |
+| **Databases**    | `databases.view`, `databases.create`, `databases.update`, `databases.delete` | Inspect, register, alter, and remove connection pool definitions |
+| **Keys**         | `keys.view`, `keys.create`, `keys.update`, `keys.delete`, `keys.rotate` | Manage client API keys and rotate cryptographic secrets |
+| **Roles**        | `roles.view`, `roles.create`, `roles.update`, `roles.delete` | Define RBAC permissions and Row-Level Security (RLS) rules |
+| **Storage**      | `storage.view`, `storage.create`, `storage.update`, `storage.delete` | Manage blob storage namespaces, quotas, and capability tickets |
+| **Audit**        | `audit.view`               | Inspect tamper-evident audit logs (`GET /admin/v1/audit`) |
 
 ## 3. Conventions
 
@@ -192,8 +210,10 @@ List endpoints use **keyset (cursor) pagination**: pass `limit` and `cursor`; re
 |                  | POST                 | `/databases/test-url`              | Test an uncommitted connection string                               |
 |                  | PATCH / DELETE       | `/databases/:alias`                | Update pool parameters / unregister                                 |
 |                  | GET                  | `/databases/:alias/test`           | Probe health and latency of an existing alias                       |
+| **Settings**     | GET                  | `/settings`                        | Read runtime settings (e.g. login CAPTCHA status)                   |
+|                  | PATCH                | `/settings`                        | Update runtime security policies (e.g. toggle login CAPTCHA)         |
 | **Cache**        | GET                  | `/cache/stats`                     | Hit ratios, cached ASTs, memory footprint                           |
-|                  | POST                 | `/cache/flush`                     | Evict all query, schema, and policy caches                          |
+|                  | POST                 | `/cache/flush`                     | Evict query, AST, schema, and response caches (preserves bans/rate) |
 | **Cluster**      | GET                  | `/cluster/status`                  | Node ID, moniker, active peer count                                 |
 |                  | PATCH                | `/cluster/moniker`                 | Rename the local node                                               |
 |                  | GET / POST           | `/cluster/peers`                   | List peers / handshake and register a peer                          |

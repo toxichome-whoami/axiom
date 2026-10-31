@@ -32,11 +32,12 @@
 | ----------------------------------- | ------------------------------------------------ |
 | Host, port, TLS, timeouts           | Database connection pools                        |
 | Logging, rate-limit, cache tuning   | API keys                                         |
-| Circuit breaker, blob storage paths | RBAC roles                                       |
-| Metadata store location             | Cluster mesh peers                               |
+| Circuit breaker, blob storage paths | RBAC roles and PBAC capabilities                 |
+| Metadata store location             | Runtime security policies (e.g. login CAPTCHA)   |
+|                                     | Cluster mesh peers                               |
 
 > [!IMPORTANT]
-> Database connections, API keys, roles, and cluster peers **cannot** be set in `config.toml`. Manage them with the Admin Web UI (`/system`), the [CLI Reference](./cli.md) (`axiom db`, `axiom key`, `axiom role`, `axiom cluster`), or the [Admin REST API](./api.md).
+> Database connections, API keys, roles, cluster peers, and runtime security policies **cannot** be set in `config.toml`. Manage them with the Admin Web UI (`/system`), the [CLI Reference](./cli.md) (`axiom db`, `axiom key`, `axiom role`, `axiom cluster`), or the [Admin REST API](./api.md).
 
 **Value formats used throughout this document**
 
@@ -276,7 +277,7 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 | `negative_cache_ttl` | integer (s) | `5`                    | `1`–`60`                 | TTL for 404 and empty lookups.                                  |
 
 > [!TIP]
-> Cached responses report `"cached": true` in the response `meta`. Flush all caches at runtime with `POST /admin/v1/cache/flush`; no restart is needed.
+> Cached responses report `"cached": true` in the response `meta`. Flush all caches at runtime with `POST /admin/v1/cache/flush` (requires `settings.flush_cache`). This invalidates L1 RAM entries, persistent L2 disk cache, compiled SQL ASTs, and in-memory schema catalogs without restarting or resetting active rate limits and bans.
 
 ### 6.5 `[performance]`
 
