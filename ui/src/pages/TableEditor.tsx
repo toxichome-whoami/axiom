@@ -428,6 +428,7 @@ export function TableEditor() {
   const [deleteTableTarget, setDeleteTableTarget] = useState<string | null>(
     null,
   );
+  const [dropCascade, setDropCascade] = useState(false);
   const [isDeletingTable, setIsDeletingTable] = useState(false);
 
   const handleDeleteTable = async () => {
@@ -439,14 +440,30 @@ export function TableEditor() {
 
       let dropSql = "";
       if (engineType.includes("mysql") || engineType.includes("mariadb")) {
-        dropSql = `DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`;`;
+        dropSql = dropCascade
+          ? `SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`; SET FOREIGN_KEY_CHECKS = 1;`
+          : `DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`;`;
       } else if (
         engineType.includes("mssql") ||
         engineType.includes("sqlserver")
       ) {
         dropSql = `DROP TABLE [${deleteTableTarget.replace(/]/g, "]]")}];`;
+      } else if (
+        engineType.includes("sqlite") ||
+        engineType.includes("libsql")
+      ) {
+        dropSql = dropCascade
+          ? `PRAGMA foreign_keys = OFF; DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}"; PRAGMA foreign_keys = ON;`
+          : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+      } else if (engineType.includes("oracle")) {
+        dropSql = dropCascade
+          ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE CONSTRAINTS;`
+          : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
       } else {
-        dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+        // PostgreSQL, CockroachDB, Snowflake, etc.
+        dropSql = dropCascade
+          ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE;`
+          : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
       }
 
       await api.executeSqlQuery(selectedDb, dropSql);
@@ -455,6 +472,7 @@ export function TableEditor() {
       delete allDbTablesSchema[deleteTableTarget];
       const target = deleteTableTarget;
       setDeleteTableTarget(null);
+      setDropCascade(false);
       setIsTableEditOpen(false);
       setEditingTableTarget("");
 
@@ -1195,12 +1213,24 @@ export function TableEditor() {
                 onExpand={() => {
                   const current = editingCell;
                   setEditingCell(null);
-                  setExpandedInlineCell({
-                    rowIndex: current.rowIndex,
-                    colName: current.colName,
-                    value: current.currentValue,
-                    initialValue: current.currentValue,
-                  });
+                  const fk = foreignKeys.find(
+                    (f) => f.column === current.colName,
+                  );
+                  if (fk) {
+                    setFkPickerTarget({
+                      rowIndex: current.rowIndex,
+                      column: current.colName,
+                      fk,
+                      currentValue: current.currentValue,
+                    });
+                  } else {
+                    setExpandedInlineCell({
+                      rowIndex: current.rowIndex,
+                      colName: current.colName,
+                      value: current.currentValue,
+                      initialValue: current.currentValue,
+                    });
+                  }
                 }}
               />
             );
@@ -1220,12 +1250,24 @@ export function TableEditor() {
                 onExpand={() => {
                   const current = editingCell;
                   setEditingCell(null);
-                  setExpandedInlineCell({
-                    rowIndex: current.rowIndex,
-                    colName: current.colName,
-                    value: current.currentValue,
-                    initialValue: current.currentValue,
-                  });
+                  const fk = foreignKeys.find(
+                    (f) => f.column === current.colName,
+                  );
+                  if (fk) {
+                    setFkPickerTarget({
+                      rowIndex: current.rowIndex,
+                      column: current.colName,
+                      fk,
+                      currentValue: current.currentValue,
+                    });
+                  } else {
+                    setExpandedInlineCell({
+                      rowIndex: current.rowIndex,
+                      colName: current.colName,
+                      value: current.currentValue,
+                      initialValue: current.currentValue,
+                    });
+                  }
                 }}
               />
             );
@@ -1245,12 +1287,24 @@ export function TableEditor() {
                 onExpand={() => {
                   const current = editingCell;
                   setEditingCell(null);
-                  setExpandedInlineCell({
-                    rowIndex: current.rowIndex,
-                    colName: current.colName,
-                    value: current.currentValue,
-                    initialValue: current.currentValue,
-                  });
+                  const fk = foreignKeys.find(
+                    (f) => f.column === current.colName,
+                  );
+                  if (fk) {
+                    setFkPickerTarget({
+                      rowIndex: current.rowIndex,
+                      column: current.colName,
+                      fk,
+                      currentValue: current.currentValue,
+                    });
+                  } else {
+                    setExpandedInlineCell({
+                      rowIndex: current.rowIndex,
+                      colName: current.colName,
+                      value: current.currentValue,
+                      initialValue: current.currentValue,
+                    });
+                  }
                 }}
               />
             );
@@ -1563,12 +1617,41 @@ export function TableEditor() {
       <ConfirmDialog
         isOpen={!!deleteTableTarget}
         title={`Delete table "${deleteTableTarget}"?`}
-        description={`Are you sure you want to delete table "${deleteTableTarget}" from database "${selectedDb}"? All records, constraints, and schemas in this table will be permanently deleted. This action cannot be undone.`}
+        description={
+          <div className="space-y-3 font-sans">
+            <p className="text-[13px] text-[#8c8c8c] leading-relaxed">
+              Are you sure you want to delete table{" "}
+              <code className="text-white font-mono">{deleteTableTarget}</code> from
+              database <code className="text-white font-mono">{selectedDb}</code>? All
+              records, constraints, and schemas in this table will be permanently deleted.
+              This action cannot be undone.
+            </p>
+            <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none group">
+              <input
+                type="checkbox"
+                checked={dropCascade}
+                onChange={(e) => setDropCascade(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded-[4px] border border-[#333333] bg-[#161616] text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#2563eb]"
+              />
+              <div className="flex flex-col">
+                <span className="text-[13px] font-medium text-[#e0e0e0] group-hover:text-white transition-colors">
+                  Drop table with cascade?
+                </span>
+                <span className="text-[12px] text-[#8c8c8c] leading-normal">
+                  Deletes the table and its dependent objects
+                </span>
+              </div>
+            </label>
+          </div>
+        }
         confirmLabel={isDeletingTable ? "Deleting..." : "Delete table"}
         cancelLabel="Cancel"
         variant="danger"
         onConfirm={handleDeleteTable}
-        onClose={() => setDeleteTableTarget(null)}
+        onClose={() => {
+          setDeleteTableTarget(null);
+          setDropCascade(false);
+        }}
       />
 
       {/* ─── Supabase Studio-style Create / Update Table SlideOver ─── */}

@@ -96,6 +96,24 @@ export function RowInspectorSlideOver({
     const isTimestamp = normType.includes("time") || normType.includes("date");
     const disabled = isInsert ? !canInsert : !canUpdate || isColReadOnly(col);
 
+    const fk = foreignKeys.find((f) => f.column === col.name);
+    const handleFkPickerOpen =
+      fk && !disabled
+        ? () => {
+            onOpenFkPicker({
+              column: col.name,
+              fk,
+              currentValue: val,
+              onSelect: (newVal) => {
+                setRowEditValues((prev) => ({
+                  ...prev,
+                  [col.name]: newVal,
+                }));
+              },
+            });
+          }
+        : undefined;
+
     return (
       <div key={col.name} className="space-y-1.5">
         <div className="flex items-center justify-between">
@@ -109,32 +127,16 @@ export function RowInspectorSlideOver({
                 (Read-only)
               </span>
             )}
-            {(() => {
-              const fk = foreignKeys.find((f) => f.column === col.name);
-              if (!fk || disabled) return null;
-              return (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenFkPicker({
-                      column: col.name,
-                      fk,
-                      currentValue: val,
-                      onSelect: (newVal) => {
-                        setRowEditValues((prev) => ({
-                          ...prev,
-                          [col.name]: newVal,
-                        }));
-                      },
-                    });
-                  }}
-                  title={`Pick record from ${fk.referenced_table}`}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/25 transition-colors cursor-pointer"
-                >
-                  <span>→ {fk.referenced_table}</span>
-                </button>
-              );
-            })()}
+            {handleFkPickerOpen && (
+              <button
+                type="button"
+                onClick={handleFkPickerOpen}
+                title={`Pick record from ${fk?.referenced_table}`}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/25 transition-colors cursor-pointer"
+              >
+                <span>→ {fk?.referenced_table}</span>
+              </button>
+            )}
           </label>
           <span className="text-[12px] font-mono text-[#777777]">
             {col.type}
@@ -184,6 +186,7 @@ export function RowInspectorSlideOver({
               onChange={(v) =>
                 setRowEditValues((prev) => ({ ...prev, [col.name]: v }))
               }
+              onExpand={handleFkPickerOpen}
             />
           ) : isTimestamp ? (
             <DateTimePickerInput
@@ -198,7 +201,7 @@ export function RowInspectorSlideOver({
           ) : (
             <FieldEditorWrapper
               label={col.name}
-              isMultiline={true}
+              isMultiline={!fk}
               disabled={disabled}
               placeholder={col.nullable ? "Optional (NULL)" : "Required"}
               value={val}
@@ -206,6 +209,7 @@ export function RowInspectorSlideOver({
               onChange={(v) =>
                 setRowEditValues((prev) => ({ ...prev, [col.name]: v }))
               }
+              onExpand={handleFkPickerOpen}
             />
           )}
         </div>

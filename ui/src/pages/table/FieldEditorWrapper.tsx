@@ -19,6 +19,8 @@ export interface FieldEditorWrapperProps {
   placeholder?: string;
   type?: "text" | "number";
   step?: string;
+  onExpand?: () => void;
+  expandLabel?: string;
 }
 
 export function FieldEditorWrapper({
@@ -31,6 +33,8 @@ export function FieldEditorWrapper({
   placeholder,
   type = "text",
   step,
+  onExpand,
+  expandLabel,
 }: FieldEditorWrapperProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,6 +57,10 @@ export function FieldEditorWrapper({
 
   const handleOpenExpand = () => {
     setIsMenuOpen(false);
+    if (onExpand) {
+      onExpand();
+      return;
+    }
     setModalDraft(strVal);
     setIsModalOpen(true);
   };
@@ -131,7 +139,7 @@ export function FieldEditorWrapper({
                   onClick={handleOpenExpand}
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-[12px] text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors text-left cursor-pointer"
                 >
-                  <span>Expand editor</span>
+                  <span>{expandLabel || "Expand editor"}</span>
                 </button>
               </div>
             )}
@@ -139,14 +147,15 @@ export function FieldEditorWrapper({
         )}
       </div>
 
-      {/* Expanded Field Editor Drawer Panel */}
-      <SlideOver
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        width="w-[520px] max-w-full"
-        title={label}
-        subtitle="Edit field value"
-      >
+      {/* Expanded Field Editor Drawer Panel (only for raw text fields without custom expander) */}
+      {!onExpand && (
+        <SlideOver
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          width="w-[520px] max-w-full"
+          title={label}
+          subtitle="Edit field value"
+        >
         <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
           {/* Main Content Area */}
           <div className="flex-1 p-4 sm:p-5 flex flex-col min-h-0 space-y-2 overflow-hidden">
@@ -198,6 +207,7 @@ export function FieldEditorWrapper({
           </div>
         </div>
       </SlideOver>
+    )}
     </>
   );
 }
