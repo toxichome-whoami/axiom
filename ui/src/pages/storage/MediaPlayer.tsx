@@ -417,6 +417,18 @@ export function MediaPlayer({
       <div
         ref={videoContainerRef}
         onMouseMove={handleMouseMove}
+        onTouchStart={() => {
+          setShowControls(true);
+          if (controlsTimeoutRef.current) {
+            window.clearTimeout(controlsTimeoutRef.current);
+          }
+          if (isPlaying) {
+            controlsTimeoutRef.current = window.setTimeout(() => {
+              setShowControls(false);
+              setShowSpeedMenu(false);
+            }, 3000);
+          }
+        }}
         onMouseLeave={() => isPlaying && setShowControls(false)}
         className={`relative flex flex-col items-center justify-center bg-[#09090b] rounded-[8px] overflow-hidden border border-[#222222] group select-none ${className} ${
           isFullscreen ? "w-screen h-screen rounded-none border-none" : "w-full"
@@ -588,7 +600,7 @@ export function MediaPlayer({
                       value={isMuted ? 0 : volume}
                       onChange={handleVolumeChange}
                       aria-label="Adjust volume"
-                      className="w-16 h-1 bg-[#262626] rounded-full appearance-none accent-white cursor-pointer transition-all"
+                      className="hidden sm:block w-16 h-1 bg-[#262626] rounded-full appearance-none accent-white cursor-pointer transition-all"
                     />
                   </div>
                 </div>
@@ -760,7 +772,7 @@ export function MediaPlayer({
         </div>
 
         {/* Controls row - Edge to Edge */}
-        <div className="w-full px-6 py-3.5 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between">
+        <div className="w-full px-4 sm:px-6 py-3.5 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -792,7 +804,7 @@ export function MediaPlayer({
                 }
               }}
               aria-label="Adjust audio volume"
-              className="w-16 h-1 bg-[#262626] rounded-full appearance-none accent-white cursor-pointer"
+              className="hidden sm:block w-16 h-1 bg-[#262626] rounded-full appearance-none accent-white cursor-pointer"
             />
           </div>
 
@@ -844,7 +856,7 @@ export function MediaPlayer({
   if (isImage) {
     return (
       <div
-        className={`relative flex flex-col items-center justify-center bg-[#09090b] rounded-[8px] overflow-hidden border border-[#222222] min-h-[350px] font-sans ${className}`}
+        className={`relative flex flex-col items-center justify-center bg-[#09090b] rounded-[8px] overflow-hidden border border-[#222222] min-h-[260px] sm:min-h-[350px] font-sans ${className}`}
       >
         {/* Floating Zoom Toolbar */}
         <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-[#141414]/90 backdrop-blur-xs border border-[#262626] p-1 rounded-[6px] text-white shadow-xl">
@@ -896,7 +908,7 @@ export function MediaPlayer({
               setZoomLevel(2);
             }
           }}
-          className={`w-full flex-1 flex items-center justify-center p-6 overflow-hidden max-h-[72vh] select-none touch-none ${
+          className={`w-full flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden max-h-[72vh] select-none touch-none ${
             isDraggingImage ? "cursor-grabbing" : "cursor-grab"
           }`}
           style={{

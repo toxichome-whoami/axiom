@@ -4,7 +4,7 @@
  * Design reference: Linear Issue Inspector & RowInspectorSlideOver in TableEditor
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Folder,
@@ -74,12 +74,23 @@ export function StorageDetailsPanel({
 }: StorageDetailsPanelProps) {
   const [isChecksumExpanded, setIsChecksumExpanded] = useState(true);
 
+  // Close panel on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const panel = (
     <aside
-      style={{ width: width ? `${width}px` : undefined }}
-      className="w-full lg:w-80 shrink-0 flex flex-col bg-[#0a0a0a] lg:border-l border-[#222222] font-sans select-none overflow-hidden relative h-full"
+      className="w-full flex-1 flex flex-col bg-[#0a0a0a] lg:border-l border-[#222222] font-sans select-none overflow-hidden relative h-full"
     >
       {/* Draggable Resize Handle on Left Border */}
       {onResizeStart && (
@@ -533,13 +544,18 @@ export function StorageDetailsPanel({
           className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
           onClick={onClose}
         />
-        <div className="relative w-full max-w-sm sm:max-w-md h-full z-10 animate-in slide-in-from-right duration-200">
+        <div className="relative w-full h-full sm:max-w-md z-10 animate-in slide-in-from-right duration-200">
           {panel}
         </div>
       </div>
 
       {/* Desktop Inline Sidebar (>= lg) */}
-      <div className="hidden lg:flex h-full">{panel}</div>
+      <div
+        className="hidden lg:flex h-full shrink-0"
+        style={{ width: width ? `${width}px` : undefined }}
+      >
+        {panel}
+      </div>
     </>
   );
 }

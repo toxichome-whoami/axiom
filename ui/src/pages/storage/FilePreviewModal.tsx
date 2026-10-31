@@ -545,7 +545,7 @@ export function FilePreviewModal({
               className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
               onClick={() => setShowDetails(false)}
             />
-            <div className="relative w-full max-w-xs sm:max-w-sm h-full z-10 animate-in slide-in-from-right duration-200">
+            <div className="relative w-full h-full sm:max-w-md z-10 animate-in slide-in-from-right duration-200">
               {detailsPanelContent}
             </div>
           </div>

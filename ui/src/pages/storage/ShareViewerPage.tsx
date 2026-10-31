@@ -158,7 +158,7 @@ export function ShareViewerPage() {
 
   if (!params && isLoadingMeta) {
     return (
-      <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center font-sans">
+      <div className="min-h-[100dvh] h-[100dvh] bg-[#09090b] text-white flex items-center justify-center font-sans">
         <div className="flex items-center gap-3 text-[#8c8c8c] text-[13px]">
           <svg
             className="animate-spin h-4 w-4 text-white"
@@ -187,7 +187,7 @@ export function ShareViewerPage() {
 
   if (metaError || !params) {
     return (
-      <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center justify-center p-6 font-sans">
+      <div className="min-h-[100dvh] h-[100dvh] bg-[#09090b] text-white flex flex-col items-center justify-center p-4 sm:p-6 font-sans">
         <div className="max-w-md w-full bg-[#0c0c0c] border border-[#262626] rounded-[8px] p-6 text-center shadow-2xl space-y-3 font-sans">
           <div className="w-10 h-10 rounded-[6px] bg-red-950/30 border border-red-900/50 flex items-center justify-center mx-auto text-red-400">
             <AlertTriangle className="w-5 h-5" />
@@ -235,32 +235,32 @@ export function ShareViewerPage() {
   const remainingMins = Math.floor((remainingSecs % 3600) / 60);
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white flex flex-col font-sans selection:bg-neutral-700 selection:text-white">
+    <div className="min-h-[100dvh] h-[100dvh] max-h-[100dvh] bg-[#09090b] text-white flex flex-col font-sans selection:bg-neutral-700 selection:text-white overflow-hidden">
       {/* ─── Header: Navigation Bar (Google Drive dark previewer style) ─── */}
-      <header className="h-16 border-b border-[#1f1f1f] bg-[#0c0c0c]/95 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 flex items-center justify-between shrink-0">
+      <header className="h-14 sm:h-16 border-b border-[#1f1f1f] bg-[#0c0c0c]/95 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-6 flex items-center justify-between shrink-0 gap-2">
         {/* Left: File icon + Title + Extension/Public Pill */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <div className="shrink-0 text-[#cccccc]">
               {getFileIcon(fileName, "w-4 h-4")}
             </div>
 
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
               <span
-                className="text-[15px] font-sans font-semibold text-white tracking-tight truncate max-w-[180px] sm:max-w-xs md:max-w-md lg:max-w-lg"
+                className="text-[14px] sm:text-[15px] font-sans font-semibold text-white tracking-tight truncate max-w-[120px] xs:max-w-[180px] sm:max-w-xs md:max-w-md lg:max-w-lg"
                 title={fileName}
               >
                 {fileName}
               </span>
-              <span className="text-[12px] font-sans font-medium px-2 py-0.5 rounded-[5px] bg-[#161616] border border-[#282828] text-[#999999] shrink-0 hidden sm:inline">
+              <span className="text-[11px] sm:text-[12px] font-sans font-medium px-1.5 sm:px-2 py-0.5 rounded-[5px] bg-[#161616] border border-[#282828] text-[#999999] shrink-0 hidden xs:inline">
                 {getFileExtension(fileName)}
               </span>
               {params.isPublic ? (
-                <span className="px-2 py-0.5 rounded-[5px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
+                <span className="px-1.5 sm:px-2 py-0.5 rounded-[5px] text-[11px] sm:text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
                   Public CDN
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded-[5px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
+                <span className="px-1.5 sm:px-2 py-0.5 rounded-[5px] text-[11px] sm:text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
                   Shared
                 </span>
               )}
@@ -269,12 +269,16 @@ export function ShareViewerPage() {
         </div>
 
         {/* Right Actions: Expiration (if ticket), Open Raw, Copy Link, White Download */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {!params.isPublic && params.ticket_exp && params.ticket_exp > 0 && (
-            <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-[6px] bg-[#141414] border border-[#242424] text-[12.5px] font-sans font-medium text-[#cccccc]">
-              <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span>
-                Expires in {remainingHours}h {remainingMins}m
+            <div
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-[6px] bg-[#141414] border border-[#242424] text-[11px] sm:text-[12.5px] font-sans font-medium text-[#cccccc]"
+              title={`Expires in ${remainingHours}h ${remainingMins}m`}
+            >
+              <Clock className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-amber-400 shrink-0" />
+              <span className="hidden sm:inline">Expires in </span>
+              <span className="tabular-nums">
+                {remainingHours}h {remainingMins}m
               </span>
             </div>
           )}
@@ -284,24 +288,24 @@ export function ShareViewerPage() {
             target="_blank"
             rel="noreferrer"
             title="Open raw stream directly"
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 h-8 px-2 sm:px-3 rounded-[6px] text-[12.5px] sm:text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer shrink-0"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Open Raw</span>
+            <span className="hidden md:inline">Open Raw</span>
           </a>
 
           <button
             type="button"
             onClick={handleCopyLink}
             title="Copy share link"
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 h-8 px-2 sm:px-3 rounded-[6px] text-[12.5px] sm:text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer shrink-0"
           >
             {isCopied ? (
               <Check className="w-3.5 h-3.5 text-emerald-400" />
             ) : (
               <Copy className="w-3.5 h-3.5" />
             )}
-            <span className="hidden sm:inline">
+            <span className="hidden md:inline">
               {isCopied ? "Copied" : "Copy Link"}
             </span>
           </button>
@@ -309,16 +313,16 @@ export function ShareViewerPage() {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-sans font-semibold text-black bg-white hover:bg-neutral-200 shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 sm:px-3.5 rounded-[6px] text-[12.5px] sm:text-[13px] font-sans font-semibold text-black bg-white hover:bg-neutral-200 shadow-xs transition-colors cursor-pointer shrink-0"
           >
             <Download className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Download</span>
+            <span className="hidden xs:inline">Download</span>
           </button>
         </div>
       </header>
 
       {/* ─── Main Viewport Canvas (Centered immersive preview) ─── */}
-      <main className="flex-1 min-h-0 w-full flex items-center justify-center p-3 sm:p-6 md:p-8 bg-[#09090b] overflow-auto">
+      <main className="flex-1 min-h-0 w-full flex items-center justify-center p-2 sm:p-4 md:p-6 lg:p-8 bg-[#09090b] overflow-auto">
         <div className="w-full max-w-5xl h-full flex flex-col items-center justify-center min-h-0">
           <MediaPlayer
             url={streamUrl}
@@ -333,36 +337,38 @@ export function ShareViewerPage() {
       </main>
 
       {/* ─── Footer: Minimal Google Drive / Axiom Telemetry ─── */}
-      <footer className="h-12 border-t border-[#1a1a1a] bg-[#0c0c0c] px-4 md:px-6 text-[13px] text-[#8c8c8c] font-sans flex items-center justify-between shrink-0 select-none">
-        <div className="flex items-center gap-2">
+      <footer className="min-h-10 sm:h-12 border-t border-[#1a1a1a] bg-[#0c0c0c] px-3 sm:px-4 md:px-6 text-[12px] sm:text-[13px] text-[#8c8c8c] font-sans flex flex-wrap items-center justify-between gap-y-1 py-1.5 sm:py-0 shrink-0 select-none">
+        <div className="flex items-center gap-2 truncate">
           {params.isPublic ? (
             <>
-              <Globe className="w-4 h-4 text-emerald-400" />
-              <span>Public CDN Object &bull; Zero Ticket Overhead</span>
+              <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="truncate">Public CDN &bull; Zero Ticket Overhead</span>
             </>
           ) : (
             <>
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Cryptographically signed capability ticket</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="truncate">
+                <span className="hidden sm:inline">Cryptographically signed </span>capability ticket
+              </span>
             </>
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-[13px]">
-          <span>
+        <div className="flex items-center gap-2 sm:gap-3 text-[12px] sm:text-[13px] shrink-0">
+          <span className="hidden xs:inline">
             Namespace:{" "}
             <span className="font-sans font-medium text-white">
               {params.namespace}
             </span>
           </span>
-          <span>&bull;</span>
-          <span className="font-sans font-medium text-white">
+          <span className="hidden xs:inline">&bull;</span>
+          <span className="font-sans font-medium text-white tabular-nums">
             {formatBytes(fileSize)}
           </span>
           {contentType && (
             <>
-              <span className="hidden sm:inline">&bull;</span>
-              <span className="font-sans text-[#8c8c8c] hidden sm:inline">
+              <span className="hidden md:inline">&bull;</span>
+              <span className="font-sans text-[#8c8c8c] hidden md:inline truncate max-w-[120px]">
                 {contentType}
               </span>
             </>
