@@ -86,6 +86,7 @@ export function AuthPage({
 
   // Anti-Bot & Security Verification State
   const captchaRef = useRef<CaptchaRef | null>(null);
+  const [isCaptchaEnabled, setIsCaptchaEnabled] = useState(true);
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
   const [botHoneypot, setBotHoneypot] = useState("");
 
@@ -118,6 +119,9 @@ export function AuthPage({
       try {
         const res = await api.checkSetup();
         if (mounted) {
+          if (res?.login_captcha_enabled !== undefined) {
+            setIsCaptchaEnabled(Boolean(res.login_captcha_enabled));
+          }
           if (res?.setup_required) {
             // No admin login secrets exist -> open onboarding setup wizard
             setMode("setup");
@@ -161,13 +165,15 @@ export function AuthPage({
     }
 
     // 3. Validate CAPTCHA challenge
-    const passedCaptcha = captchaRef.current?.validate() ?? isCaptchaVerified;
-    if (!passedCaptcha) {
-      setErrorMessage(
-        "Please solve the security verification challenge to proceed.",
-      );
-      captchaRef.current?.shake();
-      return;
+    if (isCaptchaEnabled) {
+      const passedCaptcha = captchaRef.current?.validate() ?? isCaptchaVerified;
+      if (!passedCaptcha) {
+        setErrorMessage(
+          "Please solve the security verification challenge to proceed.",
+        );
+        captchaRef.current?.shake();
+        return;
+      }
     }
 
     setErrorMessage(null);
@@ -553,11 +559,13 @@ export function AuthPage({
             </div>
 
             {/* Anti-Bot Security CAPTCHA Challenge */}
-            <Captcha
-              ref={captchaRef}
-              disabled={loginLoading}
-              onVerifyChange={(verified) => setIsCaptchaVerified(verified)}
-            />
+            {isCaptchaEnabled && (
+              <Captcha
+                ref={captchaRef}
+                disabled={loginLoading}
+                onVerifyChange={(verified) => setIsCaptchaVerified(verified)}
+              />
+            )}
 
             {/* Invisible honeypot field for trapping automated headless bots */}
             <div

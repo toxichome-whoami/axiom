@@ -86,8 +86,13 @@ export interface CacheStatsApi {
   l2_hits?: number;
   l2_misses?: number;
   entries?: number;
+  hit_ratio?: number;
   hit_ratio_percent?: number;
   memory_bytes?: number;
+}
+
+export interface SystemSettingsApi {
+  login_captcha_enabled: boolean;
 }
 
 export interface MetricsSnapshotApi {
@@ -463,6 +468,15 @@ export const api = {
   flushCache: () =>
     request<{ message: string }>("/admin/v1/cache/flush", { method: "POST" }),
 
+  // System Settings & Security
+  getSettings: () => request<SystemSettingsApi>("/admin/v1/settings"),
+  updateSettings: (payload: Partial<SystemSettingsApi>) =>
+    request<SystemSettingsApi>("/admin/v1/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
   // Metrics & Observability
   getMetricsSnapshot: () =>
     request<MetricsSnapshotApi>("/admin/v1/metrics?format=json"),
@@ -545,9 +559,12 @@ export const api = {
 
   // Setup Wizard
   checkSetup: () =>
-    request<{ setup_required: boolean }>("/admin/v1/setup/begin", {
-      method: "POST",
-    }),
+    request<{ setup_required: boolean; login_captcha_enabled?: boolean }>(
+      "/admin/v1/setup/begin",
+      {
+        method: "POST",
+      },
+    ),
   setupAccount: async (data: {
     username: string;
     email: string;

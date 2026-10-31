@@ -40,6 +40,7 @@ pub fn get_router() -> Router {
         )
         .route("/cache/stats", get(get_cache_stats))
         .route("/cache/flush", post(flush_cache))
+        .route("/settings", get(get_settings).patch(update_settings))
         .route("/audit", get(get_audit_log))
         .route("/metrics", get(get_metrics))
         .route("/health", get(get_admin_health))

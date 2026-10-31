@@ -251,9 +251,19 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
         description: "View cache metrics, engine telemetry, and server health",
       },
       {
+        id: "settings.flush_cache",
+        label: "Flush Cache",
+        description: "Evict and flush L1 RAM & L2 disk cache (/cache/flush)",
+      },
+      {
+        id: "settings.manage_security",
+        label: "Security Controls",
+        description: "Configure login security and toggle anti-bot CAPTCHA",
+      },
+      {
         id: "settings.manage",
         label: "Manage",
-        description: "Flush L1/L2 caches and reload metadata snapshots",
+        description: "Full administrative authority over all gateway and security settings",
       },
     ],
   },
@@ -353,7 +363,11 @@ function resolveDependencies(perms: UserPermissionSet): UserPermissionSet {
   }
 
   // Settings module dependencies
-  if (sys.has("settings.manage")) {
+  if (
+    sys.has("settings.manage") ||
+    sys.has("settings.flush_cache") ||
+    sys.has("settings.manage_security")
+  ) {
     sys.add("settings.view");
   }
 
@@ -968,6 +982,12 @@ export function Users() {
           return {
             ...prev,
             system: nextSystem.filter((p) => !p.startsWith("cluster.")),
+          };
+        }
+        if (permId === "settings.view") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("settings.")),
           };
         }
         return {

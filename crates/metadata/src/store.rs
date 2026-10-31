@@ -2529,6 +2529,67 @@ impl MetadataStore {
         Ok(new_secret)
     }
 
+    /// Checks whether the anti-bot CAPTCHA verification challenge is enabled on the login screen.
+    /// Defaults to `true` (secure-by-default) if unset.
+    pub async fn is_login_captcha_enabled() -> bool {
+        let key = "login_captcha_enabled";
+        if let Ok(cache) = SYSTEM_SECRETS_CACHE.read() {
+            if let Some(val) = cache.get(key) {
+                return val != "false" && val != "0";
+            }
+        }
+
+        let conn = match Self::get_conn().await {
+            Ok(c) => c,
+            Err(_) => return true, // Fallback to secure default
+        };
+
+        let mut rows = match conn
+            .query("SELECT value FROM system_secrets WHERE key = ?1", [key])
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return true,
+        };
+
+        if let Ok(Some(row)) = rows.next().await {
+            if let Ok(val) = row.get::<String>(0) {
+                if let Ok(mut cache) = SYSTEM_SECRETS_CACHE.write() {
+                    cache.insert(key.to_string(), val.clone());
+                }
+                return val != "false" && val != "0";
+            }
+        }
+
+        true
+    }
+
+    /// Updates whether the anti-bot CAPTCHA is enabled on the login screen.
+    pub async fn set_login_captcha_enabled(enabled: bool) -> Result<(), String> {
+        let key = "login_captcha_enabled";
+        let val_str = if enabled { "true" } else { "false" };
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let conn = Self::get_conn().await?;
+        conn.execute(
+            "INSERT INTO system_secrets (key, value, created_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            libsql::params![key, val_str, now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to update login_captcha_enabled: {}", e))?;
+
+        if let Ok(mut cache) = SYSTEM_SECRETS_CACHE.write() {
+            cache.insert(key.to_string(), val_str.to_string());
+        }
+
+        tracing::info!("Updated login_captcha_enabled to '{}'", val_str);
+        Ok(())
+    }
+
     // ─── Audit Trail Management ────────────────────────────────────────────
     // Exposes immutable historical records of system modifications for compliance and forensic auditing.
 

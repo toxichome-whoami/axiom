@@ -63,7 +63,19 @@ impl UserPermissionSet {
             if (required.starts_with("cluster.")) && p == "manage_cluster" {
                 return true;
             }
-            if (required.starts_with("settings.")) && p == "manage_settings" {
+            if (required.starts_with("settings.")) && (p == "manage_settings" || p == "settings.manage") {
+                return true;
+            }
+            // Cache flush capability aliases
+            if (required == "settings.flush_cache" || required == "cache.flush" || required == "settings.flush")
+                && (p == "settings.flush_cache" || p == "cache.flush" || p == "settings.flush" || p == "settings.manage")
+            {
+                return true;
+            }
+            // Login security & captcha capability aliases
+            if (required == "settings.manage_security" || required == "settings.security" || required == "security.captcha")
+                && (p == "settings.manage_security" || p == "settings.security" || p == "security.captcha" || p == "settings.manage")
+            {
                 return true;
             }
             if (required.starts_with("databases.") || required.starts_with("db."))

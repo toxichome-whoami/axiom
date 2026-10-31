@@ -8,12 +8,15 @@
 
 import React, { useState, useEffect } from "react";
 import { Skeleton } from "../components/ui/Skeleton";
+import { Switch } from "../components/ui/Switch";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import {
   RefreshCw,
   Copy,
   Check,
   Server,
   Shield,
+  ShieldCheck,
   Code2,
   Cpu,
   Layers,
@@ -24,8 +27,18 @@ import {
   Network,
   Search,
   X,
+  Zap,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
-import { api, SystemStatusData, HealthData } from "../api/client";
+import {
+  api,
+  SystemStatusData,
+  HealthData,
+  CacheStatsApi,
+  SystemSettingsApi,
+} from "../api/client";
 import { hasPermission } from "../api/session";
 
 export interface ApiRouteItem {
@@ -36,9 +49,14 @@ export interface ApiRouteItem {
 }
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<"server" | "routes">("server");
+  const [activeTab, setActiveTab] = useState<"server" | "security" | "routes">(
+    "server",
+  );
   const [statusData, setStatusData] = useState<SystemStatusData | null>(null);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const [cacheStats, setCacheStats] = useState<CacheStatsApi | null>(null);
+  const [systemSettings, setSystemSettings] =
+    useState<SystemSettingsApi | null>(null);
   const [isReloading, setIsReloading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
@@ -47,6 +65,25 @@ export function Settings() {
   >("database");
   const [searchRoutes, setSearchRoutes] = useState("");
   const fetchGenRef = React.useRef(0);
+
+  // PBAC capability permissions
+  const canFlushCache = hasPermission("settings.flush_cache");
+  const canManageSecurity = hasPermission("settings.manage_security");
+
+  // Maintenance & Cache Invalidation Action States
+  const [isFlushConfirmOpen, setIsFlushConfirmOpen] = useState(false);
+  const [isFlushingCache, setIsFlushingCache] = useState(false);
+  const [flushFeedback, setFlushFeedback] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  // Login Security States
+  const [isUpdatingCaptcha, setIsUpdatingCaptcha] = useState(false);
+  const [captchaFeedback, setCaptchaFeedback] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   const handleCopyPath = async (path: string) => {
     try {
@@ -61,10 +98,13 @@ export function Settings() {
   const loadLiveSettings = async () => {
     const curGen = ++fetchGenRef.current;
     try {
-      const [statusRes, healthRes] = await Promise.allSettled([
-        api.getStatus(),
-        api.getHealth(),
-      ]);
+      const [statusRes, healthRes, cacheRes, settingsRes] =
+        await Promise.allSettled([
+          api.getStatus(),
+          api.getHealth(),
+          api.getCacheStats(),
+          api.getSettings(),
+        ]);
 
       if (curGen !== fetchGenRef.current) return;
 
@@ -73,6 +113,12 @@ export function Settings() {
       }
       if (healthRes.status === "fulfilled") {
         setHealthData(healthRes.value);
+      }
+      if (cacheRes.status === "fulfilled") {
+        setCacheStats(cacheRes.value);
+      }
+      if (settingsRes.status === "fulfilled") {
+        setSystemSettings(settingsRes.value);
       }
     } catch {
       // Keep existing state
@@ -97,6 +143,65 @@ export function Settings() {
       // Keep existing state
     } finally {
       setIsReloading(false);
+    }
+  }
+
+  async function handleConfirmFlushCache() {
+    setIsFlushingCache(true);
+    setFlushFeedback(null);
+    try {
+      const res = await api.flushCache();
+      setFlushFeedback({
+        type: "success",
+        text:
+          res.message || "All query and schema caches flushed successfully.",
+      });
+      setIsFlushConfirmOpen(false);
+      // Reload cache telemetry
+      try {
+        const stats = await api.getCacheStats();
+        setCacheStats(stats);
+      } catch {}
+      setTimeout(() => setFlushFeedback(null), 4000);
+    } catch (err: unknown) {
+      setFlushFeedback({
+        type: "error",
+        text:
+          err instanceof Error
+            ? err.message
+            : "Failed to flush query cache.",
+      });
+    } finally {
+      setIsFlushingCache(false);
+    }
+  }
+
+  async function handleToggleCaptcha(checked: boolean) {
+    if (!canManageSecurity) return;
+    setIsUpdatingCaptcha(true);
+    setCaptchaFeedback(null);
+    try {
+      const updated = await api.updateSettings({
+        login_captcha_enabled: checked,
+      });
+      setSystemSettings(updated);
+      setCaptchaFeedback({
+        type: "success",
+        text: checked
+          ? "Login CAPTCHA verification challenge is now actively enforced."
+          : "Login CAPTCHA verification challenge has been disabled.",
+      });
+      setTimeout(() => setCaptchaFeedback(null), 4000);
+    } catch (err: unknown) {
+      setCaptchaFeedback({
+        type: "error",
+        text:
+          err instanceof Error
+            ? err.message
+            : "Failed to update security setting.",
+      });
+    } finally {
+      setIsUpdatingCaptcha(false);
     }
   }
 
@@ -647,6 +752,19 @@ export function Settings() {
 
         <button
           type="button"
+          onClick={() => setActiveTab("security")}
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+            activeTab === "security"
+              ? "bg-[#161616] text-white border border-[#333333]"
+              : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+          <span>Security & Maintenance</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab("routes")}
           className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
             activeTab === "routes"
@@ -863,7 +981,247 @@ export function Settings() {
         </div>
       )}
 
-      {/* TAB 2: REST API ROUTES */}
+      {/* TAB 2: SECURITY & MAINTENANCE */}
+      {activeTab === "security" && (
+        <div className="space-y-6">
+          {/* Section 1: Query & Schema Cache Invalidation */}
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#222222] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-[6px] bg-[#141414] border border-[#262626] text-amber-400 shrink-0">
+                  <Zap className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-[14px] font-medium text-white tracking-tight">
+                    Database Query & Schema Cache Invalidation
+                  </h2>
+                  <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                    Clear prepared statements, AST query plans, and cached schema definitions across all active database drivers.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!canFlushCache || isFlushingCache}
+                  onClick={() => setIsFlushConfirmOpen(true)}
+                  className="flex items-center gap-2 h-8 px-3 rounded-[6px] bg-[#1a1410] border border-[#432310] hover:border-amber-500/50 text-amber-300 hover:text-amber-200 text-[12.5px] font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isFlushingCache ? "Flushing..." : "Flush Query Cache"}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4 font-sans">
+              {/* Telemetry Metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-[6px] bg-[#121212] border border-[#222222]">
+                  <div className="text-[12px] font-medium text-[#8c8c8c]">Cached Queries & ASTs</div>
+                  <div className="text-[18px] font-semibold text-white mt-1 font-mono">
+                    {(cacheStats?.entries_count ?? cacheStats?.entries ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-[11px] text-[#666666] mt-0.5">In-memory statement plans</div>
+                </div>
+                <div className="p-3.5 rounded-[6px] bg-[#121212] border border-[#222222]">
+                  <div className="text-[12px] font-medium text-[#8c8c8c]">Cache Hit Ratio</div>
+                  <div className="text-[18px] font-semibold text-emerald-400 mt-1 font-mono">
+                    {cacheStats?.hit_rate_pct != null
+                      ? `${cacheStats.hit_rate_pct.toFixed(1)}%`
+                      : cacheStats?.hit_ratio != null
+                        ? `${(cacheStats.hit_ratio * 100).toFixed(1)}%`
+                        : "0.0%"}
+                  </div>
+                  <div className="text-[11px] text-[#666666] mt-0.5">Hit efficiency vs miss recompile</div>
+                </div>
+                <div className="p-3.5 rounded-[6px] bg-[#121212] border border-[#222222]">
+                  <div className="text-[12px] font-medium text-[#8c8c8c]">Lifetime Evictions</div>
+                  <div className="text-[18px] font-semibold text-[#cccccc] mt-1 font-mono">
+                    {(cacheStats?.evictions ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-[11px] text-[#666666] mt-0.5">TTL expiry or manual clears</div>
+                </div>
+              </div>
+
+              {/* Security/PBAC Note & Feedback */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-[12.5px] text-[#737373]">
+                <div>
+                  Protected by <code className="text-[#a1a1aa] bg-[#18181b] px-1.5 py-0.5 rounded border border-[#27272a] font-mono text-[11px]">settings.flush_cache</code> PBAC permission capability.
+                </div>
+                {!canFlushCache && (
+                  <span className="text-amber-500/90 text-[12px]">
+                    Your account lacks permission to execute cache flush.
+                  </span>
+                )}
+              </div>
+
+              {flushFeedback && (
+                <div
+                  className={`flex items-center gap-2 p-3 rounded-[6px] text-[12.5px] border ${
+                    flushFeedback.type === "success"
+                      ? "bg-emerald-950/20 text-emerald-300 border-emerald-900/40"
+                      : "bg-rose-950/20 text-rose-300 border-rose-900/40"
+                  }`}
+                >
+                  {flushFeedback.type === "success" ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  )}
+                  <span>{flushFeedback.text}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 2: Login Anti-Bot & CAPTCHA Verification */}
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#222222] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-[6px] bg-[#141414] border border-[#262626] text-blue-400 shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-[14px] font-medium text-white tracking-tight">
+                    Login Anti-Bot Verification
+                  </h2>
+                  <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                    Require mathematical and perceptual CAPTCHA challenges during administrator login to block automated brute-force attacks.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${
+                    systemSettings?.login_captcha_enabled
+                      ? "bg-emerald-950/40 text-emerald-300 border-emerald-800/40"
+                      : "bg-[#18181b] text-[#737373] border-[#27272a]"
+                  }`}
+                >
+                  {systemSettings?.login_captcha_enabled ? "Active Protection" : "Disabled"}
+                </span>
+                <Switch
+                  checked={Boolean(systemSettings?.login_captcha_enabled)}
+                  disabled={!canManageSecurity || isUpdatingCaptcha}
+                  onCheckedChange={handleToggleCaptcha}
+                  aria-label="Toggle login CAPTCHA verification"
+                />
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4 font-sans">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[12.5px] text-[#737373]">
+                <div>
+                  Enforces challenge response on <code className="text-[#a1a1aa] bg-[#18181b] px-1.5 py-0.5 rounded border border-[#27272a] font-mono text-[11px]">/login</code> authentication route. Requires <code className="text-[#a1a1aa] bg-[#18181b] px-1.5 py-0.5 rounded border border-[#27272a] font-mono text-[11px]">settings.manage_security</code> permission capability.
+                </div>
+                {!canManageSecurity && (
+                  <span className="text-amber-500/90 text-[12px]">
+                    Your account lacks permission to modify security settings.
+                  </span>
+                )}
+              </div>
+
+              {captchaFeedback && (
+                <div
+                  className={`flex items-center gap-2 p-3 rounded-[6px] text-[12.5px] border ${
+                    captchaFeedback.type === "success"
+                      ? "bg-emerald-950/20 text-emerald-300 border-emerald-900/40"
+                      : "bg-rose-950/20 text-rose-300 border-rose-900/40"
+                  }`}
+                >
+                  {captchaFeedback.type === "success" ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  )}
+                  <span>{captchaFeedback.text}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 3: Operator PBAC Capabilities Overview */}
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#222222]">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-[6px] bg-[#141414] border border-[#262626] text-purple-400 shrink-0">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-[14px] font-medium text-white tracking-tight">
+                    Settings PBAC Access Control Capabilities
+                  </h2>
+                  <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                    Permission-based access control matrix governing maintenance actions and administrative security toggles.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 font-sans divide-y divide-[#1e1e1e]">
+              <div className="py-2.5 first:pt-0 flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[13px] font-medium text-white font-mono">settings.view</div>
+                  <div className="text-[12px] text-[#737373]">Read-only visibility into server diagnostics, runtime metrics, and route catalog.</div>
+                </div>
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-950/40 text-emerald-300 border border-emerald-800/40 shrink-0">
+                  Granted
+                </span>
+              </div>
+
+              <div className="py-2.5 flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[13px] font-medium text-white font-mono">settings.flush_cache</div>
+                  <div className="text-[12px] text-[#737373]">Permission to trigger live query cache invalidation on /admin/v1/cache/flush.</div>
+                </div>
+                <span
+                  className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${
+                    canFlushCache
+                      ? "bg-emerald-950/40 text-emerald-300 border-emerald-800/40"
+                      : "bg-[#18181b] text-[#737373] border-[#27272a]"
+                  }`}
+                >
+                  {canFlushCache ? "Granted" : "Restricted"}
+                </span>
+              </div>
+
+              <div className="py-2.5 flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[13px] font-medium text-white font-mono">settings.manage_security</div>
+                  <div className="text-[12px] text-[#737373]">Permission to toggle anti-bot CAPTCHA enforcement and update security policies.</div>
+                </div>
+                <span
+                  className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${
+                    canManageSecurity
+                      ? "bg-emerald-950/40 text-emerald-300 border-emerald-800/40"
+                      : "bg-[#18181b] text-[#737373] border-[#27272a]"
+                  }`}
+                >
+                  {canManageSecurity ? "Granted" : "Restricted"}
+                </span>
+              </div>
+
+              <div className="py-2.5 last:pb-0 flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[13px] font-medium text-white font-mono">settings.manage</div>
+                  <div className="text-[12px] text-[#737373]">Full administrative control, snapshot reloading, and master privilege overrides.</div>
+                </div>
+                <span
+                  className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${
+                    hasPermission("settings.manage")
+                      ? "bg-emerald-950/40 text-emerald-300 border-emerald-800/40"
+                      : "bg-[#18181b] text-[#737373] border-[#27272a]"
+                  }`}
+                >
+                  {hasPermission("settings.manage") ? "Granted" : "Restricted"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: REST API ROUTES */}
       {activeTab === "routes" && (
         <div className="space-y-4">
           <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
@@ -1057,6 +1415,18 @@ export function Settings() {
           </div>
         </div>
       )}
+
+      {/* Confirm Flush Cache Dialog */}
+      <ConfirmDialog
+        isOpen={isFlushConfirmOpen}
+        onClose={() => setIsFlushConfirmOpen(false)}
+        onConfirm={handleConfirmFlushCache}
+        title="Flush Query & Schema Cache"
+        description="Are you sure you want to flush all database query plans, prepared statement caches, and schema metadata? Cached query executions will temporarily recompile on subsequent requests."
+        confirmLabel="Flush Cache"
+        cancelLabel="Cancel"
+        variant="warning"
+      />
     </div>
   );
 }

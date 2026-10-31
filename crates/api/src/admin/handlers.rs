@@ -1162,7 +1162,7 @@ pub async fn get_cache_stats(
 pub async fn flush_cache(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    check_permission(&auth, "settings.manage").await?;
+    check_permission(&auth, "settings.flush_cache").await?;
 
     axiom_cache::CacheEngine::flush().await;
 
@@ -1183,6 +1183,76 @@ pub async fn flush_cache(
         "success": true,
         "data": {
             "message": "All cache entries flushed successfully"
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Returns the current dynamic system settings.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext with settings.view capability.
+///  - Returns: System settings JSON payload.
+pub async fn get_settings(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    check_permission(&auth, "settings.view").await?;
+
+    let login_captcha_enabled = MetadataStore::is_login_captcha_enabled().await;
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "login_captcha_enabled": login_captcha_enabled,
+        },
+        "error": Value::Null
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSettingsRequest {
+    pub login_captcha_enabled: Option<bool>,
+}
+
+/// Updates system configuration settings.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext with settings.manage_security capability.
+///  - Side effects: Persists setting into system_secrets and writes immutable audit record.
+pub async fn update_settings(
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<UpdateSettingsRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    check_permission(&auth, "settings.manage_security").await?;
+
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
+
+    if let Some(enabled) = payload.login_captcha_enabled {
+        MetadataStore::set_login_captcha_enabled(enabled)
+            .await
+            .map_err(|e| {
+                AxiomError::new(
+                    "UPDATE_SETTINGS_ERROR",
+                    &e,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+
+        let _ = MetadataStore::record_audit(
+            actor,
+            "settings.update",
+            "login_captcha",
+            Some(&format!("Set login_captcha_enabled = {}", enabled)),
+        )
+        .await;
+    }
+
+    let login_captcha_enabled = MetadataStore::is_login_captcha_enabled().await;
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "login_captcha_enabled": login_captcha_enabled,
         },
         "error": Value::Null
     })))
@@ -1385,10 +1455,12 @@ pub async fn setup_begin() -> Result<impl IntoResponse, AxiomError> {
             StatusCode::INTERNAL_SERVER_ERROR,
         )
     })?;
+    let login_captcha_enabled = MetadataStore::is_login_captcha_enabled().await;
     Ok(Json(json!({
         "success": true,
         "data": {
-            "setup_required": !has_users
+            "setup_required": !has_users,
+            "login_captcha_enabled": login_captcha_enabled,
         },
         "error": Value::Null
     })))

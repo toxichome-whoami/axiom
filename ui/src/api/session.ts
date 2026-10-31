@@ -146,7 +146,25 @@ export function hasPermission(required: string): boolean {
     return true;
   if (required.startsWith("cluster.") && perms.includes("manage_cluster"))
     return true;
-  if (required.startsWith("settings.") && perms.includes("manage_settings"))
+  if (
+    required.startsWith("settings.") &&
+    (perms.includes("settings.manage") || perms.includes("manage_settings"))
+  )
+    return true;
+  if (
+    (required === "settings.flush_cache" || required === "cache.flush") &&
+    (perms.includes("settings.flush_cache") ||
+      perms.includes("cache.flush") ||
+      perms.includes("settings.manage"))
+  )
+    return true;
+  if (
+    (required === "settings.manage_security" ||
+      required === "settings.security") &&
+    (perms.includes("settings.manage_security") ||
+      perms.includes("settings.security") ||
+      perms.includes("settings.manage"))
+  )
     return true;
   if (
     (required.startsWith("blobs.") || required.startsWith("blob.")) &&
