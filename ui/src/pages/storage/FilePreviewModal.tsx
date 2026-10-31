@@ -1,12 +1,12 @@
 /*
- * In-App File Preview Modal for Native Blob Storage.
- * Provides instant playback and inspection for Video, Audio, Image, PDF, and Code.
- * Zero-ticket direct stream for Public namespaces; capability ticket for Private namespaces.
+ * In-App Full-Page File Preview with Integrated Edge-to-Edge Right Inspector.
+ * Covers full viewport with edge-to-edge grid lines, responsive across all devices.
+ * Center media canvas with zero-ticket stream, right-side inspector matching StorageDetailsPanel.
  * Owned by: ui/pages/storage
- * Dependencies: lucide-react, ./MediaPlayer, ./format, ./fileIcon, ../../api/client
+ * Dependencies: lucide-react, ./MediaPlayer, ./format, ./fileIcon
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
   Download,
@@ -15,6 +15,12 @@ import {
   Copy,
   Check,
   Globe,
+  PanelRight,
+  HardDrive,
+  Hash,
+  Calendar,
+  Layers,
+  FileText,
 } from "lucide-react";
 import { StorageItem } from "./types";
 import { MediaPlayer } from "./MediaPlayer";
@@ -29,6 +35,7 @@ export interface FilePreviewModalProps {
   isPublic?: boolean;
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
+  onCopyPublicUrl?: (item: StorageItem) => void;
 }
 
 export function FilePreviewModal({
@@ -39,12 +46,22 @@ export function FilePreviewModal({
   isPublic = false,
   onDownload,
   onShare,
+  onCopyPublicUrl,
 }: FilePreviewModalProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isLoadingStream, setIsLoadingStream] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(true);
 
+  // Auto-adapt details visibility based on screen width on initial open
+  useEffect(() => {
+    if (isOpen) {
+      setShowDetails(window.innerWidth >= 1024);
+    }
+  }, [isOpen]);
+
+  // Build stream URL when item or namespace changes
   useEffect(() => {
     if (!isOpen || !item || item.type !== "file") {
       setStreamUrl(null);
@@ -58,7 +75,6 @@ export function FilePreviewModal({
       .map(encodeURIComponent)
       .join("/");
 
-    // Stream directly via ambient authentication (zero tickets created on preview)
     const url = isPublic
       ? `/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`
       : `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`;
@@ -68,100 +84,95 @@ export function FilePreviewModal({
     setIsLoadingStream(false);
   }, [isOpen, item, namespace, isPublic]);
 
-  // Handle Escape key
+  // Handle Escape key: close mobile details drawer if open, else close modal
   useEffect(() => {
     if (!isOpen) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        if (window.innerWidth < 1024 && showDetails) {
+          setShowDetails(false);
+        } else {
+          onClose();
+        }
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, showDetails, onClose]);
+
+  const handleCopyText = useCallback((text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedKey(id);
+    setTimeout(() => setCopiedKey(null), 2000);
+  }, []);
 
   if (!isOpen || !item) return null;
+
+  const sanitizedKeyPath = item.fullKey
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
 
   const previewShareUrl = isPublic
     ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`
     : "";
 
-  const handleCopyLink = () => {
-    if (!previewShareUrl) return;
-    navigator.clipboard.writeText(previewShareUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
-  };
+  const publicCdnUrl = isPublic
+    ? `${window.location.origin}/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}`
+    : "";
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150 font-sans"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <div className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-[#0c0c0c] border border-[#262626] rounded-[8px] shadow-2xl overflow-hidden font-sans">
-        {/* ─── Modal Header Bar ─────────────── */}
-        <div className="h-[54px] px-4 sm:px-5 bg-[#0c0c0c] border-b border-[#222222] flex items-center justify-between shrink-0">
-          {/* File Name & Format Badge */}
-          <div className="flex items-center gap-2.5 min-w-0 pr-4">
-            <div className="w-8 h-8 rounded-[7px] bg-[#141414] border border-[#242424] flex items-center justify-center shrink-0">
-              {getFileIcon(item.name, "w-4 h-4")}
-            </div>
+  // Right-hand Inspector Panel Content
+  const detailsPanelContent = (
+    <div className="flex flex-col h-full font-sans select-none bg-[#0a0a0a]">
+      {/* Panel Top Header Bar (54px edge-to-edge) */}
+      <div className="h-[54px] px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <PanelRight className="w-4 h-4 text-[#8c8c8c]" />
+          <h3 className="text-[14px] font-medium text-white tracking-tight">
+            Object Details
+          </h3>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowDetails(false)}
+          title="Hide details panel"
+          className="w-8 h-8 rounded-[6px] flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
 
-            <div className="min-w-0 flex items-center gap-2">
-              <h3
-                className="text-[15px] font-sans font-medium text-white tracking-tight truncate"
-                title={item.name}
-              >
-                {item.name}
-              </h3>
-              <span className="text-[12px] font-sans font-medium px-2 py-0.5 rounded-[5px] bg-[#141414] border border-[#262626] text-[#8c8c8c] shrink-0">
-                {getFileExtension(item.name)}
-              </span>
-              {isPublic && (
-                <span className="px-2 py-0.5 rounded-[5px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] shrink-0 leading-none">
-                  Public
-                </span>
-              )}
-              <span className="text-[13px] text-[#8c8c8c] font-sans font-normal shrink-0 hidden sm:inline">
-                &bull; {formatBytes(item.size || 0)}
-              </span>
-            </div>
+      {/* Panel Scrollable Body */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Hero Card */}
+        <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#222222] flex flex-col items-center text-center">
+          <div className="w-12 h-12 rounded-[10px] bg-[#161616] border border-[#262626] flex items-center justify-center mb-2.5 shadow-inner">
+            {getFileIcon(item.name, "w-6 h-6")}
           </div>
 
-          {/* Action Toolbar */}
-          <div className="flex items-center gap-2 shrink-0">
-            {previewShareUrl && (
-              <a
-                href={previewShareUrl}
-                target="_blank"
-                rel="noreferrer"
-                title="Open viewer in new window"
-                className="hidden sm:inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open in Tab</span>
-              </a>
-            )}
+          <h4
+            className="text-[14px] font-medium text-white break-all max-w-full leading-snug"
+            title={item.name}
+          >
+            {item.name}
+          </h4>
+          <p className="text-[12px] text-[#8c8c8c] mt-0.5 truncate max-w-full font-mono">
+            {item.content_type || "application/octet-stream"}
+          </p>
 
-            {previewShareUrl && (
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                title="Copy preview link"
-                className="hidden md:inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
-              >
-                {copiedLink ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-                <span>{copiedLink ? "Copied" : "Copy Link"}</span>
-              </button>
-            )}
+          {/* Quick Action Grid */}
+          <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1f1f1f] grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => onDownload(item.fullKey)}
+              className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-medium text-black bg-white hover:bg-[#e0e0e0] transition-colors cursor-pointer min-w-0 shadow-xs"
+            >
+              <Download className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+              <span className="truncate">Download</span>
+            </button>
 
             {onShare && (
               <button
@@ -170,51 +181,311 @@ export function FilePreviewModal({
                   onClose();
                   onShare(item);
                 }}
-                title={
-                  isPublic
-                    ? "Share public object"
-                    : "Create capability share link"
-                }
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#282828] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
               >
-                {isPublic ? (
-                  <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                ) : (
-                  <Share2 className="w-3.5 h-3.5" />
-                )}
-                <span className="hidden sm:inline">Share</span>
+                <Share2 className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                <span className="truncate">Share</span>
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => onDownload(item.fullKey)}
-              title="Download object"
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-black bg-white hover:bg-[#e0e0e0] transition-colors cursor-pointer shadow-xs"
-            >
-              <Download className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Download</span>
-            </button>
-
-            <div className="w-px h-5 bg-[#262626] mx-0.5" />
-
-            <button
-              type="button"
-              onClick={onClose}
-              title="Close (Esc)"
-              className="w-8 h-8 rounded-[6px] flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {isPublic && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onCopyPublicUrl) {
+                    onCopyPublicUrl(item);
+                  } else if (publicCdnUrl) {
+                    handleCopyText(publicCdnUrl, "public-url");
+                  }
+                }}
+                className="col-span-2 inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer"
+                title="Copy direct permanent CDN URL"
+              >
+                {copiedKey === "public-url" ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>CDN URL Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                    <span>Copy Public CDN URL</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
-        {/* ─── Modal Viewport Body ─────────────── */}
-        <div className="flex-1 overflow-auto p-4 sm:p-5 bg-[#09090b] flex items-center justify-center min-h-[300px]">
+        {/* Properties Card */}
+        <div className="space-y-1.5">
+          <span className="text-[12px] font-medium text-[#8c8c8c] block px-0.5 uppercase tracking-wider">
+            Properties
+          </span>
+
+          <div className="rounded-[8px] bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13px]">
+            {/* Namespace */}
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-[#8c8c8c] flex items-center gap-1.5">
+                <HardDrive className="w-3.5 h-3.5 text-[#666666]" />
+                Namespace
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-white font-medium">{namespace}</span>
+                {isPublic && (
+                  <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
+                    Public
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Path Key */}
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-[#8c8c8c]">Path</span>
+              <button
+                type="button"
+                onClick={() => handleCopyText(item.fullKey, "full-key")}
+                className="flex items-center gap-1 text-white hover:text-blue-400 transition-colors font-mono text-[12px] max-w-[170px] truncate"
+                title={`Copy path: ${item.fullKey}`}
+              >
+                <span className="truncate">{item.fullKey}</span>
+                {copiedKey === "full-key" ? (
+                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                ) : (
+                  <Copy className="w-3 h-3 text-[#666666] shrink-0" />
+                )}
+              </button>
+            </div>
+
+            {/* Size */}
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-[#8c8c8c]">Size</span>
+              <span className="text-white font-medium tabular-nums">
+                {formatBytes(item.size || 0)}{" "}
+                <span className="text-[11px] text-[#777777] font-normal">
+                  ({(item.size || 0).toLocaleString()} B)
+                </span>
+              </span>
+            </div>
+
+            {/* Storage Tier */}
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-[#8c8c8c] flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-[#666666]" />
+                Tier
+              </span>
+              <span className="text-white text-[12.5px] font-medium">
+                {item.inline ? "Inline SQLite" : "Local Disk Content"}
+              </span>
+            </div>
+
+            {/* Content Type */}
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-[#8c8c8c] flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[#666666]" />
+                Type
+              </span>
+              <span
+                className="text-[#cccccc] text-[12px] font-mono truncate max-w-[160px]"
+                title={item.content_type}
+              >
+                {item.content_type || "application/octet-stream"}
+              </span>
+            </div>
+
+            {/* Created Timestamp */}
+            {item.created_at && item.created_at > 0 && (
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-[#8c8c8c] flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-[#666666]" />
+                  Uploaded
+                </span>
+                <span className="text-[#cccccc] text-[12px] tabular-nums">
+                  {new Date(item.created_at * 1000).toLocaleString()}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Cryptographic Integrity Card */}
+        {item.hash && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between px-0.5">
+              <span className="text-[12px] font-medium text-[#8c8c8c] uppercase tracking-wider flex items-center gap-1.5">
+                <Hash className="w-3.5 h-3.5 text-[#666666]" />
+                BLAKE3 Hash
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopyText(item.hash!, "hash")}
+                className="text-[12px] text-[#8c8c8c] hover:text-white cursor-pointer inline-flex items-center gap-1"
+              >
+                {copiedKey === "hash" ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span className="text-emerald-400 font-medium">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="rounded-[8px] bg-[#111111] border border-[#222222] p-2.5">
+              <div className="p-2 rounded-[5px] bg-[#0c0c0c] border border-[#1f1f1f] text-[11px] text-[#a1a1aa] break-all select-all leading-relaxed font-mono">
+                {item.hash}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-[#0c0c0c] font-sans select-none overflow-hidden animate-in fade-in duration-150"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preview ${item.name}`}
+    >
+      {/* ─── Top Header Bar: 54px Edge-to-Edge ───────────────────────── */}
+      <header className="h-[54px] w-full px-3 sm:px-5 bg-[#0c0c0c] border-b border-[#222222] flex items-center justify-between shrink-0 font-sans z-20">
+        {/* Left: Icon, Filename, Ext pill, Public badge, Size */}
+        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+          <div className="w-8 h-8 rounded-[7px] bg-[#141414] border border-[#242424] flex items-center justify-center shrink-0 shadow-inner">
+            {getFileIcon(item.name, "w-4 h-4")}
+          </div>
+
+          <div className="min-w-0 flex items-center gap-2">
+            <h2
+              className="text-[14px] sm:text-[15px] font-sans font-medium text-white tracking-tight truncate max-w-[140px] sm:max-w-xs md:max-w-md"
+              title={item.name}
+            >
+              {item.name}
+            </h2>
+            <span className="text-[11px] sm:text-[12px] font-sans font-medium px-1.5 py-0.5 rounded-[4px] bg-[#141414] border border-[#262626] text-[#8c8c8c] shrink-0">
+              {getFileExtension(item.name)}
+            </span>
+            {isPublic && (
+              <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] sm:text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] shrink-0 leading-none">
+                Public
+              </span>
+            )}
+            <span className="text-[12px] sm:text-[13px] text-[#8c8c8c] font-sans font-normal shrink-0 hidden md:inline">
+              &bull; {formatBytes(item.size || 0)}
+            </span>
+          </div>
+        </div>
+
+        {/* Right Toolbar Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {previewShareUrl && (
+            <a
+              href={previewShareUrl}
+              target="_blank"
+              rel="noreferrer"
+              title="Open viewer in new window"
+              className="hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-[6px] text-[12.5px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Open in Tab</span>
+            </a>
+          )}
+
+          {previewShareUrl && (
+            <button
+              type="button"
+              onClick={() => handleCopyText(previewShareUrl, "share-link")}
+              title="Copy shareable link"
+              className="hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-[6px] text-[12.5px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            >
+              {copiedKey === "share-link" ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden md:inline">
+                {copiedKey === "share-link" ? "Copied" : "Copy Link"}
+              </span>
+            </button>
+          )}
+
+          {onShare && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onShare(item);
+              }}
+              title={
+                isPublic ? "Share public object" : "Create capability ticket"
+              }
+              className="inline-flex items-center gap-1.5 h-8 px-2 sm:px-2.5 rounded-[6px] text-[12.5px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            >
+              {isPublic ? (
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Share2 className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">Share</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onDownload(item.fullKey)}
+            title="Download object"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-[6px] text-[12.5px] font-sans font-medium text-black bg-white hover:bg-[#e0e0e0] transition-colors cursor-pointer shadow-xs"
+          >
+            <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span className="hidden sm:inline">Download</span>
+          </button>
+
+          {/* Toggle Details Inspector */}
+          <button
+            type="button"
+            onClick={() => setShowDetails((prev) => !prev)}
+            title={showDetails ? "Hide object details" : "Show object details"}
+            aria-label="Toggle details panel"
+            className={`inline-flex items-center gap-1.5 h-8 px-2 sm:px-2.5 rounded-[6px] text-[12.5px] font-sans font-medium border transition-colors cursor-pointer ${
+              showDetails
+                ? "bg-[#1f1f1f] text-white border-[#383838]"
+                : "bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:bg-[#1a1a1a]"
+            }`}
+          >
+            <PanelRight className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">Details</span>
+          </button>
+
+          <div className="w-px h-5 bg-[#262626] mx-0.5" />
+
+          {/* Close Window */}
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close preview (Esc)"
+            aria-label="Close preview"
+            className="w-8 h-8 rounded-[6px] flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* ─── Main Two-Pane Canvas: Edge-to-Edge ───────────────────────── */}
+      <div className="flex-1 flex flex-row min-h-0 w-full overflow-hidden relative">
+        {/* Center Media Viewport */}
+        <main className="flex-1 min-h-0 w-full flex items-center justify-center p-3 sm:p-6 bg-[#09090b] overflow-auto relative">
           {isLoadingStream ? (
-            <div className="flex items-center gap-3 text-[#8c8c8c] text-[13px] py-16">
+            <div className="flex items-center gap-3 text-[#8c8c8c] text-[13px] py-16 font-sans">
               <svg
-                className="animate-spin h-4 w-4 text-white"
+                className="animate-spin h-5 w-5 text-white"
                 fill="none"
                 viewBox="0 0 24 24"
               >
@@ -240,13 +511,13 @@ export function FilePreviewModal({
               <button
                 type="button"
                 onClick={() => onDownload(item.fullKey)}
-                className="px-3 py-1.5 rounded-[6px] bg-white text-black text-[13px] font-sans font-medium hover:bg-[#e0e0e0] transition-colors cursor-pointer"
+                className="px-3.5 py-1.5 rounded-[6px] bg-white text-black text-[13px] font-sans font-medium hover:bg-[#e0e0e0] transition-colors cursor-pointer shadow-xs"
               >
                 Download Object Directly
               </button>
             </div>
           ) : streamUrl ? (
-            <div className="w-full flex items-center justify-center">
+            <div className="w-full h-full flex items-center justify-center min-h-0 max-w-6xl">
               <MediaPlayer
                 url={streamUrl}
                 name={item.name}
@@ -258,7 +529,27 @@ export function FilePreviewModal({
               />
             </div>
           ) : null}
-        </div>
+        </main>
+
+        {/* Desktop Inline Right Inspector (>= lg) */}
+        {showDetails && (
+          <aside className="hidden lg:flex w-80 xl:w-88 shrink-0 flex-col border-l border-[#222222] bg-[#0a0a0a] h-full overflow-hidden select-text">
+            {detailsPanelContent}
+          </aside>
+        )}
+
+        {/* Mobile & Tablet Slide-Over Drawer (< lg) */}
+        {showDetails && (
+          <div className="lg:hidden fixed inset-0 z-50 flex justify-end">
+            <div
+              className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+              onClick={() => setShowDetails(false)}
+            />
+            <div className="relative w-full max-w-xs sm:max-w-sm h-full z-10 animate-in slide-in-from-right duration-200">
+              {detailsPanelContent}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

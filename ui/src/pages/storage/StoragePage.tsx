@@ -3262,6 +3262,7 @@ export function StoragePage() {
         isPublic={Boolean(currentNsInfo?.is_public)}
         onDownload={handleDownload}
         onShare={handleOpenShare}
+        onCopyPublicUrl={handleCopyPublicUrl}
       />
 
       {/* Capability Ticket / Share Link Modal */}
