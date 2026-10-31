@@ -11,6 +11,7 @@ import { DataTable, Column } from "../components/shared/DataTable";
 import { SlideOver } from "../components/ui/SlideOver";
 import { Button } from "../components/ui/Button";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { showAlertDialog } from "../components/ui/AlertDialog";
 import { CustomSelect } from "../components/shared/CustomSelect";
 import {
   Shield,
@@ -24,12 +25,14 @@ import {
   HardDrive,
   Trash2,
   Package,
+  Key,
 } from "lucide-react";
 import {
   api,
   RoleRecordApi,
   PermissionRecordApi,
   DatabaseRecordApi,
+  ApiKeyRecordApi,
 } from "../api/client";
 import { hasPermission } from "../api/session";
 import { validateCleanName } from "../utils/validation";
@@ -390,16 +393,18 @@ export function Roles() {
   // Pagination State (F-06)
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [apiKeys, setApiKeys] = useState<ApiKeyRecordApi[]>([]);
 
   // Load RBAC roles, databases, and blob namespaces from backend with race guard (F-07)
   const loadRoles = async () => {
     const curGen = ++fetchGenRef.current;
     setLoadError(null);
     try {
-      const [rolesRes, dbsRes, blobsRes] = await Promise.allSettled([
+      const [rolesRes, dbsRes, blobsRes, keysRes] = await Promise.allSettled([
         api.listRoles(),
         api.listDatabases(),
         api.listBlobNamespaces(),
+        api.listKeys(),
       ]);
       if (curGen !== fetchGenRef.current) return;
       if (rolesRes.status === "fulfilled") {
@@ -429,6 +434,9 @@ export function Roles() {
       if (blobsRes.status === "fulfilled") {
         const nsList = blobsRes.value || [];
         setBlobNamespaces(nsList.map((n) => n.name));
+      }
+      if (keysRes.status === "fulfilled") {
+        setApiKeys(keysRes.value.keys || []);
       }
     } catch (err: unknown) {
       if (curGen === fetchGenRef.current) {
@@ -483,8 +491,21 @@ export function Roles() {
     name: true,
     description: true,
     rules: true,
+    apiKeys: true,
     createdAt: true,
   });
+
+  // Role usage by active API keys
+  const roleUsageMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const key of apiKeys) {
+      if (key.role_name) {
+        if (!map[key.role_name]) map[key.role_name] = [];
+        map[key.role_name].push(key.name);
+      }
+    }
+    return map;
+  }, [apiKeys]);
 
   useEffect(() => {
     if (!showFilters && !showDisplayOptions) return;
@@ -518,6 +539,10 @@ export function Roles() {
   const [manageOpen, setManageOpen] = useState(false);
   const [manageTab, setManageTab] = useState<"edit" | "danger">("edit");
   const [selectedRole, setSelectedRole] = useState<RbacRole | null>(null);
+  const selectedRoleAssignedKeys = useMemo(() => {
+    if (!selectedRole) return [];
+    return roleUsageMap[selectedRole.name] || [];
+  }, [selectedRole, roleUsageMap]);
   const [editRoleName, setEditRoleName] = useState("");
   const [editRoleDesc, setEditRoleDesc] = useState("");
   const [editDbRules, setEditDbRules] = useState<RoleDatabaseRule[]>([]);
@@ -1118,6 +1143,36 @@ export function Roles() {
       },
     },
     {
+      id: "apiKeys",
+      header: "API Keys",
+      width: 140,
+      minWidth: 110,
+      maxWidth: 200,
+      isResizable: true,
+      className: "px-3",
+      cell: (row) => {
+        const assigned = roleUsageMap[row.name] || [];
+        if (assigned.length === 0) {
+          return (
+            <span className="text-[12px] text-[#737373] font-normal">
+              0 keys
+            </span>
+          );
+        }
+        return (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#1c140d] text-amber-300 border border-[#4d2d14] shrink-0"
+            title={`Assigned to: ${assigned.join(", ")}`}
+          >
+            <Key className="w-3 h-3 text-amber-400 shrink-0" />
+            <span>
+              {assigned.length} {assigned.length === 1 ? "key" : "keys"}
+            </span>
+          </span>
+        );
+      },
+    },
+    {
       id: "createdAt",
       header: "Created Date",
       accessorKey: "createdAt",
@@ -1629,37 +1684,107 @@ export function Roles() {
 
         {manageTab === "danger" && (
           <div className="flex-1 p-5 overflow-y-auto font-sans">
-            <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">
-                Delete Role
+            {selectedRoleAssignedKeys.length > 0 ? (
+              <div className="space-y-4">
+                <div className="rounded-[8px] border border-[#59300e] bg-[#1a0f05] p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-2">
+                      <div className="text-[14px] font-medium text-amber-300">
+                        Role is currently in use
+                      </div>
+                      <p className="text-[13px] text-[#cccccc] leading-relaxed">
+                        Cannot delete role{" "}
+                        <span className="text-white font-medium">
+                          {selectedRole?.name}
+                        </span>{" "}
+                        because it is currently assigned to{" "}
+                        <span className="text-white font-medium">
+                          {selectedRoleAssignedKeys.length} active API key
+                          {selectedRoleAssignedKeys.length > 1 ? "s" : ""}
+                        </span>
+                        . To delete this role, delete or reassign these API keys
+                        first in the Keys page:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {selectedRoleAssignedKeys.map((keyName) => (
+                          <span
+                            key={keyName}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] bg-[#120a04] border border-[#52290b] text-[12px] font-mono text-amber-200"
+                          >
+                            <Key className="w-3.5 h-3.5 text-amber-400" />
+                            {keyName}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="pt-1.5">
+                        <a
+                          href="/system/keys"
+                          className="inline-flex items-center gap-1 text-[12.5px] font-medium text-amber-400 hover:text-amber-300 hover:underline cursor-pointer"
+                        >
+                          <span>Manage API Keys</span>
+                          <span aria-hidden="true">&rarr;</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[8px] border border-[#222222] bg-[#111111] p-4 opacity-60">
+                  <div className="text-[15px] font-medium text-[#8c8c8c] tracking-tight mb-1">
+                    Delete Role
+                  </div>
+                  <div className="text-[13px] text-[#666666] leading-relaxed mb-4">
+                    Permanently delete role{" "}
+                    <span className="text-white font-medium">
+                      {selectedRole?.name}
+                    </span>
+                    . Deletion is disabled while active API keys are assigned to
+                    it.
+                  </div>
+                  <button
+                    type="button"
+                    disabled
+                    title="Delete or reassign active API keys before deleting this role"
+                    className="inline-flex items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-[#666666] bg-[#1a1a1a] border border-[#262626] cursor-not-allowed text-[13px]"
+                  >
+                    Delete Role (In Use)
+                  </button>
+                </div>
               </div>
-              <div className="text-[13px] text-[#8c8c8c] leading-relaxed mb-4">
-                Permanently delete role{" "}
-                <span className="text-white font-medium">
-                  {selectedRole?.name}
-                </span>
-                . All API keys and identities assigned to this role will lose
-                database permissions.
-              </div>
-              <button
-                type="button"
-                disabled={!hasPermission("roles.delete")}
-                onClick={() => setConfirmDeleteOpen(true)}
-                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
-              >
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-                />
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-                />
-                <span className="relative flex items-center gap-1.5 font-sans">
+            ) : (
+              <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+                <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">
                   Delete Role
-                </span>
-              </button>
-            </div>
+                </div>
+                <div className="text-[13px] text-[#8c8c8c] leading-relaxed mb-4">
+                  Permanently delete role{" "}
+                  <span className="text-white font-medium">
+                    {selectedRole?.name}
+                  </span>
+                  . All API keys and identities assigned to this role will lose
+                  database permissions.
+                </div>
+                <button
+                  type="button"
+                  disabled={!hasPermission("roles.delete")}
+                  onClick={() => setConfirmDeleteOpen(true)}
+                  className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                  />
+                  <span className="relative flex items-center gap-1.5 font-sans">
+                    Delete Role
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1829,16 +1954,32 @@ export function Roles() {
         isOpen={confirmDeleteOpen}
         onClose={() => setConfirmDeleteOpen(false)}
         onConfirm={async () => {
-          if (selectedRole) {
-            try {
-              await api.deleteRole(selectedRole.name);
-              await loadRoles();
-            } catch (err) {
-              console.error("Failed to delete role:", err);
-            }
+          if (!selectedRole) {
+            setConfirmDeleteOpen(false);
+            return;
           }
-          setConfirmDeleteOpen(false);
-          setManageOpen(false);
+          if (selectedRoleAssignedKeys.length > 0) {
+            setConfirmDeleteOpen(false);
+            showAlertDialog(
+              `Role "${selectedRole.name}" cannot be deleted because it is currently assigned to ${selectedRoleAssignedKeys.length} active API key(s): ${selectedRoleAssignedKeys.join(", ")}. Please delete or reassign these API keys in the Keys page before deleting this role.`,
+              "Role In Use",
+              "warning",
+            );
+            return;
+          }
+          try {
+            await api.deleteRole(selectedRole.name);
+            await loadRoles();
+            setConfirmDeleteOpen(false);
+            setManageOpen(false);
+          } catch (err: any) {
+            console.error("Failed to delete role:", err);
+            const msg =
+              err?.response?.data?.error?.message ||
+              err?.message ||
+              "Failed to delete role";
+            showAlertDialog(msg, "Delete Role Failed", "warning");
+          }
         }}
         title="Delete Role"
         description={
