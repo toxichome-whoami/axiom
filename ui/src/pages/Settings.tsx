@@ -164,9 +164,7 @@ export function Settings() {
       setFlushFeedback({
         type: "error",
         text:
-          err instanceof Error
-            ? err.message
-            : "Failed to flush query cache.",
+          err instanceof Error ? err.message : "Failed to flush query cache.",
       });
     } finally {
       setIsFlushingCache(false);
@@ -989,7 +987,11 @@ export function Settings() {
               </span>
               <div className="my-2">
                 <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight font-mono">
-                  {(cacheStats?.entries_count ?? cacheStats?.entries ?? 0).toLocaleString()}
+                  {(
+                    cacheStats?.entries_count ??
+                    cacheStats?.entries ??
+                    0
+                  ).toLocaleString()}
                 </div>
               </div>
               <span className="text-[12px] text-[#737373] block">
@@ -1032,9 +1034,12 @@ export function Settings() {
           <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
             <div className="p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h3 className="text-[14px] font-medium text-white">Flush Query Cache</h3>
+                <h3 className="text-[14px] font-medium text-white">
+                  Flush Query Cache
+                </h3>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5 max-w-xl">
-                  Clear prepared statements, AST query plans, and cached schema definitions across all database drivers.
+                  Clear prepared statements, AST query plans, and cached schema
+                  definitions across all database drivers.
                 </p>
               </div>
               <button
@@ -1050,7 +1055,13 @@ export function Settings() {
             <div className="px-5 py-2.5 bg-[#0e0e0e] border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#737373]">
               <span>Permission: settings.flush_cache</span>
               {flushFeedback && (
-                <span className={flushFeedback.type === "success" ? "text-emerald-400" : "text-rose-400"}>
+                <span
+                  className={
+                    flushFeedback.type === "success"
+                      ? "text-emerald-400"
+                      : "text-rose-400"
+                  }
+                >
                   {flushFeedback.text}
                 </span>
               )}
@@ -1061,9 +1072,12 @@ export function Settings() {
           <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
             <div className="p-5 flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-[14px] font-medium text-white">Login Anti-Bot Verification</h3>
+                <h3 className="text-[14px] font-medium text-white">
+                  Login Anti-Bot Verification
+                </h3>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5 max-w-xl">
-                  Require CAPTCHA verification challenges during login to block automated brute-force attempts.
+                  Require CAPTCHA verification challenges during login to block
+                  automated brute-force attempts.
                 </p>
               </div>
               <Switch
@@ -1076,12 +1090,21 @@ export function Settings() {
             <div className="px-5 py-2.5 bg-[#0e0e0e] border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#737373]">
               <span>Permission: settings.manage_security</span>
               {captchaFeedback ? (
-                <span className={captchaFeedback.type === "success" ? "text-emerald-400" : "text-rose-400"}>
+                <span
+                  className={
+                    captchaFeedback.type === "success"
+                      ? "text-emerald-400"
+                      : "text-rose-400"
+                  }
+                >
                   {captchaFeedback.text}
                 </span>
               ) : (
                 <span>
-                  Status: {systemSettings?.login_captcha_enabled ? "Enforced" : "Disabled"}
+                  Status:{" "}
+                  {systemSettings?.login_captcha_enabled
+                    ? "Enforced"
+                    : "Disabled"}
                 </span>
               )}
             </div>

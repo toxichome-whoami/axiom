@@ -604,9 +604,7 @@ export function AuthPage({
                       : "bg-transparent hover:border-[#666666] hover:bg-white/[0.04]"
                   }`}
                 >
-                  {rememberDevice && (
-                    <Check className="h-3 w-3 stroke-[3]" />
-                  )}
+                  {rememberDevice && <Check className="h-3 w-3 stroke-[3]" />}
                 </div>
                 <span className="text-[13px] text-[#8c8c8c] group-hover:text-[#cccccc] transition-colors">
                   Remember this device

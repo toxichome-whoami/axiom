@@ -342,13 +342,18 @@ export function ShareViewerPage() {
           {params.isPublic ? (
             <>
               <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="truncate">Public CDN &bull; Zero Ticket Overhead</span>
+              <span className="truncate">
+                Public CDN &bull; Zero Ticket Overhead
+              </span>
             </>
           ) : (
             <>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="truncate">
-                <span className="hidden sm:inline">Cryptographically signed </span>capability ticket
+                <span className="hidden sm:inline">
+                  Cryptographically signed{" "}
+                </span>
+                capability ticket
               </span>
             </>
           )}

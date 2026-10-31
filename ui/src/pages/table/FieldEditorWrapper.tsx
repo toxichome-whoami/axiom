@@ -156,58 +156,58 @@ export function FieldEditorWrapper({
           title={label}
           subtitle="Edit field value"
         >
-        <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
-          {/* Main Content Area */}
-          <div className="flex-1 p-4 sm:p-5 flex flex-col min-h-0 space-y-2 overflow-hidden">
-            <div className="flex items-center justify-between">
-              <label className="text-[13.5px] font-medium text-white font-sans">
-                Value
-              </label>
-              <span className="text-[12px] font-mono text-[#777777]">
-                {(modalDraft || "").length} chars ·{" "}
-                {(modalDraft || "").split("\n").length} lines
-              </span>
+          <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
+            {/* Main Content Area */}
+            <div className="flex-1 p-4 sm:p-5 flex flex-col min-h-0 space-y-2 overflow-hidden">
+              <div className="flex items-center justify-between">
+                <label className="text-[13.5px] font-medium text-white font-sans">
+                  Value
+                </label>
+                <span className="text-[12px] font-mono text-[#777777]">
+                  {(modalDraft || "").length} chars ·{" "}
+                  {(modalDraft || "").split("\n").length} lines
+                </span>
+              </div>
+              <textarea
+                value={modalDraft}
+                onChange={(e) => setModalDraft(e.target.value)}
+                autoFocus
+                spellCheck={false}
+                className="flex-1 w-full rounded-[6px] border border-[#262626] bg-[#121212] p-3 text-[14px] leading-relaxed text-white font-sans focus:outline-none focus:border-[#3b82f6] resize-none placeholder-[#555555] transition-colors whitespace-pre"
+                placeholder="Enter value..."
+              />
             </div>
-            <textarea
-              value={modalDraft}
-              onChange={(e) => setModalDraft(e.target.value)}
-              autoFocus
-              spellCheck={false}
-              className="flex-1 w-full rounded-[6px] border border-[#262626] bg-[#121212] p-3 text-[14px] leading-relaxed text-white font-sans focus:outline-none focus:border-[#3b82f6] resize-none placeholder-[#555555] transition-colors whitespace-pre"
-              placeholder="Enter value..."
-            />
-          </div>
 
-          {/* Footer */}
-          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleApplyModal}
-              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
-            >
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-              />
-              <span className="relative flex items-center text-[14px] font-sans">
-                Apply
-              </span>
-            </button>
+            {/* Footer */}
+            <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyModal}
+                className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
+                <span className="relative flex items-center text-[14px] font-sans">
+                  Apply
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
-      </SlideOver>
-    )}
+        </SlideOver>
+      )}
     </>
   );
 }

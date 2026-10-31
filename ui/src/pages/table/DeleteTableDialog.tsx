@@ -38,7 +38,8 @@ export const DeleteTableDialog: React.FC<DeleteTableDialogProps> = React.memo(
               <code className="px-1.5 py-0.5 rounded-[4px] bg-[#181818] border border-[#282828] text-[#cccccc] font-mono text-[12px]">
                 {database}
               </code>
-              ? All records, constraints, and schemas in this table will be permanently deleted. This action cannot be undone.
+              ? All records, constraints, and schemas in this table will be
+              permanently deleted. This action cannot be undone.
             </p>
 
             <div

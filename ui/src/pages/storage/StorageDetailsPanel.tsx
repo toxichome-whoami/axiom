@@ -89,9 +89,7 @@ export function StorageDetailsPanel({
   if (!isOpen) return null;
 
   const panel = (
-    <aside
-      className="w-full flex-1 flex flex-col bg-[#0a0a0a] lg:border-l border-[#222222] font-sans select-none overflow-hidden relative h-full"
-    >
+    <aside className="w-full flex-1 flex flex-col bg-[#0a0a0a] lg:border-l border-[#222222] font-sans select-none overflow-hidden relative h-full">
       {/* Draggable Resize Handle on Left Border */}
       {onResizeStart && (
         <div

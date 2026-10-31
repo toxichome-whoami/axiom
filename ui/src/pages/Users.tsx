@@ -263,7 +263,8 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
       {
         id: "settings.manage",
         label: "Manage",
-        description: "Full administrative authority over all gateway and security settings",
+        description:
+          "Full administrative authority over all gateway and security settings",
       },
     ],
   },

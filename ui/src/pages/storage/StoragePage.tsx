@@ -2442,9 +2442,7 @@ export function StoragePage() {
                 <span className="hidden sm:inline">
                   {selectedItemsList.length} selected
                 </span>
-                <span className="sm:hidden">
-                  {selectedItemsList.length}
-                </span>
+                <span className="sm:hidden">{selectedItemsList.length}</span>
               </span>
               {selectedKeys.size < allVisibleItems.length && (
                 <button
