@@ -10,7 +10,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { Stepper, StepItem } from "../components/shared/Stepper";
 import { CustomSelect } from "../components/shared/CustomSelect";
 import { Captcha, CaptchaRef } from "../components/shared/Captcha";
-import { Switch } from "../components/ui/Switch";
 import {
   SslMode,
   SSL_MODE_OPTIONS,
@@ -583,21 +582,36 @@ export function AuthPage({
               />
             </div>
 
-            {/* Remember Device Toggle */}
+            {/* Remember Device Checkbox (Matches Table page row selection checkbox) */}
             <div className="flex items-center justify-between pt-1">
-              <div
-                onClick={() => setRememberDevice((prev) => !prev)}
-                className="flex items-center justify-between w-full cursor-pointer select-none group py-0.5"
+              <label
+                onClick={() => setRememberDevice(!rememberDevice)}
+                className="flex items-center gap-2.5 cursor-pointer select-none group py-0.5"
               >
+                <div
+                  role="checkbox"
+                  aria-checked={rememberDevice}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                      e.preventDefault();
+                      setRememberDevice(!rememberDevice);
+                    }
+                  }}
+                  className={`h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                    rememberDevice
+                      ? "bg-white border-white text-black"
+                      : "bg-transparent hover:border-[#666666] hover:bg-white/[0.04]"
+                  }`}
+                >
+                  {rememberDevice && (
+                    <Check className="h-3 w-3 stroke-[3]" />
+                  )}
+                </div>
                 <span className="text-[13px] text-[#8c8c8c] group-hover:text-[#cccccc] transition-colors">
                   Remember this device
                 </span>
-                <Switch
-                  checked={rememberDevice}
-                  onCheckedChange={setRememberDevice}
-                  aria-label="Remember this device"
-                />
-              </div>
+              </label>
             </div>
 
             {/* Submit Action */}
