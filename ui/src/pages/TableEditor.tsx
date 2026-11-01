@@ -445,20 +445,22 @@ export function TableEditor() {
         const escaped = `\`${deleteTableTarget.replace(/`/g, "``")}\``;
         if (cascade) {
           try {
-            await api.executeSqlQuery(selectedDb, "SET FOREIGN_KEY_CHECKS = 0;");
+            await api.executeSqlQuery(
+              selectedDb,
+              "SET FOREIGN_KEY_CHECKS = 0;",
+            );
             await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
           } finally {
-            await api.executeSqlQuery(selectedDb, "SET FOREIGN_KEY_CHECKS = 1;").catch(() => {});
+            await api
+              .executeSqlQuery(selectedDb, "SET FOREIGN_KEY_CHECKS = 1;")
+              .catch(() => {});
           }
         } else {
           await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
         }
       } else {
         let dropSql = "";
-        if (
-          engineType.includes("sqlite") ||
-          engineType.includes("libsql")
-        ) {
+        if (engineType.includes("sqlite") || engineType.includes("libsql")) {
           // SQLite does not support CASCADE syntax; run single DROP TABLE directly
           dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
         } else if (

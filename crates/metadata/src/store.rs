@@ -443,7 +443,10 @@ impl MetadataStore {
         let snapshot = Self::load_snapshot().await?;
         if snapshot.keys.is_empty() && snapshot.roles.is_empty() && snapshot.databases.is_empty() {
             let current = crate::snapshot::get_snapshot();
-            if !current.keys.is_empty() || !current.roles.is_empty() || !current.databases.is_empty() {
+            if !current.keys.is_empty()
+                || !current.roles.is_empty()
+                || !current.databases.is_empty()
+            {
                 return Ok(());
             }
         }

@@ -789,7 +789,7 @@ export function Settings() {
                   <Skeleton className="h-7 w-20" />
                 ) : (
                   <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight">
-                    v{statusData?.version || "0.1.24"}
+                    v{statusData?.version || "0.1.25"}
                   </div>
                 )}
               </div>
