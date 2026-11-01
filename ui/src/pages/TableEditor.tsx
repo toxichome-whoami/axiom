@@ -438,35 +438,46 @@ export function TableEditor() {
       const currentDb = databases.find((d) => d.alias === selectedDb);
       const engineType = currentDb?.engine?.toLowerCase() || "";
 
-      let dropSql = "";
       if (engineType.includes("mysql") || engineType.includes("mariadb")) {
-        dropSql = cascade
-          ? `SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`; SET FOREIGN_KEY_CHECKS = 1;`
-          : `DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`;`;
-      } else if (
-        engineType.includes("mssql") ||
-        engineType.includes("sqlserver")
-      ) {
-        dropSql = `DROP TABLE [${deleteTableTarget.replace(/]/g, "]]")}];`;
-      } else if (
-        engineType.includes("sqlite") ||
-        engineType.includes("libsql")
-      ) {
-        dropSql = cascade
-          ? `PRAGMA foreign_keys = OFF; DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}"; PRAGMA foreign_keys = ON;`
-          : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
-      } else if (engineType.includes("oracle")) {
-        dropSql = cascade
-          ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE CONSTRAINTS;`
-          : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+        const escaped = `\`${deleteTableTarget.replace(/`/g, "``")}\``;
+        if (cascade) {
+          try {
+            await api.executeSqlQuery(selectedDb, "SET FOREIGN_KEY_CHECKS = 0;");
+            await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
+          } finally {
+            await api.executeSqlQuery(selectedDb, "SET FOREIGN_KEY_CHECKS = 1;").catch(() => {});
+          }
+        } else {
+          await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
+        }
       } else {
-        // PostgreSQL, CockroachDB, Snowflake, etc.
-        dropSql = cascade
-          ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE;`
-          : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
-      }
+        let dropSql = "";
+        if (
+          engineType.includes("sqlite") ||
+          engineType.includes("libsql")
+        ) {
+          // SQLite does not support CASCADE syntax; run single DROP TABLE directly
+          dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+        } else if (
+          engineType.includes("mssql") ||
+          engineType.includes("sqlserver")
+        ) {
+          dropSql = `DROP TABLE [${deleteTableTarget.replace(/]/g, "]]")}];`;
+        } else if (engineType.includes("oracle")) {
+          dropSql = cascade
+            ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE CONSTRAINTS;`
+            : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+        } else if (engineType.includes("clickhouse")) {
+          dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+        } else {
+          // PostgreSQL, CockroachDB, Snowflake, etc.
+          dropSql = cascade
+            ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE;`
+            : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+        }
 
-      await api.executeSqlQuery(selectedDb, dropSql);
+        await api.executeSqlQuery(selectedDb, dropSql);
+      }
 
       delete schemaCacheRef.current[`${selectedDb}:${deleteTableTarget}`];
       delete allDbTablesSchema[deleteTableTarget];
