@@ -171,6 +171,8 @@ impl BanList {
     /// Lifts an IP address suspension locally without triggering peer cluster fanout.
     pub fn unban_ip_local(ip: &str) {
         IP_BANS.remove(ip);
+        let prefix = format!("{}:", ip);
+        FAILED_AUTH_BY_IP_KEY.retain(|k, _| !k.starts_with(&prefix));
         let ip_owned = ip.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {

@@ -441,6 +441,12 @@ impl MetadataStore {
     /// Loads the latest state from SQLite and atomically publishes the new ArcSwap snapshot.
     pub async fn sync_snapshot() -> Result<(), String> {
         let snapshot = Self::load_snapshot().await?;
+        if snapshot.keys.is_empty() && snapshot.roles.is_empty() && snapshot.databases.is_empty() {
+            let current = crate::snapshot::get_snapshot();
+            if !current.keys.is_empty() || !current.roles.is_empty() || !current.databases.is_empty() {
+                return Ok(());
+            }
+        }
         update_snapshot(snapshot);
         Ok(())
     }

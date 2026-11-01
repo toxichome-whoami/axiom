@@ -216,10 +216,19 @@ fn setup_test_metadata() {
         },
     );
 
+    let current = axiom_metadata::snapshot::get_snapshot();
+    let mut merged_keys = current.keys.clone();
+    let mut merged_roles = current.roles.clone();
+    let mut merged_databases = current.databases.clone();
+
+    merged_keys.extend(keys);
+    merged_roles.extend(roles);
+    merged_databases.extend(databases);
+
     update_snapshot(MetadataSnapshot {
-        keys,
-        roles,
-        databases,
+        keys: merged_keys,
+        roles: merged_roles,
+        databases: merged_databases,
         loaded_at_unix: 0,
     });
 }
@@ -805,6 +814,7 @@ fn brute_force_distributed_key_suspension() {
 
 #[tokio::test]
 async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
+    ensure_metadata_store().await;
     setup_test_metadata();
     let attacker_ip = "198.51.100.77";
     let legitimate_ip = "198.51.100.88";
