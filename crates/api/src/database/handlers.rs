@@ -721,6 +721,15 @@ impl QueryExecutionPipeline {
                 .unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
             (cached.is_mutation, cow, cached.multiple_statements.clone())
         } else {
+            // SECURITY: reject null bytes to prevent C/C++ driver null-termination injection
+            if sql.contains('\0') {
+                return Err(AxiomError::new(
+                    "MALFORMED_SQL",
+                    "Null bytes are not permitted in SQL statements",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+
             // For PostgreSQL dialect, replace '?' with '$1', '$2', ... placeholders before AST parsing,
             // because PostgreSQL grammar rejects raw '?' parameter placeholders.
             let parse_target_sql: std::borrow::Cow<'_, str> =
@@ -1733,8 +1742,9 @@ pub async fn fetch_rows(
         )
     };
 
-    let (result, _) =
+    let (result_arc, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
+    let mut result = Arc::try_unwrap(result_arc).unwrap_or_else(|arc| (*arc).clone());
 
     let mut next_cursor = None;
     if let Some(ref rows) = result.rows {
@@ -1753,8 +1763,7 @@ pub async fn fetch_rows(
         }
     }
 
-    let empty_vec = Vec::new();
-    let rows_ref = result.rows.as_deref().unwrap_or(&empty_vec);
+    let rows_len = result.rows.as_ref().map(|r| r.len()).unwrap_or(0);
 
     let is_ndjson = headers
         .get(axum::http::header::ACCEPT)
@@ -1769,7 +1778,7 @@ pub async fn fetch_rows(
     });
 
     if is_ndjson {
-        let shared_rows = Arc::new(result.rows.clone().unwrap_or_default());
+        let shared_rows = Arc::new(result.rows.take().unwrap_or_default());
         let stream = crate::database::streaming::stream_ndjson_rows_shared(shared_rows);
         let body = axum::body::Body::from_stream(stream);
         axum::response::Response::builder()
@@ -1788,8 +1797,8 @@ pub async fn fetch_rows(
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 )
             })
-    } else if params.stream == Some(true) || rows_ref.len() > 100 {
-        let shared_rows = Arc::new(result.rows.clone().unwrap_or_default());
+    } else if params.stream == Some(true) || rows_len > 100 {
+        let shared_rows = Arc::new(result.rows.take().unwrap_or_default());
         let stream = crate::database::streaming::stream_json_array_envelope_shared(
             shared_rows,
             pagination_meta,
@@ -1812,10 +1821,11 @@ pub async fn fetch_rows(
                 )
             })
     } else {
+        let rows = result.rows.take().unwrap_or_default();
         let envelope = serde_json::json!({
             "success": true,
             "data": {
-                "rows": rows_ref,
+                "rows": rows,
                 "pagination": pagination_meta
             },
             "pagination": pagination_meta,

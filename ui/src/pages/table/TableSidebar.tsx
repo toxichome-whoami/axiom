@@ -41,7 +41,7 @@ export interface TableSidebarProps {
   onLoadMoreTables?: () => void;
 }
 
-export function TableSidebar({
+export const TableSidebar = React.memo(function TableSidebar({
   databases,
   selectedDb,
   onSelectDb,
@@ -448,4 +448,6 @@ export function TableSidebar({
       )}
     </aside>
   );
-}
+});
+
+TableSidebar.displayName = "TableSidebar";

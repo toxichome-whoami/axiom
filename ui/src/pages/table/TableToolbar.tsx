@@ -120,7 +120,7 @@ export interface TableToolbarProps {
   onToggleContinueOnError?: (val: boolean) => void;
 }
 
-export function TableToolbar({
+export const TableToolbar = React.memo(function TableToolbar({
   viewMode,
   setViewMode,
   gridSubTab = "data",
@@ -1108,4 +1108,6 @@ export function TableToolbar({
       )}
     </div>
   );
-}
+});
+
+TableToolbar.displayName = "TableToolbar";
