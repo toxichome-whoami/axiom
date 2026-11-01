@@ -2,4 +2,5 @@
 linker = "rust-lld"
 
 [env]
-CFLAGS = "-Wno-error=date-time -Wno-date-time"
+CFLAGS_x86_64_pc_windows_gnu = "-Wno-error=date-time -Wno-date-time"
+"CFLAGS_x86_64-pc-windows-gnu" = "-Wno-error=date-time -Wno-date-time"
