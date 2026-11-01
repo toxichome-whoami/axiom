@@ -113,7 +113,7 @@ export function StorageSidebar({
 
   return (
     <aside
-      className={`w-full lg:w-64 min-w-[260px] shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative ${isNsDropdownOpen ? "z-50" : "z-30"}`}
+      className={`w-full lg:w-64 min-w-[260px] shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative min-h-0 h-full ${isNsDropdownOpen ? "z-50" : "z-30"}`}
       style={{
         width:
           typeof window !== "undefined" && window.innerWidth >= 1024 && width
