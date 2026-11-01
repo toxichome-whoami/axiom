@@ -1356,17 +1356,20 @@ pub async fn list_tables(
                 .filter(|t| PolicyEngine::can_access_table(&auth, &db_name, &t.name))
                 .collect();
 
+            let pagination = serde_json::json!({
+                "limit": limit,
+                "has_more": next_cursor.is_some(),
+                "next_cursor": next_cursor
+            });
+
             Ok(axum::Json(serde_json::json!({
                 "success": true,
                 "data": {
                     "database": db_name,
                     "tables": filtered_tables,
+                    "pagination": pagination,
                 },
-                "pagination": {
-                    "limit": limit,
-                    "has_more": next_cursor.is_some(),
-                    "next_cursor": next_cursor
-                },
+                "pagination": pagination,
                 "error": serde_json::Value::Null
             })))
         }

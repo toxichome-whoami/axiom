@@ -1021,9 +1021,15 @@ export const api = {
     if (cursor) params.set("cursor", cursor);
     if (limit) params.set("limit", String(limit));
     const qs = params.toString() ? `?${params.toString()}` : "";
-    return request<{ database: string; tables: TableInfoApi[] }>(
-      `/api/v1/db/${encodeURIComponent(db)}/tables${qs}`,
-    );
+    return request<{
+      database: string;
+      tables: TableInfoApi[];
+      pagination?: {
+        limit: number;
+        has_more: boolean;
+        next_cursor: string | null;
+      };
+    }>(`/api/v1/db/${encodeURIComponent(db)}/tables${qs}`);
   },
 
   getTableSchema: (db: string, table: string) =>

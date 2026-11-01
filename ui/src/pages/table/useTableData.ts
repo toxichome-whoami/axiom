@@ -49,6 +49,9 @@ export function useTableData({
   });
   const [isTablesLoading, setIsTablesLoading] = useState(false);
   const [tableSearch, setTableSearch] = useState("");
+  const [tablesCursor, setTablesCursor] = useState<string | null>(null);
+  const [hasMoreTables, setHasMoreTables] = useState(false);
+  const [isLoadingMoreTables, setIsLoadingMoreTables] = useState(false);
 
   // Schema Metadata State
   const [columns, setColumns] = useState<ColumnInfoApi[]>([]);
@@ -132,10 +135,12 @@ export function useTableData({
       if (!db) return [];
       setIsTablesLoading(true);
       try {
-        const res = await api.getDatabaseTables(db, undefined, 500);
+        const res = await api.getDatabaseTables(db, undefined, 50);
         const tableList = res.tables || [];
         setTables(tableList);
         setLoadedDb(db);
+        setTablesCursor(res.pagination?.next_cursor || null);
+        setHasMoreTables(Boolean(res.pagination?.has_more));
 
         const currentTableNames = new Set(tableList.map((t) => t.name));
 
@@ -250,9 +255,46 @@ export function useTableData({
     [],
   );
 
+  const fetchMoreTables = useCallback(async () => {
+    if (
+      !selectedDb ||
+      !tablesCursor ||
+      !hasMoreTables ||
+      isLoadingMoreTables ||
+      isTablesLoading
+    ) {
+      return;
+    }
+    setIsLoadingMoreTables(true);
+    try {
+      const res = await api.getDatabaseTables(selectedDb, tablesCursor, 50);
+      const incoming = res.tables || [];
+      setTables((prev) => {
+        const existing = new Set(prev.map((t) => t.name));
+        const additions = incoming.filter((t) => !existing.has(t.name));
+        return [...prev, ...additions];
+      });
+      setTablesCursor(res.pagination?.next_cursor || null);
+      setHasMoreTables(Boolean(res.pagination?.has_more));
+    } catch (err) {
+      console.error(`Failed to load more tables for ${selectedDb}:`, err);
+    } finally {
+      setIsLoadingMoreTables(false);
+    }
+  }, [
+    selectedDb,
+    tablesCursor,
+    hasMoreTables,
+    isLoadingMoreTables,
+    isTablesLoading,
+  ]);
+
   useEffect(() => {
     if (selectedDb) {
       setLoadedDb("");
+      setTablesCursor(null);
+      setHasMoreTables(false);
+      setIsLoadingMoreTables(false);
       setColumns([]);
       setForeignKeys([]);
       setRows([]);
@@ -604,6 +646,9 @@ export function useTableData({
     selectedTable,
     setSelectedTable,
     isTablesLoading,
+    hasMoreTables,
+    isLoadingMoreTables,
+    fetchMoreTables,
     tableSearch,
     setTableSearch,
     fetchTables,

@@ -36,6 +36,9 @@ export interface TableSidebarProps {
   onEditTable?: (tableName: string) => void;
   onDeleteTable?: (tableName: string) => void;
   canDdl?: boolean;
+  hasMoreTables?: boolean;
+  isLoadingMoreTables?: boolean;
+  onLoadMoreTables?: () => void;
 }
 
 export function TableSidebar({
@@ -53,6 +56,9 @@ export function TableSidebar({
   onEditTable,
   onDeleteTable,
   canDdl = true,
+  hasMoreTables = false,
+  isLoadingMoreTables = false,
+  onLoadMoreTables,
 }: TableSidebarProps) {
   const [isDbDropdownOpen, setIsDbDropdownOpen] = React.useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -112,7 +118,7 @@ export function TableSidebar({
 
   return (
     <aside
-      className={`w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans relative ${isDbDropdownOpen ? "z-50" : "z-30"}`}
+      className={`w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans relative min-h-0 h-full ${isDbDropdownOpen ? "z-50" : "z-30"}`}
     >
       {/* Database Dropdown Selector Header (h-[54px] matching StoragePage) */}
       <div
@@ -263,7 +269,20 @@ export function TableSidebar({
 
       {/* Table Tree Items (collapsible on mobile) */}
       <div
-        className={`flex-1 overflow-y-auto p-1.5 space-y-0.5 max-h-[45vh] lg:max-h-none ${isMobileOpen ? "block" : "hidden lg:block"}`}
+        onScroll={(e) => {
+          const target = e.currentTarget;
+          const remaining =
+            target.scrollHeight - target.scrollTop - target.clientHeight;
+          if (
+            remaining < 120 &&
+            hasMoreTables &&
+            !isLoadingMoreTables &&
+            !tableSearch
+          ) {
+            onLoadMoreTables?.();
+          }
+        }}
+        className={`flex-1 min-h-0 overflow-y-auto p-1.5 space-y-0.5 max-h-[45vh] lg:max-h-none ${isMobileOpen ? "block" : "hidden lg:block"}`}
       >
         {isTablesLoading && tables.length === 0 ? (
           <div className="flex items-center justify-center p-8 text-zinc-500 text-[12px] gap-2">
@@ -275,55 +294,64 @@ export function TableSidebar({
             {tables.length === 0 ? "No tables in schema" : "No matching tables"}
           </div>
         ) : (
-          filteredTables.map((t) => {
-            const isSelected = selectedTable === t.name;
-            const isMenuOpen = tableMenuState?.tableName === t.name;
-            return (
-              <div
-                key={t.name}
-                onClick={() => {
-                  onSelectTable(t.name);
-                  setIsMobileOpen(false);
-                }}
-                className={`group relative w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left transition-colors cursor-pointer text-[14px] font-sans ${
-                  isSelected
-                    ? "bg-[#1a1a1a] text-white font-medium"
-                    : "text-[#a1a1aa] hover:text-white hover:bg-[#141414]"
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
-                  <TableIcon
-                    className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-white" : "text-[#777777] group-hover:text-[#a1a1aa]"}`}
-                  />
-                  <span className="font-sans text-[14px] truncate">
-                    {t.name}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  data-table-menu-trigger={t.name}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const rect = (
-                      e.currentTarget as HTMLElement
-                    ).getBoundingClientRect();
-                    setTableMenuState(
-                      isMenuOpen ? null : { tableName: t.name, rect },
-                    );
+          <>
+            {filteredTables.map((t) => {
+              const isSelected = selectedTable === t.name;
+              const isMenuOpen = tableMenuState?.tableName === t.name;
+              return (
+                <div
+                  key={t.name}
+                  onClick={() => {
+                    onSelectTable(t.name);
+                    setIsMobileOpen(false);
                   }}
-                  title="Table options"
-                  className={`w-6 h-6 flex items-center justify-center rounded-[4px] text-[#888888] hover:text-white hover:bg-[#262626] transition-opacity transition-colors cursor-pointer shrink-0 ${
-                    isMenuOpen || isSelected
-                      ? "opacity-100"
-                      : "opacity-0 group-hover:opacity-100"
+                  className={`group relative w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left transition-colors cursor-pointer text-[14px] font-sans ${
+                    isSelected
+                      ? "bg-[#1a1a1a] text-white font-medium"
+                      : "text-[#a1a1aa] hover:text-white hover:bg-[#141414]"
                   }`}
                 >
-                  <MoreVertical className="w-3.5 h-3.5" />
-                </button>
+                  <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
+                    <TableIcon
+                      className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-white" : "text-[#777777] group-hover:text-[#a1a1aa]"}`}
+                    />
+                    <span className="font-sans text-[14px] truncate">
+                      {t.name}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-table-menu-trigger={t.name}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = (
+                        e.currentTarget as HTMLElement
+                      ).getBoundingClientRect();
+                      setTableMenuState(
+                        isMenuOpen ? null : { tableName: t.name, rect },
+                      );
+                    }}
+                    title="Table options"
+                    className={`w-6 h-6 flex items-center justify-center rounded-[4px] text-[#888888] hover:text-white hover:bg-[#262626] transition-opacity transition-colors cursor-pointer shrink-0 ${
+                      isMenuOpen || isSelected
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                    }`}
+                  >
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+
+            {isLoadingMoreTables && (
+              <div className="flex items-center justify-center p-3 text-zinc-500 text-[12px] gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                Loading more tables...
               </div>
-            );
-          })
+            )}
+          </>
         )}
       </div>
 
@@ -331,7 +359,10 @@ export function TableSidebar({
       <div
         className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? "flex" : "hidden lg:flex"}`}
       >
-        <span>{tables.length} tables</span>
+        <span>
+          {tables.length}
+          {hasMoreTables ? "+" : ""} tables
+        </span>
       </div>
 
       {/* 3-dot Table Context Menu */}

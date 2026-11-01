@@ -145,6 +145,9 @@ export function TableEditor() {
     selectedTable,
     setSelectedTable,
     isTablesLoading,
+    hasMoreTables,
+    isLoadingMoreTables,
+    fetchMoreTables,
     tableSearch,
     setTableSearch,
     fetchTables,
@@ -747,6 +750,9 @@ export function TableEditor() {
         tableSearch={tableSearch}
         setTableSearch={setTableSearch}
         isTablesLoading={isTablesLoading}
+        hasMoreTables={hasMoreTables}
+        isLoadingMoreTables={isLoadingMoreTables}
+        onLoadMoreTables={fetchMoreTables}
         onRefreshTables={() => fetchTables(selectedDb)}
         onCreateTable={
           canDdl
@@ -801,7 +807,7 @@ export function TableEditor() {
       />
 
       {/* ─── PANE 2: MAIN WORKSPACE CANVAS ─── */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#0c0c0c] relative z-10">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-[#0c0c0c] relative z-10">
         {/* Workspace Top Toolbar */}
         <TableToolbar
           viewMode={viewMode}
