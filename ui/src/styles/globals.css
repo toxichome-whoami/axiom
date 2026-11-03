@@ -5,6 +5,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.font-sans {
+  font-family: "Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
 @layer base {
   :root {
     --font-sans:
@@ -432,3 +436,12 @@
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-out;
 }
+
+/* Enforce Satoshi across all typography utilities and components */
+html,
+body,
+.font-sans,
+[class*="font-sans"] {
+  font-family: "Satoshi", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif !important;
+}
+

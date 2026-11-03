@@ -576,8 +576,8 @@ export function TableEditor() {
 
       const serializer = new XMLSerializer();
       const svgElements = schemaPlane.querySelectorAll("svg");
-      let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Inter,sans-serif;">`;
-      combinedSvg += `<style>text { font-family: Inter, sans-serif; fill: #ffffff; }</style>`;
+      let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Satoshi,sans-serif;">`;
+      combinedSvg += `<style>text { font-family: Satoshi, sans-serif; fill: #ffffff; }</style>`;
       svgElements.forEach((s) => {
         combinedSvg += serializer.serializeToString(s);
       });
@@ -619,8 +619,8 @@ export function TableEditor() {
       // Serialize SVG
       const serializer = new XMLSerializer();
       const svgElements = schemaPlane.querySelectorAll("svg");
-      let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Inter,sans-serif;">`;
-      combinedSvg += `<style>text { font-family: Inter, sans-serif; fill: #ffffff; }</style>`;
+      let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Satoshi,sans-serif;">`;
+      combinedSvg += `<style>text { font-family: Satoshi, sans-serif; fill: #ffffff; }</style>`;
       svgElements.forEach((s) => {
         combinedSvg += serializer.serializeToString(s);
       });
