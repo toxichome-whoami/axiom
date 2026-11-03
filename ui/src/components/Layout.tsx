@@ -393,7 +393,7 @@ export function Layout({
       {/* Mobile Drawer Backdrop */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/80 backdrop-blur-xs md:hidden animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs md:hidden animate-in fade-in duration-200"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -402,7 +402,7 @@ export function Layout({
       <aside
         data-sidebar="sidebar"
         className={cn(
-          "flex min-h-screen min-h-dvh shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-40",
+          "flex min-h-screen min-h-dvh shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-50",
           isCollapsed ? "w-[58px]" : "w-[260px]",
           "fixed md:sticky top-0 h-screen h-dvh",
           isSidebarOpen
@@ -611,7 +611,7 @@ export function Layout({
         )}
       >
         {/* Top Header Bar */}
-        <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-3 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between pt-safe">
+        <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-3 sm:px-6 z-40 sticky top-0 gap-2 select-none justify-between pt-safe">
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(true)}
@@ -664,7 +664,7 @@ export function Layout({
               </button>
 
               {userOpen && (
-                <div className="absolute right-0 top-full mt-2 w-[260px] bg-[#111111] border border-[#222222] rounded-[6px] shadow-2xl p-1 z-50 select-none animate-in fade-in zoom-in-95 duration-75 font-sans">
+                <div className="absolute right-0 top-full mt-2 w-[260px] max-w-[calc(100vw-24px)] bg-[#111111] border border-[#222222] rounded-[6px] shadow-2xl p-1 z-50 select-none animate-in fade-in zoom-in-95 duration-75 font-sans">
                   {/* Account info header */}
                   <div className="p-2 rounded-[5px] bg-[#141414] border border-[#1f1f1f] mb-1">
                     <div className="flex items-center justify-between gap-1">
