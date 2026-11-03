@@ -5,7 +5,7 @@
 @layer base {
   :root {
     --font-sans:
-      "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      "Satoshi", "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     --font-mono: "JetBrains Mono", Consolas, monospace;
   }
 
