@@ -666,19 +666,19 @@ export function Layout({
               {userOpen && (
                 <div className="absolute right-0 top-full mt-2 w-[260px] max-w-[calc(100vw-24px)] bg-[#111111] border border-[#222222] rounded-[6px] shadow-2xl p-1 z-50 select-none animate-in fade-in zoom-in-95 duration-75 font-sans">
                   {/* Account info header */}
-                  <div className="p-2 rounded-[5px] bg-[#141414] border border-[#1f1f1f] mb-1">
+                  <div className="p-2 rounded-[5px] bg-[#141414] border border-[#1f1f1f] mb-1 font-sans">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[13px] font-medium text-white truncate leading-tight font-mono">
+                      <span className="text-[13px] font-medium text-white truncate leading-tight font-sans">
                         {currentUser?.username || getOperatorUser()}
                       </span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium text-[#8c8c8c] bg-[#1a1a1a] border border-[#262626] capitalize shrink-0">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium text-[#8c8c8c] bg-[#1a1a1a] border border-[#262626] capitalize shrink-0 font-sans">
                         {currentUser?.is_super_admin
                           ? "Super Admin"
                           : "Operator"}
                       </span>
                     </div>
                     <p
-                      className="text-[12px] text-[#8c8c8c] truncate leading-tight mt-1 font-mono"
+                      className="text-[12px] text-[#8c8c8c] truncate leading-tight mt-1 font-sans"
                       title={currentUser?.email || undefined}
                     >
                       {currentUser?.email && currentUser.email.trim().length > 0
