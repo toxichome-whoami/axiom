@@ -45,7 +45,6 @@ export default {
       fontFamily: {
         sans: [
           "Satoshi",
-          "Inter",
           "-apple-system",
           "BlinkMacSystemFont",
           "system-ui",
