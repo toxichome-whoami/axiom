@@ -113,7 +113,7 @@ export function StorageSidebar({
 
   return (
     <aside
-      className={`w-full lg:w-64 min-w-[260px] shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative min-h-0 h-full ${isNsDropdownOpen ? "z-50" : "z-30"}`}
+      className={`w-full lg:w-64 min-w-0 lg:min-w-[260px] shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative min-h-0 h-auto lg:h-full ${isNsDropdownOpen ? "z-50" : "z-30"}`}
       style={{
         width:
           typeof window !== "undefined" && window.innerWidth >= 1024 && width
@@ -291,7 +291,7 @@ export function StorageSidebar({
 
       {/* ─── Directory & File Tree (collapsible on mobile, always visible on lg+) ─────────────── */}
       <div
-        className={`flex-1 overflow-hidden min-h-0 flex-col ${isMobileOpen ? "flex" : "hidden lg:flex"}`}
+        className={`flex-1 overflow-hidden min-h-0 flex-col ${isMobileOpen ? "flex max-h-[50vh] lg:max-h-none" : "hidden lg:flex"}`}
       >
         <FileTree
           blobs={blobs}

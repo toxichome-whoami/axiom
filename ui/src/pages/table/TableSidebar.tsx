@@ -118,7 +118,7 @@ export const TableSidebar = React.memo(function TableSidebar({
 
   return (
     <aside
-      className={`w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans relative min-h-0 h-full ${isDbDropdownOpen ? "z-50" : "z-30"}`}
+      className={`w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans relative min-h-0 h-auto lg:h-full ${isDbDropdownOpen ? "z-50" : "z-30"}`}
     >
       {/* Database Dropdown Selector Header (h-[54px] matching StoragePage) */}
       <div

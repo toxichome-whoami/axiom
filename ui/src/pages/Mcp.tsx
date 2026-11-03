@@ -528,11 +528,11 @@ export function Mcp() {
       </div>
 
       {/* Top Segmented Navigation Tabs */}
-      <div className="flex items-center gap-1 p-0.5 rounded-[8px] bg-[#0c0c0c] border border-[#262626] w-fit font-sans">
+      <div className="flex items-center gap-1 p-0.5 rounded-[8px] bg-[#0c0c0c] border border-[#262626] w-fit max-w-full overflow-x-auto scrollbar-none whitespace-nowrap select-none font-sans">
         <button
           type="button"
           onClick={() => setActiveTab("tools")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none shrink-0 whitespace-nowrap ${
             activeTab === "tools"
               ? "bg-[#161616] text-white border border-[#333333]"
               : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
@@ -548,7 +548,7 @@ export function Mcp() {
         <button
           type="button"
           onClick={() => setActiveTab("resources")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none shrink-0 whitespace-nowrap ${
             activeTab === "resources"
               ? "bg-[#161616] text-white border border-[#333333]"
               : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
@@ -564,7 +564,7 @@ export function Mcp() {
         <button
           type="button"
           onClick={() => setActiveTab("connect")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none shrink-0 whitespace-nowrap ${
             activeTab === "connect"
               ? "bg-[#161616] text-white border border-[#333333]"
               : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"

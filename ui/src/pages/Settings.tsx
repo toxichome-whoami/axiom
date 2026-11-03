@@ -731,11 +731,11 @@ export function Settings() {
       </div>
 
       {/* Top Segmented Navigation Tabs (Matches Overview, Databases, and Cluster) */}
-      <div className="flex items-center gap-1 p-0.5 rounded-[8px] bg-[#0c0c0c] border border-[#262626] w-fit">
+      <div className="flex items-center gap-1 p-0.5 rounded-[8px] bg-[#0c0c0c] border border-[#262626] w-fit max-w-full overflow-x-auto scrollbar-none whitespace-nowrap select-none">
         <button
           type="button"
           onClick={() => setActiveTab("server")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none shrink-0 whitespace-nowrap ${
             activeTab === "server"
               ? "bg-[#161616] text-white border border-[#333333]"
               : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
@@ -748,7 +748,7 @@ export function Settings() {
         <button
           type="button"
           onClick={() => setActiveTab("security")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none shrink-0 whitespace-nowrap ${
             activeTab === "security"
               ? "bg-[#161616] text-white border border-[#333333]"
               : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
@@ -761,7 +761,7 @@ export function Settings() {
         <button
           type="button"
           onClick={() => setActiveTab("routes")}
-          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none shrink-0 whitespace-nowrap ${
             activeTab === "routes"
               ? "bg-[#161616] text-white border border-[#333333]"
               : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent"
