@@ -88,7 +88,9 @@ export function StorageSidebar({
   onClearSelection,
 }: StorageSidebarProps) {
   const [isNsDropdownOpen, setIsNsDropdownOpen] = useState(false);
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(
+    () => !selectedItem && !currentPrefix,
+  );
   const nsDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

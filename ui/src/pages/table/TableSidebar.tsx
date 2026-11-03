@@ -61,7 +61,7 @@ export const TableSidebar = React.memo(function TableSidebar({
   onLoadMoreTables,
 }: TableSidebarProps) {
   const [isDbDropdownOpen, setIsDbDropdownOpen] = React.useState(false);
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(() => !selectedTable);
   const dbDropdownRef = useRef<HTMLDivElement>(null);
 
   const [tableMenuState, setTableMenuState] = useState<{

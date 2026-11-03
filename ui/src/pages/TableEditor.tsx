@@ -440,47 +440,169 @@ export function TableEditor() {
     try {
       const currentDb = databases.find((d) => d.alias === selectedDb);
       const engineType = currentDb?.engine?.toLowerCase() || "";
+      const targetTable = deleteTableTarget;
 
       if (engineType.includes("mysql") || engineType.includes("mariadb")) {
-        const escaped = `\`${deleteTableTarget.replace(/`/g, "``")}\``;
+        const escaped = `\`${targetTable.replace(/`/g, "``")}\``;
+        if (cascade) {
+          // Discover and drop all referencing foreign keys from child tables
+          try {
+            const fkQuery = `
+              SELECT DISTINCT TABLE_NAME, CONSTRAINT_NAME
+              FROM information_schema.KEY_COLUMN_USAGE
+              WHERE REFERENCED_TABLE_NAME = '${targetTable.replace(/'/g, "''")}'
+                AND TABLE_SCHEMA = DATABASE();
+            `;
+            const fkRes = await api.executeSqlQuery(selectedDb, fkQuery);
+            if (fkRes?.rows && Array.isArray(fkRes.rows)) {
+              for (const row of fkRes.rows) {
+                const childTable =
+                  (row.TABLE_NAME as string) || (row.table_name as string);
+                const constraintName =
+                  (row.CONSTRAINT_NAME as string) ||
+                  (row.constraint_name as string);
+                if (childTable && constraintName) {
+                  const dropFkSql = `ALTER TABLE \`${childTable.replace(/`/g, "``")}\` DROP FOREIGN KEY \`${constraintName.replace(/`/g, "``")}\`;`;
+                  await api
+                    .executeSqlQuery(selectedDb, dropFkSql)
+                    .catch(() => {});
+                }
+              }
+            }
+          } catch {
+            // Ignore schema query error and attempt direct drop
+          }
+        }
+        await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
+      } else if (
+        engineType.includes("mssql") ||
+        engineType.includes("sqlserver")
+      ) {
+        const escaped = `[${targetTable.replace(/]/g, "]]")}]`;
+        if (cascade) {
+          // Discover and drop referencing foreign key constraints in SQL Server
+          try {
+            const fkQuery = `
+              SELECT
+                fk.name AS constraint_name,
+                SCHEMA_NAME(t.schema_id) AS schema_name,
+                t.name AS table_name
+              FROM sys.foreign_keys fk
+              INNER JOIN sys.tables t ON fk.parent_object_id = t.object_id
+              WHERE fk.referenced_object_id = OBJECT_ID('${targetTable.replace(/'/g, "''")}');
+            `;
+            const fkRes = await api.executeSqlQuery(selectedDb, fkQuery);
+            if (fkRes?.rows && Array.isArray(fkRes.rows)) {
+              for (const row of fkRes.rows) {
+                const schema =
+                  (row.schema_name as string) ||
+                  (row.SCHEMA_NAME as string) ||
+                  "dbo";
+                const tbl =
+                  (row.table_name as string) || (row.TABLE_NAME as string);
+                const cName =
+                  (row.constraint_name as string) ||
+                  (row.CONSTRAINT_NAME as string);
+                if (tbl && cName) {
+                  const dropFkSql = `ALTER TABLE [${schema.replace(/]/g, "]]")}].[${tbl.replace(/]/g, "]]")}] DROP CONSTRAINT [${cName.replace(/]/g, "]]")}];`;
+                  await api
+                    .executeSqlQuery(selectedDb, dropFkSql)
+                    .catch(() => {});
+                }
+              }
+            }
+          } catch {
+            // Ignore schema query error and attempt drop
+          }
+        }
+        await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
+      } else if (engineType.includes("oracle")) {
+        const escaped = `"${targetTable.replace(/"/g, '""')}"`;
         if (cascade) {
           try {
             await api.executeSqlQuery(
               selectedDb,
-              "SET FOREIGN_KEY_CHECKS = 0;",
+              `DROP TABLE ${escaped} CASCADE CONSTRAINTS PURGE;`,
             );
-            await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
-          } finally {
-            await api
-              .executeSqlQuery(selectedDb, "SET FOREIGN_KEY_CHECKS = 1;")
-              .catch(() => {});
+          } catch (oracleErr) {
+            const errStr = String(oracleErr);
+            if (
+              errStr.includes("ORA-00942") ||
+              errStr.includes("does not exist")
+            ) {
+              await api.executeSqlQuery(
+                selectedDb,
+                `DROP TABLE ${targetTable.toUpperCase()} CASCADE CONSTRAINTS PURGE;`,
+              );
+            } else {
+              throw oracleErr;
+            }
           }
         } else {
-          await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
+          try {
+            await api.executeSqlQuery(selectedDb, `DROP TABLE ${escaped};`);
+          } catch (oracleErr) {
+            const errStr = String(oracleErr);
+            if (
+              errStr.includes("ORA-00942") ||
+              errStr.includes("does not exist")
+            ) {
+              await api.executeSqlQuery(
+                selectedDb,
+                `DROP TABLE ${targetTable.toUpperCase()};`,
+              );
+            } else {
+              throw oracleErr;
+            }
+          }
         }
+      } else if (
+        engineType.includes("sqlite") ||
+        engineType.includes("libsql")
+      ) {
+        const escaped = `"${targetTable.replace(/"/g, '""')}"`;
+        if (cascade) {
+          // Drop dependent views referencing this table if any exist
+          try {
+            const viewQuery = `
+              SELECT name FROM sqlite_master
+              WHERE type = 'view' AND sql LIKE '%${targetTable.replace(/'/g, "''")}';
+            `;
+            const viewRes = await api.executeSqlQuery(selectedDb, viewQuery);
+            if (viewRes?.rows && Array.isArray(viewRes.rows)) {
+              for (const row of viewRes.rows) {
+                const viewName =
+                  (row.name as string) || (row.NAME as string);
+                if (viewName) {
+                  await api
+                    .executeSqlQuery(
+                      selectedDb,
+                      `DROP VIEW IF EXISTS "${viewName.replace(/"/g, '""')}";`,
+                    )
+                    .catch(() => {});
+                }
+              }
+            }
+          } catch {
+            // Ignore view drop error
+          }
+        }
+        await api.executeSqlQuery(
+          selectedDb,
+          `DROP TABLE IF EXISTS ${escaped};`,
+        );
+      } else if (engineType.includes("clickhouse")) {
+        const escaped = `"${targetTable.replace(/"/g, '""')}"`;
+        await api.executeSqlQuery(
+          selectedDb,
+          `DROP TABLE IF EXISTS ${escaped};`,
+        );
       } else {
-        let dropSql = "";
-        if (engineType.includes("sqlite") || engineType.includes("libsql")) {
-          // SQLite does not support CASCADE syntax; run single DROP TABLE directly
-          dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
-        } else if (
-          engineType.includes("mssql") ||
-          engineType.includes("sqlserver")
-        ) {
-          dropSql = `DROP TABLE [${deleteTableTarget.replace(/]/g, "]]")}];`;
-        } else if (engineType.includes("oracle")) {
-          dropSql = cascade
-            ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE CONSTRAINTS;`
-            : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
-        } else if (engineType.includes("clickhouse")) {
-          dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
-        } else {
-          // PostgreSQL, CockroachDB, Snowflake, etc.
-          dropSql = cascade
-            ? `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}" CASCADE;`
-            : `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
-        }
-
+        // PostgreSQL, CockroachDB, Snowflake, etc.
+        const escaped = `"${targetTable.replace(/"/g, '""')}"`;
+        const dropSql = cascade
+          ? `DROP TABLE ${escaped} CASCADE;`
+          : `DROP TABLE ${escaped};`;
         await api.executeSqlQuery(selectedDb, dropSql);
       }
 
