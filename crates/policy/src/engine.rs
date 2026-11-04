@@ -17,7 +17,7 @@ impl PolicyEngine {
     /// Evaluates whether an authenticated identity has permission to perform an operation on a database table.
     /// CONTRACT:
     ///  - Precondition: `auth` contains verified identity context from authentication middleware.
-    ///  - Precondition: `operation` should be one of "SELECT", "INSERT", "UPDATE", "DELETE", or "*" (case-insensitive).
+    ///  - Precondition: `operation` should be one of "SELECT", "INSERT", "UPDATE", "DELETE", "DDL", or "*" (case-insensitive).
     ///  - Returns `Ok(())` if authorized.
     ///  - Throws `AxiomError(AUTH_FORBIDDEN, 403)` or `AxiomError(AUTH_SCOPE_DENIED, 403)` if permission is denied.
     ///  - Side effects: None (pure evaluator).
@@ -964,5 +964,71 @@ mod tests {
         assert!(PolicyEngine::evaluate(&scoped_user, "localdb", "categories", "INSERT").is_ok());
         assert!(PolicyEngine::evaluate(&scoped_user, "localdb", "categories", "DELETE").is_err());
         assert!(PolicyEngine::evaluate(&scoped_user, "localdb", "users", "SELECT").is_err());
+    }
+
+    #[test]
+    fn test_ddl_operation_evaluation() {
+        use axiom_core::PermissionSnapshot;
+
+        // Context with DML only (SELECT, INSERT, UPDATE, DELETE)
+        let dml_only_ctx = AuthContext {
+            api_key_name: "bot_key".to_string(),
+            role: Some("bot_role".to_string()),
+            is_session: false,
+            permissions: vec![PermissionSnapshot {
+                database: "local_db".to_string(),
+                table_name: "*".to_string(),
+                operations: vec![
+                    "SELECT".to_string(),
+                    "INSERT".to_string(),
+                    "UPDATE".to_string(),
+                    "DELETE".to_string(),
+                ],
+                rls_filter: None,
+            }],
+            ..Default::default()
+        };
+
+        // DDL without DDL permission must fail with AUTH_FORBIDDEN
+        let ddl_res = PolicyEngine::evaluate(&dml_only_ctx, "local_db", "*", "DDL");
+        assert!(ddl_res.is_err());
+        let err = ddl_res.unwrap_err();
+        assert_eq!(err.code, "AUTH_FORBIDDEN");
+
+        // Context with explicit DDL permission
+        let ddl_allowed_ctx = AuthContext {
+            api_key_name: "bot_key".to_string(),
+            role: Some("bot_role".to_string()),
+            is_session: false,
+            permissions: vec![PermissionSnapshot {
+                database: "local_db".to_string(),
+                table_name: "*".to_string(),
+                operations: vec![
+                    "SELECT".to_string(),
+                    "INSERT".to_string(),
+                    "UPDATE".to_string(),
+                    "DELETE".to_string(),
+                    "DDL".to_string(),
+                ],
+                rls_filter: None,
+            }],
+            ..Default::default()
+        };
+        assert!(PolicyEngine::evaluate(&ddl_allowed_ctx, "local_db", "*", "DDL").is_ok());
+
+        // Context with wildcard * permission
+        let wildcard_ctx = AuthContext {
+            api_key_name: "bot_key".to_string(),
+            role: Some("bot_role".to_string()),
+            is_session: false,
+            permissions: vec![PermissionSnapshot {
+                database: "local_db".to_string(),
+                table_name: "*".to_string(),
+                operations: vec!["*".to_string()],
+                rls_filter: None,
+            }],
+            ..Default::default()
+        };
+        assert!(PolicyEngine::evaluate(&wildcard_ctx, "local_db", "*", "DDL").is_ok());
     }
 }
