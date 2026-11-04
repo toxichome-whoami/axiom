@@ -2632,13 +2632,16 @@ fn apply_cors_headers(
         {
             if origins.iter().any(|o| o.eq_ignore_ascii_case(origin_val)) {
                 if let Ok(hv) = header::HeaderValue::from_str(origin_val) {
-                    resp.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
-                    resp.headers_mut().insert(header::VARY, header::HeaderValue::from_static("Origin"));
+                    resp.headers_mut()
+                        .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
+                    resp.headers_mut()
+                        .insert(header::VARY, header::HeaderValue::from_static("Origin"));
                 }
             }
         } else if origins.len() == 1 {
             if let Ok(hv) = header::HeaderValue::from_str(&origins[0]) {
-                resp.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
+                resp.headers_mut()
+                    .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
             }
         }
     }

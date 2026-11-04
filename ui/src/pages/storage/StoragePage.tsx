@@ -508,18 +508,12 @@ export function StoragePage() {
   const isNewNsDirty = useMemo(() => {
     return Boolean(
       newNsName.trim() ||
-        newNsQuotaPreset !== "unlimited" ||
-        newNsCustomBytes.trim() ||
-        newNsIsPublic ||
-        newNsCors.trim(),
+      newNsQuotaPreset !== "unlimited" ||
+      newNsCustomBytes.trim() ||
+      newNsIsPublic ||
+      newNsCors.trim(),
     );
-  }, [
-    newNsName,
-    newNsQuotaPreset,
-    newNsCustomBytes,
-    newNsIsPublic,
-    newNsCors,
-  ]);
+  }, [newNsName, newNsQuotaPreset, newNsCustomBytes, newNsIsPublic, newNsCors]);
 
   const isManageNsDirty = useMemo(() => {
     if (!initialManageNsRef.current) return false;
@@ -1204,7 +1198,8 @@ export function StoragePage() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (showNewNsDiscardConfirm) setShowNewNsDiscardConfirm(false);
-        else if (showManageNsDiscardConfirm) setShowManageNsDiscardConfirm(false);
+        else if (showManageNsDiscardConfirm)
+          setShowManageNsDiscardConfirm(false);
         else if (isNewFolderOpen) setIsNewFolderOpen(false);
         else if (isRenameOpen) setIsRenameOpen(false);
         else if (isNewNsOpen) handleRequestCloseNewNs();

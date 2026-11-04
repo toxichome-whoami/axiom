@@ -2233,7 +2233,7 @@ async fn db_rbac_fine_grained_table_level_authorization() {
 async fn db_idempotency_key_replay_protection() {
     ensure_metadata_store().await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
-    let idemp_key = "idemp-test-query-uuid-99999";
+    let idemp_key = format!("idemp-test-query-uuid-{}", uuid::Uuid::new_v4());
 
     let query_payload = serde_json::json!({
         "sql": "SELECT 1 as test_val;"
@@ -2243,7 +2243,7 @@ async fn db_idempotency_key_replay_protection() {
     let req1 = Request::post("/api/v1/db/testdb/query")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .header("Idempotency-Key", idemp_key)
+        .header("Idempotency-Key", &idemp_key)
         .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
         .unwrap();
     let res1 = create_app().oneshot(req1).await.unwrap();
@@ -2254,7 +2254,7 @@ async fn db_idempotency_key_replay_protection() {
     let req2 = Request::post("/api/v1/db/testdb/query")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .header("Idempotency-Key", idemp_key)
+        .header("Idempotency-Key", &idemp_key)
         .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
         .unwrap();
     let res2 = create_app().oneshot(req2).await.unwrap();
