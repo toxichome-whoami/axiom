@@ -146,10 +146,10 @@ fn is_origin_allowed(origin: &str, host: &str, configured_cors: &[String]) -> bo
         }
     }
 
-    // 2. Allow if wildcard or explicitly present in configured origins
+    // 2. Allow if explicitly present in configured origins (wildcard "*" is forbidden for ambient cookie CSRF checks)
     if configured_cors
         .iter()
-        .any(|o| o == "*" || o == clean_origin)
+        .any(|o| o != "*" && o == clean_origin)
     {
         return true;
     }

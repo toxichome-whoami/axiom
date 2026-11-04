@@ -328,6 +328,7 @@ fn sanitize_db_error(raw_err: &str) -> String {
 /// Invariant: Respects single-quoted strings ('...'), double-quoted identifiers ("..."),
 /// dollar-quoted strings ($$...$$, $tag$...$tag$), line comments (-- ...), block comments (/* ... */),
 /// and PostgreSQL JSONB operators (?|, ?&) to prevent corrupting literal text and operators.
+/// Preserves multibyte UTF-8 characters without byte-level corruption or unsafe transmutation.
 pub fn format_postgres_placeholders(sql: &str) -> String {
     if !sql.contains('?') {
         return sql.to_string();
@@ -337,6 +338,7 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
     let len = bytes.len();
     let mut out = String::with_capacity(len + 16);
     let mut param_idx = 1;
+    let mut last_copied = 0;
 
     let mut in_single_quote = false;
     let mut in_double_quote = false;
@@ -354,7 +356,6 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
         };
 
         if in_line_comment {
-            out.push(b as char);
             if b == b'\n' {
                 in_line_comment = false;
             }
@@ -363,9 +364,7 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
         }
 
         if in_block_comment {
-            out.push(b as char);
             if b == b'*' && next_b == Some(b'/') {
-                out.push('/');
                 in_block_comment = false;
                 i += 2;
                 continue;
@@ -377,21 +376,17 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
         if let Some(tag) = dollar_quote_tag {
             let tag_len = tag.len();
             if i + tag_len <= len && &bytes[i..i + tag_len] == tag {
-                out.push_str(unsafe { std::str::from_utf8_unchecked(tag) });
                 dollar_quote_tag = None;
                 i += tag_len;
             } else {
-                out.push(b as char);
                 i += 1;
             }
             continue;
         }
 
         if in_single_quote {
-            out.push(b as char);
             if b == b'\'' {
                 if next_b == Some(b'\'') {
-                    out.push('\'');
                     i += 2;
                     continue;
                 } else {
@@ -403,10 +398,8 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
         }
 
         if in_double_quote {
-            out.push(b as char);
             if b == b'"' {
                 if next_b == Some(b'"') {
-                    out.push('"');
                     i += 2;
                     continue;
                 } else {
@@ -419,14 +412,12 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
 
         if b == b'-' && next_b == Some(b'-') {
             in_line_comment = true;
-            out.push_str("--");
             i += 2;
             continue;
         }
 
         if b == b'/' && next_b == Some(b'*') {
             in_block_comment = true;
-            out.push_str("/*");
             i += 2;
             continue;
         }
@@ -438,7 +429,6 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
             }
             if j < len && bytes[j] == b'$' {
                 let tag = &bytes[i..=j];
-                out.push_str(unsafe { std::str::from_utf8_unchecked(tag) });
                 dollar_quote_tag = Some(tag);
                 i = j + 1;
                 continue;
@@ -447,40 +437,40 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
 
         if b == b'\'' {
             in_single_quote = true;
-            out.push('\'');
             i += 1;
             continue;
         }
 
         if b == b'"' {
             in_double_quote = true;
-            out.push('"');
             i += 1;
             continue;
         }
 
         if b == b'?' {
             if next_b == Some(b'|') || next_b == Some(b'&') {
-                out.push('?');
                 i += 1;
                 continue;
             }
+            out.push_str(&sql[last_copied..i]);
             let _ = write!(out, "${}", param_idx);
             param_idx += 1;
             i += 1;
+            last_copied = i;
             continue;
         }
 
-        out.push(b as char);
         i += 1;
     }
 
+    out.push_str(&sql[last_copied..len]);
     out
 }
 
 /// Converts positional '?' placeholders into Oracle-style positional bind markers (:1, :2, ...)
 /// Invariant: Respects single-quoted strings ('...'), double-quoted identifiers ("..."),
 /// line comments (-- ...), and block comments (/* ... */).
+/// Preserves multibyte UTF-8 characters without byte-level corruption.
 pub fn format_oracle_placeholders(sql: &str) -> String {
     if !sql.contains('?') {
         return sql.to_string();
@@ -490,6 +480,7 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
     let len = bytes.len();
     let mut out = String::with_capacity(len + 16);
     let mut param_idx = 1;
+    let mut last_copied = 0;
 
     let mut in_single_quote = false;
     let mut in_double_quote = false;
@@ -506,7 +497,6 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
         };
 
         if in_line_comment {
-            out.push(b as char);
             if b == b'\n' {
                 in_line_comment = false;
             }
@@ -515,9 +505,7 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
         }
 
         if in_block_comment {
-            out.push(b as char);
             if b == b'*' && next_b == Some(b'/') {
-                out.push('/');
                 in_block_comment = false;
                 i += 2;
                 continue;
@@ -527,10 +515,8 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
         }
 
         if in_single_quote {
-            out.push(b as char);
             if b == b'\'' {
                 if next_b == Some(b'\'') {
-                    out.push('\'');
                     i += 2;
                     continue;
                 } else {
@@ -542,10 +528,8 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
         }
 
         if in_double_quote {
-            out.push(b as char);
             if b == b'"' {
                 if next_b == Some(b'"') {
-                    out.push('"');
                     i += 2;
                     continue;
                 } else {
@@ -558,43 +542,41 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
 
         if b == b'-' && next_b == Some(b'-') {
             in_line_comment = true;
-            out.push_str("--");
             i += 2;
             continue;
         }
 
         if b == b'/' && next_b == Some(b'*') {
             in_block_comment = true;
-            out.push_str("/*");
             i += 2;
             continue;
         }
 
         if b == b'\'' {
             in_single_quote = true;
-            out.push('\'');
             i += 1;
             continue;
         }
 
         if b == b'"' {
             in_double_quote = true;
-            out.push('"');
             i += 1;
             continue;
         }
 
         if b == b'?' {
+            out.push_str(&sql[last_copied..i]);
             let _ = write!(out, ":{}", param_idx);
             param_idx += 1;
             i += 1;
+            last_copied = i;
             continue;
         }
 
-        out.push(b as char);
         i += 1;
     }
 
+    out.push_str(&sql[last_copied..len]);
     out
 }
 
@@ -2981,6 +2963,13 @@ mod tests {
         // 5. Preserves PostgreSQL JSONB operators (?| and ?&)
         let jsonb = "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = ?";
         assert_eq!(format_postgres_placeholders(jsonb), "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = $1");
+
+        // 6. Preserves multibyte UTF-8 characters without byte-level corruption
+        let utf8_sql = "SELECT 'Café', '日本語', '🚀' WHERE name = 'München' AND id = ?;";
+        assert_eq!(
+            format_postgres_placeholders(utf8_sql),
+            "SELECT 'Café', '日本語', '🚀' WHERE name = 'München' AND id = $1;"
+        );
     }
 
     #[test]
@@ -2999,6 +2988,13 @@ mod tests {
         assert_eq!(
             format_oracle_placeholders(quotes),
             "SELECT 'Is this ?' AS \"q?\" FROM dual WHERE x = :1"
+        );
+
+        // 3. Preserves multibyte UTF-8 characters without byte-level corruption
+        let utf8_sql = "SELECT 'Café', '日本語' FROM dual WHERE name = 'München' AND id = ?";
+        assert_eq!(
+            format_oracle_placeholders(utf8_sql),
+            "SELECT 'Café', '日本語' FROM dual WHERE name = 'München' AND id = :1"
         );
     }
 

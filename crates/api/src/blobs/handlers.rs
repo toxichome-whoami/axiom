@@ -2612,20 +2612,34 @@ pub async fn sweep_expired_handler(
 }
 
 /// Helper to attach namespace-specific or wildcard CORS headers for web embedding.
-fn apply_cors_headers(resp: &mut Response, engine: &axiom_blob::BlobEngine, namespace: &str) {
+/// Follows W3C CORS standards by returning a single matched origin with `Vary: Origin`
+/// instead of joining multiple origins with commas which browsers reject.
+fn apply_cors_headers(
+    resp: &mut Response,
+    engine: &axiom_blob::BlobEngine,
+    namespace: &str,
+    req_headers: Option<&HeaderMap>,
+) {
     if let Ok(origins) = engine.get_namespace_cors(namespace) {
-        if !origins.is_empty() {
-            let origin_val = origins.join(", ");
-            if let Ok(hv) = header::HeaderValue::from_str(&origin_val) {
-                resp.headers_mut()
-                    .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
-            }
-        } else {
-            // Default: allow public assets to be fetched/embedded from any website
+        if origins.is_empty() || origins.iter().any(|o| o == "*") {
             resp.headers_mut().insert(
                 header::ACCESS_CONTROL_ALLOW_ORIGIN,
                 header::HeaderValue::from_static("*"),
             );
+        } else if let Some(origin_val) = req_headers
+            .and_then(|h| h.get(header::ORIGIN))
+            .and_then(|h| h.to_str().ok())
+        {
+            if origins.iter().any(|o| o.eq_ignore_ascii_case(origin_val)) {
+                if let Ok(hv) = header::HeaderValue::from_str(origin_val) {
+                    resp.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
+                    resp.headers_mut().insert(header::VARY, header::HeaderValue::from_static("Origin"));
+                }
+            }
+        } else if origins.len() == 1 {
+            if let Ok(hv) = header::HeaderValue::from_str(&origins[0]) {
+                resp.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
+            }
         }
     }
 }
@@ -2681,7 +2695,7 @@ pub async fn get_public_blob_handler(
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
             })?;
-            apply_cors_headers(&mut resp, &engine, &namespace);
+            apply_cors_headers(&mut resp, &engine, &namespace, Some(&headers));
             return Ok(resp);
         }
     }
@@ -2707,7 +2721,7 @@ pub async fn get_public_blob_handler(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
                 })?;
-                apply_cors_headers(&mut resp, &engine, &namespace);
+                apply_cors_headers(&mut resp, &engine, &namespace, Some(&headers));
                 return Ok(resp);
             }
         }
@@ -2880,7 +2894,7 @@ pub async fn get_public_blob_handler(
                 resp.headers_mut().insert(name, val);
             }
         }
-        apply_cors_headers(&mut resp, &engine, &namespace);
+        apply_cors_headers(&mut resp, &engine, &namespace, Some(&headers));
         return Ok(resp);
     } else {
         let mut builder = Response::builder()
@@ -2938,13 +2952,14 @@ pub async fn get_public_blob_handler(
             resp.headers_mut().insert(name, val);
         }
     }
-    apply_cors_headers(&mut resp, &engine, &namespace);
+    apply_cors_headers(&mut resp, &engine, &namespace, Some(&headers));
     Ok(resp)
 }
 
 /// Head request for public unauthenticated blob metadata.
 pub async fn head_public_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, AxiomError> {
     let engine = get_blob_engine()?;
 
@@ -3004,7 +3019,7 @@ pub async fn head_public_blob_handler(
             resp.headers_mut().insert(name, val);
         }
     }
-    apply_cors_headers(&mut resp, &engine, &namespace);
+    apply_cors_headers(&mut resp, &engine, &namespace, Some(&headers));
     Ok(resp)
 }
 
