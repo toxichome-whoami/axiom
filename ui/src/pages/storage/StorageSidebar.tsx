@@ -138,9 +138,7 @@ export function StorageSidebar({
         </div>
       )}
       {/* ─── Header: Namespace Selector (h-12 aligned with StorageToolbar) ─────────────── */}
-      <div
-        className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative z-20"
-      >
+      <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative z-20">
         <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>
           <button
             type="button"

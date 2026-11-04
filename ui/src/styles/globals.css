@@ -1,18 +1,25 @@
-@import url('https://api.fontshare.com/v2/css?f[]=satoshi@900,700,500,400,300&display=swap');
-@import url('https://api.fontshare.com/v2/css?f[]=satoshi@1,2&display=swap');
+@import url("https://api.fontshare.com/v2/css?f[]=satoshi@900,700,500,400,300&display=swap");
+@import url("https://api.fontshare.com/v2/css?f[]=satoshi@1,2&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 .font-sans {
-  font-family: "Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-family:
+    "Satoshi",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif !important;
 }
 
 @layer base {
   :root {
     --font-sans:
-      "Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      "Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      sans-serif;
     --font-mono: "JetBrains Mono", Consolas, monospace;
   }
 
@@ -442,6 +449,12 @@ html,
 body,
 .font-sans,
 [class*="font-sans"] {
-  font-family: "Satoshi", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif !important;
+  font-family:
+    "Satoshi",
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    "Segoe UI",
+    Roboto,
+    sans-serif !important;
 }
-

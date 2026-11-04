@@ -571,8 +571,7 @@ export function TableEditor() {
             const viewRes = await api.executeSqlQuery(selectedDb, viewQuery);
             if (viewRes?.rows && Array.isArray(viewRes.rows)) {
               for (const row of viewRes.rows) {
-                const viewName =
-                  (row.name as string) || (row.NAME as string);
+                const viewName = (row.name as string) || (row.NAME as string);
                 if (viewName) {
                   await api
                     .executeSqlQuery(
