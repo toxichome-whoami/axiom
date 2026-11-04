@@ -479,6 +479,7 @@ export function StoragePage() {
   const [newNsIsPublic, setNewNsIsPublic] = useState(false);
   const [newNsCors, setNewNsCors] = useState("");
   const [isCreatingNs, setIsCreatingNs] = useState(false);
+  const [showNewNsDiscardConfirm, setShowNewNsDiscardConfirm] = useState(false);
 
   const [isManageNsOpen, setIsManageNsOpen] = useState(false);
   const [manageNsTab, setManageNsTab] = useState<"settings" | "danger">(
@@ -492,6 +493,74 @@ export function StoragePage() {
   const [isSavingNs, setIsSavingNs] = useState(false);
   const [nsToDelete, setNsToDelete] = useState<NamespaceInfo | null>(null);
   const [isDeletingNs, setIsDeletingNs] = useState(false);
+  const [showManageNsDiscardConfirm, setShowManageNsDiscardConfirm] =
+    useState(false);
+
+  // Baseline reference for detecting unsaved namespace updates
+  const initialManageNsRef = useRef<{
+    name: string;
+    isPublic: boolean;
+    cors: string;
+    quotaPreset: string;
+    customBytes: string;
+  } | null>(null);
+
+  const isNewNsDirty = useMemo(() => {
+    return Boolean(
+      newNsName.trim() ||
+        newNsQuotaPreset !== "unlimited" ||
+        newNsCustomBytes.trim() ||
+        newNsIsPublic ||
+        newNsCors.trim(),
+    );
+  }, [
+    newNsName,
+    newNsQuotaPreset,
+    newNsCustomBytes,
+    newNsIsPublic,
+    newNsCors,
+  ]);
+
+  const isManageNsDirty = useMemo(() => {
+    if (!initialManageNsRef.current) return false;
+    const init = initialManageNsRef.current;
+    return (
+      editNsName.trim() !== init.name ||
+      editNsIsPublic !== init.isPublic ||
+      editNsCors.trim() !== init.cors ||
+      editNsQuotaPreset !== init.quotaPreset ||
+      (editNsQuotaPreset === "custom" &&
+        editNsCustomBytes.trim() !== init.customBytes)
+    );
+  }, [
+    editNsName,
+    editNsIsPublic,
+    editNsCors,
+    editNsQuotaPreset,
+    editNsCustomBytes,
+  ]);
+
+  const handleRequestCloseNewNs = useCallback(() => {
+    if (isNewNsDirty) {
+      setShowNewNsDiscardConfirm(true);
+    } else {
+      setIsNewNsOpen(false);
+      setNewNsName("");
+      setNewNsQuotaPreset("unlimited");
+      setNewNsCustomBytes("");
+      setNewNsIsPublic(false);
+      setNewNsCors("");
+    }
+  }, [isNewNsDirty]);
+
+  const handleRequestCloseManageNs = useCallback(() => {
+    if (manageNsTab === "settings" && isManageNsDirty) {
+      setShowManageNsDiscardConfirm(true);
+    } else {
+      setIsManageNsOpen(false);
+      initialManageNsRef.current = null;
+    }
+  }, [manageNsTab, isManageNsDirty]);
 
   // Verification & Copy Feedback Map
   const [verifyMap, setVerifyMap] = useState<
@@ -1134,10 +1203,12 @@ export function StoragePage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (isNewFolderOpen) setIsNewFolderOpen(false);
+        if (showNewNsDiscardConfirm) setShowNewNsDiscardConfirm(false);
+        else if (showManageNsDiscardConfirm) setShowManageNsDiscardConfirm(false);
+        else if (isNewFolderOpen) setIsNewFolderOpen(false);
         else if (isRenameOpen) setIsRenameOpen(false);
-        else if (isNewNsOpen) setIsNewNsOpen(false);
-        else if (isManageNsOpen) setIsManageNsOpen(false);
+        else if (isNewNsOpen) handleRequestCloseNewNs();
+        else if (isManageNsOpen) handleRequestCloseManageNs();
         else if (isMoveOpen) setIsMoveOpen(false);
         else if (isBatchMoveOpen) setIsBatchMoveOpen(false);
         else if (isCopyOpen) setIsCopyOpen(false);
@@ -1176,6 +1247,10 @@ export function StoragePage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    showNewNsDiscardConfirm,
+    showManageNsDiscardConfirm,
+    handleRequestCloseNewNs,
+    handleRequestCloseManageNs,
     isNewFolderOpen,
     isRenameOpen,
     isNewNsOpen,
@@ -2006,6 +2081,8 @@ export function StoragePage() {
       await api.createBlobNamespace(name, maxBytes, newNsIsPublic, corsList);
       setIsNewNsOpen(false);
       setNewNsName("");
+      setNewNsQuotaPreset("unlimited");
+      setNewNsCustomBytes("");
       setNewNsIsPublic(false);
       setNewNsCors("");
       setActiveNamespace(name);
@@ -2045,6 +2122,7 @@ export function StoragePage() {
         cors_origins: corsList,
       });
       setIsManageNsOpen(false);
+      initialManageNsRef.current = null;
       if (currentNsInfo.name === activeNamespace) {
         setActiveNamespace(name);
         syncLocation(name, currentPrefixRef.current, false);
@@ -2140,23 +2218,32 @@ export function StoragePage() {
           const ns = namespaces.find((n) => n.name === activeNamespace);
           if (ns) {
             setEditNsName(ns.name);
-            setEditNsIsPublic(Boolean(ns.is_public));
-            setEditNsCors((ns.cors_origins || []).join(", "));
-            if (!ns.max_bytes) {
-              setEditNsQuotaPreset("unlimited");
-              setEditNsCustomBytes("");
-            } else {
+            const isPublic = Boolean(ns.is_public);
+            const cors = (ns.cors_origins || []).join(", ");
+            setEditNsIsPublic(isPublic);
+            setEditNsCors(cors);
+            let quotaPreset = "unlimited";
+            let customBytes = "";
+            if (ns.max_bytes) {
               const match = QUOTA_OPTIONS.find(
                 (opt) => opt.value === ns.max_bytes?.toString(),
               );
               if (match) {
-                setEditNsQuotaPreset(match.value);
-                setEditNsCustomBytes("");
+                quotaPreset = match.value;
               } else {
-                setEditNsQuotaPreset("custom");
-                setEditNsCustomBytes(ns.max_bytes.toString());
+                quotaPreset = "custom";
+                customBytes = ns.max_bytes.toString();
               }
             }
+            setEditNsQuotaPreset(quotaPreset);
+            setEditNsCustomBytes(customBytes);
+            initialManageNsRef.current = {
+              name: ns.name,
+              isPublic,
+              cors,
+              quotaPreset,
+              customBytes,
+            };
             setManageNsTab("settings");
             setIsManageNsOpen(true);
           }
@@ -2824,7 +2911,7 @@ export function StoragePage() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isCreatingNs) {
-              setIsNewNsOpen(false);
+              handleRequestCloseNewNs();
             }
           }}
         >
@@ -2838,7 +2925,7 @@ export function StoragePage() {
               </h3>
               <button
                 type="button"
-                onClick={() => setIsNewNsOpen(false)}
+                onClick={handleRequestCloseNewNs}
                 className="text-[#777777] hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -2940,7 +3027,7 @@ export function StoragePage() {
                   variant="secondary"
                   size="md"
                   type="button"
-                  onClick={() => setIsNewNsOpen(false)}
+                  onClick={handleRequestCloseNewNs}
                 >
                   Cancel
                 </Button>
@@ -2951,6 +3038,9 @@ export function StoragePage() {
                   disabled={
                     isCreatingNs ||
                     !newNsName.trim() ||
+                    (newNsQuotaPreset === "custom" &&
+                      (!newNsCustomBytes.trim() ||
+                        Number(newNsCustomBytes) <= 0)) ||
                     !hasPermission("blobs.create")
                   }
                   isLoading={isCreatingNs}
@@ -2969,7 +3059,7 @@ export function StoragePage() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isSavingNs) {
-              setIsManageNsOpen(false);
+              handleRequestCloseManageNs();
             }
           }}
         >
@@ -2988,7 +3078,7 @@ export function StoragePage() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsManageNsOpen(false)}
+                onClick={handleRequestCloseManageNs}
                 className="w-7 h-7 flex items-center justify-center rounded-md text-[#777777] hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                 title="Close"
               >
@@ -3114,7 +3204,7 @@ export function StoragePage() {
                     variant="secondary"
                     size="md"
                     type="button"
-                    onClick={() => setIsManageNsOpen(false)}
+                    onClick={handleRequestCloseManageNs}
                   >
                     Cancel
                   </Button>
@@ -3124,7 +3214,11 @@ export function StoragePage() {
                     type="submit"
                     disabled={
                       isSavingNs ||
+                      !isManageNsDirty ||
                       !editNsName.trim() ||
+                      (editNsQuotaPreset === "custom" &&
+                        (!editNsCustomBytes.trim() ||
+                          Number(editNsCustomBytes) <= 0)) ||
                       !hasPermission("blobs.update")
                     }
                     isLoading={isSavingNs}
@@ -3152,7 +3246,7 @@ export function StoragePage() {
                     variant="secondary"
                     size="md"
                     type="button"
-                    onClick={() => setIsManageNsOpen(false)}
+                    onClick={handleRequestCloseManageNs}
                   >
                     Cancel
                   </Button>
@@ -3194,6 +3288,42 @@ export function StoragePage() {
         }
         confirmLabel={isDeletingNs ? "Deleting..." : "Delete Namespace"}
         variant="danger"
+      />
+
+      {/* Confirm Discard New Namespace */}
+      <ConfirmDialog
+        isOpen={showNewNsDiscardConfirm}
+        onClose={() => setShowNewNsDiscardConfirm(false)}
+        onConfirm={() => {
+          setShowNewNsDiscardConfirm(false);
+          setIsNewNsOpen(false);
+          setNewNsName("");
+          setNewNsQuotaPreset("unlimited");
+          setNewNsCustomBytes("");
+          setNewNsIsPublic(false);
+          setNewNsCors("");
+        }}
+        title="Discard Unsaved Namespace?"
+        description="You have unsaved changes in this new namespace draft. Are you sure you want to discard them?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Continue Editing"
+        variant="warning"
+      />
+
+      {/* Confirm Discard Manage Namespace Changes */}
+      <ConfirmDialog
+        isOpen={showManageNsDiscardConfirm}
+        onClose={() => setShowManageNsDiscardConfirm(false)}
+        onConfirm={() => {
+          setShowManageNsDiscardConfirm(false);
+          setIsManageNsOpen(false);
+          initialManageNsRef.current = null;
+        }}
+        title="Discard Unsaved Changes?"
+        description="You have unsaved changes to this namespace configuration. Are you sure you want to discard them?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Continue Editing"
+        variant="warning"
       />
 
       {/* Right-Click Context Menu for Items & Canvas Explorer */}
