@@ -52,7 +52,13 @@ export interface RoleBlobRule {
   operations: string[];
 }
 
-const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE"] as const;
+const DB_OPERATIONS = [
+  "SELECT",
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "DDL",
+] as const;
 const BLOB_OPERATIONS = ["READ", "WRITE", "DELETE"] as const;
 
 function isBlobPermission(database: string, operations: string[]): boolean {

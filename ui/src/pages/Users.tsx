@@ -274,7 +274,7 @@ const ALL_SYSTEM_PERMS = CAPABILITY_GROUPS.flatMap((g) =>
   g.permissions.map((p) => p.id),
 );
 
-const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE"];
+const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE", "DDL"];
 const BLOB_OPERATIONS = ["READ", "WRITE", "DELETE", "MANAGE_NS"];
 
 const filterFieldOptions = [
