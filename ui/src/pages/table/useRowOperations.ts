@@ -233,7 +233,12 @@ export function useRowOperations({
 
       // Optimistically remove deleted row from local state immediately
       if (setRows) {
-        setRows((prev) => prev.filter((r) => r !== deleteRowTarget));
+        if (pkCol && deleteRowTarget[pkCol.name] !== undefined) {
+          const targetPk = deleteRowTarget[pkCol.name];
+          setRows((prev) => prev.filter((r) => r[pkCol.name] !== targetPk));
+        } else {
+          setRows((prev) => prev.filter((r) => r !== deleteRowTarget));
+        }
       }
       setDeleteRowTarget(null);
       setSelectedRowIndex(null);
@@ -300,7 +305,12 @@ export function useRowOperations({
       // Optimistically remove deleted rows from local state immediately
       const indicesToDelete = new Set(selectedRowIndices);
       if (setRows) {
-        setRows((prev) => prev.filter((_, idx) => !indicesToDelete.has(idx)));
+        if (pkCol) {
+          const pkSet = new Set(selectedRows.map((r) => r[pkCol.name]));
+          setRows((prev) => prev.filter((r) => !pkSet.has(r[pkCol.name])));
+        } else {
+          setRows((prev) => prev.filter((_, idx) => !indicesToDelete.has(idx)));
+        }
       }
       setIsDeleteBatchConfirmOpen(false);
       setSelectedRowIndices(new Set());

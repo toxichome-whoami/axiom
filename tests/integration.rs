@@ -1485,7 +1485,7 @@ async fn blob_storage_media_streaming_and_caching_rfcs() {
     assert_eq!(get_res.status(), StatusCode::OK);
     assert_eq!(
         get_res.headers().get("Cache-Control").unwrap(),
-        "public, max-age=86400, stale-while-revalidate=604800"
+        "private, no-cache, must-revalidate"
     );
     assert!(get_res.headers().contains_key("Last-Modified"));
     assert_eq!(get_res.headers().get("Accept-Ranges").unwrap(), "bytes");
@@ -1522,7 +1522,7 @@ async fn blob_storage_media_streaming_and_caching_rfcs() {
     assert_eq!(range_res.headers().get("Content-Length").unwrap(), "131072");
     assert_eq!(
         range_res.headers().get("Cache-Control").unwrap(),
-        "public, max-age=86400, stale-while-revalidate=604800"
+        "private, no-cache, must-revalidate"
     );
     let chunk_bytes = axum::body::to_bytes(range_res.into_body(), 256 * 1024)
         .await
@@ -2859,7 +2859,7 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
     assert_eq!(res.headers().get("content-type").unwrap(), "image/jpeg");
     assert_eq!(
         res.headers().get("cache-control").unwrap(),
-        "public, max-age=31536000, immutable"
+        "public, max-age=0, must-revalidate"
     );
     assert_eq!(res.headers().get("etag").unwrap(), &format!("\"{}\"", etag));
     assert_eq!(

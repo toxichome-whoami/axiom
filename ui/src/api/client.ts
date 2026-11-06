@@ -253,6 +253,9 @@ async function request<T>(
   options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
   const isGet = !options.method || options.method.toUpperCase() === "GET";
+  if (!isGet) {
+    inFlightRequests.clear();
+  }
   const targetUrl = resolveEndpoint(endpoint);
   const cacheKey = isGet && !options.body ? targetUrl : null;
 
@@ -1059,9 +1062,11 @@ export const api = {
     if (params?.sort) qs.set("sort", params.sort);
     if (params?.order) qs.set("order", params.order);
     if (params?.filter) qs.set("filter", params.filter);
+    qs.set("_t", String(Date.now()));
     const qStr = qs.toString() ? `?${qs.toString()}` : "";
     return request<TableRowsResponse>(
       `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows${qStr}`,
+      { cache: "no-store" },
     );
   },
 

@@ -674,7 +674,7 @@ impl QueryExecutionPipeline {
                     h.update(p_str.as_bytes());
                 }
             }
-            Some(format!("qc:{}", h.finalize().to_hex()))
+            Some(format!("qc:{}:{}", db_name, h.finalize().to_hex()))
         } else {
             None
         };
@@ -1182,6 +1182,10 @@ impl QueryExecutionPipeline {
             Ok(res) => {
                 if config.circuit_breaker.enabled {
                     CIRCUIT_FAILURES.remove(db_name);
+                }
+                if is_mutation {
+                    axiom_cache::CacheEngine::invalidate_prefix(&format!("qc:{}:", db_name));
+                    axiom_cache::CacheEngine::invalidate_prefix("qc:");
                 }
                 if res.truncated == Some(true) {
                     tracing::warn!(
@@ -1768,7 +1772,7 @@ pub async fn fetch_rows(
             .header(axum::http::header::CONTENT_TYPE, "application/x-ndjson")
             .header(
                 axum::http::header::CACHE_CONTROL,
-                "private, max-age=5, must-revalidate",
+                "private, no-cache, must-revalidate",
             )
             .body(body)
             .map_err(|e| {
@@ -1791,7 +1795,7 @@ pub async fn fetch_rows(
             .header(axum::http::header::CONTENT_TYPE, "application/json")
             .header(
                 axum::http::header::CACHE_CONTROL,
-                "private, max-age=5, must-revalidate",
+                "private, no-cache, must-revalidate",
             )
             .body(body)
             .map_err(|e| {
@@ -1834,7 +1838,7 @@ pub async fn fetch_rows(
                     .header(axum::http::header::ETAG, &etag_val)
                     .header(
                         axum::http::header::CACHE_CONTROL,
-                        "private, max-age=5, must-revalidate",
+                        "private, no-cache, must-revalidate",
                     )
                     .body(axum::body::Body::empty())
                     .map_err(|e| {
@@ -1854,7 +1858,7 @@ pub async fn fetch_rows(
             .header(axum::http::header::ETAG, &etag_val)
             .header(
                 axum::http::header::CACHE_CONTROL,
-                "private, max-age=5, must-revalidate",
+                "private, no-cache, must-revalidate",
             )
             .body(axum::body::Body::from(bytes))
             .map_err(|e| {
@@ -1976,7 +1980,7 @@ pub async fn fetch_row_by_id(
                 .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
                 .header(
                     axum::http::header::CACHE_CONTROL,
-                    "private, max-age=5, must-revalidate",
+                    "private, no-cache, must-revalidate",
                 )
                 .body(axum::body::Body::from(bytes))
                 .map_err(|e| {
@@ -2038,7 +2042,7 @@ pub async fn fetch_row_by_id(
                 .header(axum::http::header::CONTENT_LENGTH, bytes.len().to_string())
                 .header(
                     axum::http::header::CACHE_CONTROL,
-                    "private, max-age=5, must-revalidate",
+                    "private, no-cache, must-revalidate",
                 )
                 .body(axum::body::Body::from(bytes))
                 .map_err(|e| {
