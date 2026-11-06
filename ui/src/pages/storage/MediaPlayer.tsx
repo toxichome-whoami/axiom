@@ -373,7 +373,7 @@ export function MediaPlayer({
     if (isCodeOrText && url) {
       setIsLoadingText(true);
       setTextError(null);
-      fetch(url)
+      fetch(url, { cache: "no-cache" })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.text();

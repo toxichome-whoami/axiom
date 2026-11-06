@@ -225,7 +225,8 @@ export function TableEditor() {
     selectedTable,
     columns,
     rows,
-    cursor,
+    setRows,
+    cursorHistory,
     loadTableData,
   });
 

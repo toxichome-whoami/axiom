@@ -14,7 +14,8 @@ export interface UseRowOperationsProps {
   selectedTable: string;
   columns: ColumnInfoApi[];
   rows: Record<string, unknown>[];
-  cursor: string | null;
+  setRows?: React.Dispatch<React.SetStateAction<Record<string, unknown>[]>>;
+  cursorHistory?: (string | null)[];
   loadTableData: (options?: {
     targetCursor?: string | null;
     reloadSchema?: boolean;
@@ -26,7 +27,8 @@ export function useRowOperations({
   selectedTable,
   columns,
   rows,
-  cursor,
+  setRows,
+  cursorHistory,
   loadTableData,
 }: UseRowOperationsProps) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -151,7 +153,14 @@ export function useRowOperations({
         setIsInsertModeInPanel(false);
         setSelectedRowIndex(null);
         setRowEditValues({});
-        await loadTableData({ targetCursor: cursor, reloadSchema: false });
+        const currentCursor =
+          cursorHistory && cursorHistory.length > 0
+            ? cursorHistory[cursorHistory.length - 1]
+            : null;
+        await loadTableData({
+          targetCursor: currentCursor,
+          reloadSchema: false,
+        });
       } else {
         setIsDetailsOpen(false);
         setIsInsertModeInPanel(false);
@@ -221,12 +230,21 @@ export function useRowOperations({
       }
 
       await api.deleteTableRow(selectedDb, selectedTable, filter);
+
+      // Optimistically remove deleted row from local state immediately
+      if (setRows) {
+        setRows((prev) => prev.filter((r) => r !== deleteRowTarget));
+      }
       setDeleteRowTarget(null);
       setSelectedRowIndex(null);
       setIsDetailsOpen(false);
       setRowEditValues({});
       setInspectorTab("details");
-      await loadTableData({ targetCursor: cursor, reloadSchema: false });
+      const currentCursor =
+        cursorHistory && cursorHistory.length > 0
+          ? cursorHistory[cursorHistory.length - 1]
+          : null;
+      await loadTableData({ targetCursor: currentCursor, reloadSchema: false });
     } catch (err) {
       showAlertDialog(
         err instanceof Error ? err.message : "Failed to delete row",
@@ -279,10 +297,19 @@ export function useRowOperations({
         }
       }
 
+      // Optimistically remove deleted rows from local state immediately
+      const indicesToDelete = new Set(selectedRowIndices);
+      if (setRows) {
+        setRows((prev) => prev.filter((_, idx) => !indicesToDelete.has(idx)));
+      }
       setIsDeleteBatchConfirmOpen(false);
       setSelectedRowIndices(new Set());
       setSelectedRowIndex(null);
-      await loadTableData({ targetCursor: cursor, reloadSchema: false });
+      const currentCursor =
+        cursorHistory && cursorHistory.length > 0
+          ? cursorHistory[cursorHistory.length - 1]
+          : null;
+      await loadTableData({ targetCursor: currentCursor, reloadSchema: false });
     } catch (err) {
       showAlertDialog(
         err instanceof Error ? err.message : "Failed to delete selected rows",

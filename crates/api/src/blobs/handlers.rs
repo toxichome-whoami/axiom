@@ -366,10 +366,8 @@ pub async fn get_blob_handler(
 
     let cache_control = if is_ticket_auth {
         "private, no-cache, no-store, must-revalidate, max-age=0"
-    } else if is_media {
-        "public, max-age=86400, stale-while-revalidate=604800"
     } else {
-        "public, max-age=3600, must-revalidate"
+        "private, no-cache, must-revalidate"
     };
 
     // 4. RFC 9110 §13.1.2: If-Range validator check
@@ -616,7 +614,7 @@ pub async fn head_blob_handler(
     let cache_control = if is_ticket_auth {
         "private, no-cache, no-store, must-revalidate, max-age=0"
     } else {
-        "public, max-age=3600, must-revalidate"
+        "private, no-cache, must-revalidate"
     };
 
     let mut builder = Response::builder()
@@ -2686,7 +2684,7 @@ pub async fn get_public_blob_handler(
             let mut resp_builder = Response::builder()
                 .status(StatusCode::NOT_MODIFIED)
                 .header(header::ETAG, &etag_val)
-                .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
+                .header(header::CACHE_CONTROL, "public, max-age=0, must-revalidate");
             if let Some(ref lm) = last_modified {
                 resp_builder = resp_builder.header(header::LAST_MODIFIED, lm.as_str());
             }
@@ -2712,7 +2710,7 @@ pub async fn get_public_blob_handler(
                 let mut resp_builder = Response::builder()
                     .status(StatusCode::NOT_MODIFIED)
                     .header(header::ETAG, &etag_val)
-                    .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
+                    .header(header::CACHE_CONTROL, "public, max-age=0, must-revalidate");
                 if let Some(ref lm) = last_modified {
                     resp_builder = resp_builder.header(header::LAST_MODIFIED, lm.as_str());
                 }
@@ -2854,7 +2852,7 @@ pub async fn get_public_blob_handler(
             .header(header::CONTENT_RANGE, content_range)
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::ETAG, &etag_val)
-            .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+            .header(header::CACHE_CONTROL, "public, max-age=0, must-revalidate")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(header::CONTENT_DISPOSITION, disposition.clone())
             .header(
@@ -2906,7 +2904,7 @@ pub async fn get_public_blob_handler(
             .header(header::CONTENT_LENGTH, meta.size.to_string())
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::ETAG, &etag_val)
-            .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+            .header(header::CACHE_CONTROL, "public, max-age=0, must-revalidate")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(header::CONTENT_DISPOSITION, disposition)
             .header(
@@ -3000,7 +2998,7 @@ pub async fn head_public_blob_handler(
         .header(header::CONTENT_TYPE, meta.content_type)
         .header(header::CONTENT_LENGTH, meta.size.to_string())
         .header(header::ETAG, format!("\"{}\"", meta.hash))
-        .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+        .header(header::CACHE_CONTROL, "public, max-age=0, must-revalidate")
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(header::CONTENT_DISPOSITION, disposition)
         .body(Body::empty())

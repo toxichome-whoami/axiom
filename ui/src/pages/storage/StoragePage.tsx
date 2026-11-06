@@ -1850,11 +1850,30 @@ export function StoragePage() {
       }
 
       // Optimistically remove deleted items from local state
-      setBlobs((prev) =>
-        deleted.type === "folder"
-          ? prev.filter((b) => !b.key.startsWith(deleted.fullKey))
-          : prev.filter((b) => b.key !== deleted.fullKey),
-      );
+      setBlobs((prev) => {
+        const next =
+          deleted.type === "folder"
+            ? prev.filter((b) => !b.key.startsWith(deleted.fullKey))
+            : prev.filter((b) => b.key !== deleted.fullKey);
+
+        // If deleting a subfolder, preserve parent directory marker so parent remains visible
+        if (deleted.type === "folder") {
+          const parentDir = parentOf(deleted.fullKey);
+          if (parentDir && !next.some((b) => b.key.startsWith(parentDir))) {
+            const now = Math.floor(Date.now() / 1000);
+            next.push({
+              namespace: activeNamespace,
+              key: `${parentDir}.axiom_dir`,
+              size: 0,
+              inline: true,
+              content_type: "application/x-directory",
+              hash: "0000000000000000000000000000000000000000000000000000000000000000",
+              created_at: now,
+            });
+          }
+        }
+        return next;
+      });
 
       // Deselect if currently selected item was deleted or was inside deleted folder
       if (
@@ -2618,6 +2637,7 @@ export function StoragePage() {
         isOpen={isDetailsOpen}
         onClose={() => setIsDetailsOpen(false)}
         selectedItem={inspectorItem}
+        isCurrentFolderOverview={!selectedItem && Boolean(currentPrefix)}
         activeNamespace={activeNamespace}
         currentNsInfo={currentNsInfo}
         namespaceUsage={namespaceUsage}

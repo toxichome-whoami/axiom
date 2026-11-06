@@ -823,8 +823,16 @@ impl BlobEngine {
     pub async fn delete_prefix(&self, ns: &str, prefix: &str) -> Result<u64, BlobError> {
         validate_namespace(ns)?;
         let mut count = 0u64;
+        let clean_prefix = prefix.trim();
+
+        // Calculate parent prefix if this is a subfolder (e.g., "parent/sub/" -> "parent/")
+        let parent_prefix = {
+            let stripped = clean_prefix.strip_suffix('/').unwrap_or(clean_prefix);
+            stripped.rsplit_once('/').map(|(p, _)| format!("{}/", p))
+        };
+
         loop {
-            let (items, _) = self.index.list(ns, Some(prefix), None, 1000)?;
+            let (items, _) = self.index.list(ns, Some(clean_prefix), None, 1000)?;
             if items.is_empty() {
                 break;
             }
@@ -839,6 +847,19 @@ impl BlobEngine {
                 break;
             }
         }
+
+        // If a subfolder was deleted, ensure the parent directory is not inadvertently removed
+        // if no sibling objects remain.
+        if let Some(ref parent_pfx) = parent_prefix {
+            let (remaining, _) = self.index.list(ns, Some(parent_pfx), None, 1)?;
+            if remaining.is_empty() {
+                let marker_key = format!("{}.axiom_dir", parent_pfx);
+                let _ = self
+                    .put(ns, &marker_key, Some("application/x-directory"), &[])
+                    .await;
+            }
+        }
+
         Ok(count)
     }
 
@@ -2041,5 +2062,50 @@ mod tests {
         assert!(del_res.errors.is_empty());
         assert!(engine.get(ns, "banner.jpg").await.is_err());
         assert!(engine.get(ns, "logo.png").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_delete_subfolder_preserves_parent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 64, 1024 * 1024, false)
+            .await
+            .unwrap();
+
+        let ns = "folders-test";
+        engine.create_namespace(ns, None, false).unwrap();
+
+        // Create a subfolder with a file inside a parent folder
+        engine
+            .put(
+                ns,
+                "main/sub/test.txt",
+                Some("text/plain"),
+                b"subfolder file",
+            )
+            .await
+            .unwrap();
+
+        // Verify file exists under main/ and main/sub/
+        let main_items = engine.list(ns, Some("main/"), None, 10).unwrap().items;
+        assert_eq!(main_items.len(), 1);
+
+        // Delete the subfolder prefix
+        let deleted = engine.delete_prefix(ns, "main/sub/").await.unwrap();
+        assert_eq!(deleted, 1);
+
+        // Verify subfolder file is gone
+        assert!(engine.get(ns, "main/sub/test.txt").await.is_err());
+
+        // Verify parent directory marker was preserved / recreated so the parent folder still exists
+        let remaining_main = engine.list(ns, Some("main/"), None, 10).unwrap().items;
+        assert!(!remaining_main.is_empty());
+        assert_eq!(remaining_main[0].key, "main/.axiom_dir");
+
+        // Deleting the parent directory directly removes everything
+        let deleted_parent = engine.delete_prefix(ns, "main/").await.unwrap();
+        assert_eq!(deleted_parent, 1);
+
+        let empty_items = engine.list(ns, Some("main/"), None, 10).unwrap().items;
+        assert!(empty_items.is_empty());
     }
 }

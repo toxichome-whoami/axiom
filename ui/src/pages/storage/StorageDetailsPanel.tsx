@@ -4,7 +4,7 @@
  * Design reference: Linear Issue Inspector & RowInspectorSlideOver in TableEditor
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   X,
   Folder,
@@ -21,6 +21,8 @@ import {
   Share2,
   Globe,
   Eye,
+  Maximize2,
+  FileText,
 } from "lucide-react";
 import { StorageItem } from "./types";
 import { NamespaceInfo, NamespaceUsage } from "../../types";
@@ -48,6 +50,7 @@ export interface StorageDetailsPanelProps {
   verifyStatus: "verifying" | "valid" | "invalid" | undefined;
   onCopyText: (text: string, id: string) => void;
   copiedKey: string | null;
+  isCurrentFolderOverview?: boolean;
 }
 
 export function StorageDetailsPanel({
@@ -71,8 +74,131 @@ export function StorageDetailsPanel({
   verifyStatus,
   onCopyText,
   copiedKey,
+  isCurrentFolderOverview = false,
 }: StorageDetailsPanelProps) {
   const [isChecksumExpanded, setIsChecksumExpanded] = useState(true);
+  const [inlineTextSnippet, setInlineTextSnippet] = useState<string | null>(
+    null,
+  );
+  const [isLoadingSnippet, setIsLoadingSnippet] = useState(false);
+
+  // Compute cache-busted stream and preview URL
+  const previewUrl = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "file") return null;
+    const sanitizedKeyPath = selectedItem.fullKey
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    const cacheBuster = selectedItem.hash
+      ? `&v=${encodeURIComponent(selectedItem.hash)}`
+      : `&_t=${selectedItem.created_at || Date.now()}`;
+    return currentNsInfo?.is_public
+      ? `/api/v1/blobs/public/${encodeURIComponent(activeNamespace)}/${sanitizedKeyPath}?inline=1${cacheBuster}`
+      : `/api/v1/blobs/${encodeURIComponent(activeNamespace)}/${sanitizedKeyPath}?inline=1${cacheBuster}`;
+  }, [selectedItem, activeNamespace, currentNsInfo?.is_public]);
+
+  const isImage = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "file") return false;
+    const ct = (selectedItem.content_type || "").toLowerCase();
+    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
+    return (
+      (ct.startsWith("image/") && !ct.includes("svg")) ||
+      ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"].includes(ext)
+    );
+  }, [selectedItem]);
+
+  const isAudio = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "file") return false;
+    const ct = (selectedItem.content_type || "").toLowerCase();
+    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
+    return (
+      ct.startsWith("audio/") ||
+      ["mp3", "wav", "ogg", "aac", "m4a", "flac"].includes(ext)
+    );
+  }, [selectedItem]);
+
+  const isVideo = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "file") return false;
+    const ct = (selectedItem.content_type || "").toLowerCase();
+    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
+    return (
+      ct.startsWith("video/") || ["mp4", "webm", "mkv", "mov"].includes(ext)
+    );
+  }, [selectedItem]);
+
+  const isCodeOrText = useMemo(() => {
+    if (!selectedItem || selectedItem.type !== "file") return false;
+    if (isImage || isAudio || isVideo) return false;
+    const ct = (selectedItem.content_type || "").toLowerCase();
+    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
+    return (
+      ct.startsWith("text/") ||
+      ct.includes("json") ||
+      ct.includes("xml") ||
+      ct.includes("javascript") ||
+      ct.includes("yaml") ||
+      ct.includes("toml") ||
+      ct.includes("sql") ||
+      ct.includes("lua") ||
+      [
+        "txt",
+        "md",
+        "json",
+        "js",
+        "ts",
+        "jsx",
+        "tsx",
+        "py",
+        "rs",
+        "go",
+        "sql",
+        "html",
+        "css",
+        "yaml",
+        "yml",
+        "toml",
+        "env",
+        "sh",
+        "lua",
+        "csv",
+        "tsv",
+        "log",
+        "xml",
+        "ini",
+        "conf",
+        "cfg",
+      ].includes(ext)
+    );
+  }, [selectedItem, isImage, isAudio, isVideo]);
+
+  // Fetch quick inline text preview for code and text files
+  useEffect(() => {
+    if (!isCodeOrText || !previewUrl) {
+      setInlineTextSnippet(null);
+      setIsLoadingSnippet(false);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingSnippet(true);
+    fetch(previewUrl, { cache: "no-cache" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((txt) => {
+        if (cancelled) return;
+        setInlineTextSnippet(txt.slice(0, 4000));
+        setIsLoadingSnippet(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setInlineTextSnippet(null);
+        setIsLoadingSnippet(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCodeOrText, previewUrl]);
 
   // Close panel on Escape key
   useEffect(() => {
@@ -105,7 +231,9 @@ export function StorageDetailsPanel({
         <h3 className="text-[15px] font-medium text-white font-sans truncate">
           {selectedItem
             ? selectedItem.type === "folder"
-              ? "Folder Details"
+              ? isCurrentFolderOverview
+                ? `Directory: ${selectedItem.name}`
+                : "Folder Details"
               : "Object Details"
             : "Namespace Overview"}
         </h3>
@@ -235,6 +363,119 @@ export function StorageDetailsPanel({
               </div>
             </div>
 
+            {/* Live Inline Preview Card (Images, Audio, Video, Text/Code) */}
+            {selectedItem.type === "file" && previewUrl && (
+              <>
+                {isImage && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[13px] font-medium text-[#8c8c8c]">
+                        Image Preview
+                      </span>
+                      {onPreview && (
+                        <button
+                          type="button"
+                          onClick={() => onPreview(selectedItem)}
+                          className="text-[12px] text-blue-400 hover:text-blue-300 font-sans cursor-pointer flex items-center gap-1"
+                        >
+                          <Maximize2 className="w-3 h-3" /> Full Screen
+                        </button>
+                      )}
+                    </div>
+                    <div
+                      className="rounded-lg bg-[#0d0d0d] border border-[#222222] p-2 flex items-center justify-center overflow-hidden cursor-pointer group hover:border-[#333333] transition-colors"
+                      onClick={() => onPreview?.(selectedItem)}
+                    >
+                      <img
+                        src={previewUrl}
+                        alt={selectedItem.name}
+                        className="max-h-48 w-full object-contain rounded transition-transform group-hover:scale-[1.02]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isAudio && (
+                  <div className="space-y-1">
+                    <span className="text-[13px] font-medium text-[#8c8c8c] block px-0.5">
+                      Audio Player
+                    </span>
+                    <div className="rounded-lg bg-[#0d0d0d] border border-[#222222] p-3">
+                      <audio
+                        controls
+                        src={previewUrl}
+                        className="w-full"
+                        preload="metadata"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isVideo && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[13px] font-medium text-[#8c8c8c]">
+                        Video Player
+                      </span>
+                      {onPreview && (
+                        <button
+                          type="button"
+                          onClick={() => onPreview(selectedItem)}
+                          className="text-[12px] text-blue-400 hover:text-blue-300 font-sans cursor-pointer flex items-center gap-1"
+                        >
+                          <Maximize2 className="w-3 h-3" /> Full Screen
+                        </button>
+                      )}
+                    </div>
+                    <div className="rounded-lg bg-black border border-[#222222] overflow-hidden">
+                      <video
+                        controls
+                        src={previewUrl}
+                        className="max-h-48 w-full"
+                        preload="metadata"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isCodeOrText && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[13px] font-medium text-[#8c8c8c] flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                        Content Preview
+                      </span>
+                      {onPreview && (
+                        <button
+                          type="button"
+                          onClick={() => onPreview(selectedItem)}
+                          className="text-[12px] text-blue-400 hover:text-blue-300 font-sans cursor-pointer flex items-center gap-1"
+                        >
+                          <Maximize2 className="w-3 h-3" /> Full Screen
+                        </button>
+                      )}
+                    </div>
+                    <div className="rounded-lg bg-[#0c0c0c] border border-[#222222] p-2.5 overflow-hidden font-mono text-[11.5px] text-[#cccccc] leading-relaxed max-h-52 overflow-y-auto select-text">
+                      {isLoadingSnippet ? (
+                        <div className="flex items-center justify-center py-6 text-[#777777] gap-2">
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Loading preview...</span>
+                        </div>
+                      ) : inlineTextSnippet !== null ? (
+                        <pre className="whitespace-pre-wrap break-words m-0">
+                          {inlineTextSnippet}
+                        </pre>
+                      ) : (
+                        <div className="py-4 text-center text-[#777777]">
+                          Binary or empty content
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
             {/* Properties Group */}
             <div className="space-y-1">
               <span className="text-[13px] font-medium text-[#8c8c8c] block px-0.5">
@@ -360,7 +601,7 @@ export function StorageDetailsPanel({
                   <span className="text-white tabular-nums">
                     {selectedItem.type === "folder"
                       ? `${selectedItem.itemCount || 0} ${(selectedItem.itemCount || 0) === 1 ? "object" : "objects"} (${formatBytes(selectedItem.totalBytes || 0)})`
-                      : formatBytes(selectedItem.size || 0)}
+                      : `${formatBytes(selectedItem.size || 0)} (${(selectedItem.size || 0).toLocaleString()} bytes)`}
                   </span>
                 </div>
 

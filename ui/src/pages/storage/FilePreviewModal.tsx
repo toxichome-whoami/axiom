@@ -75,9 +75,13 @@ export function FilePreviewModal({
       .map(encodeURIComponent)
       .join("/");
 
+    const cacheBuster = item.hash
+      ? `&v=${encodeURIComponent(item.hash)}`
+      : `&_t=${item.created_at || Date.now()}`;
+
     const url = isPublic
-      ? `/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`
-      : `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`;
+      ? `/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1${cacheBuster}`
+      : `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1${cacheBuster}`;
 
     setStreamUrl(url);
     setStreamError(null);
