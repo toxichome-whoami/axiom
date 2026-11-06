@@ -234,8 +234,10 @@ export function useRowOperations({
       // Optimistically remove deleted row from local state immediately
       if (setRows) {
         if (pkCol && deleteRowTarget[pkCol.name] !== undefined) {
-          const targetPk = deleteRowTarget[pkCol.name];
-          setRows((prev) => prev.filter((r) => r[pkCol.name] !== targetPk));
+          const targetPk = String(deleteRowTarget[pkCol.name]);
+          setRows((prev) =>
+            prev.filter((r) => String(r[pkCol.name]) !== targetPk),
+          );
         } else {
           setRows((prev) => prev.filter((r) => r !== deleteRowTarget));
         }
@@ -277,7 +279,7 @@ export function useRowOperations({
 
       if (pkCol) {
         const pkValues = selectedRows
-          .map((r) => r[pkCol.name])
+          .map((r) => coerceColumnValue(r[pkCol.name], pkCol.type))
           .filter((v) => v !== undefined && v !== null);
 
         if (pkValues.length > 0) {
@@ -292,7 +294,10 @@ export function useRowOperations({
           let count = 0;
           Object.entries(row).forEach(([k, v]) => {
             if (count < 2 && v !== null && v !== undefined) {
-              filter[k] = { eq: v };
+              const colDef = columns.find((c) => c.name === k);
+              filter[k] = {
+                eq: colDef ? coerceColumnValue(v, colDef.type) : v,
+              };
               count++;
             }
           });
@@ -306,8 +311,10 @@ export function useRowOperations({
       const indicesToDelete = new Set(selectedRowIndices);
       if (setRows) {
         if (pkCol) {
-          const pkSet = new Set(selectedRows.map((r) => r[pkCol.name]));
-          setRows((prev) => prev.filter((r) => !pkSet.has(r[pkCol.name])));
+          const pkSet = new Set(selectedRows.map((r) => String(r[pkCol.name])));
+          setRows((prev) =>
+            prev.filter((r) => !pkSet.has(String(r[pkCol.name]))),
+          );
         } else {
           setRows((prev) => prev.filter((_, idx) => !indicesToDelete.has(idx)));
         }

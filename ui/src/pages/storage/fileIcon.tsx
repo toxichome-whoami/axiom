@@ -47,6 +47,14 @@ export function getFileIcon(key: string, className = "w-4 h-4 shrink-0") {
       "toml",
       "yaml",
       "yml",
+      "lsm",
+      "lua",
+      "sh",
+      "env",
+      "ini",
+      "conf",
+      "cfg",
+      "proto",
     ].includes(ext)
   ) {
     return <FileCode className={`${className} text-[#fbbf24]`} />;

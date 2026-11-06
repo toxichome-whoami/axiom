@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { formatBytes } from "./format";
 import { getFileIcon, getFileExtension } from "./fileIcon";
+import { getSessionToken } from "../../api/session";
 
 export interface MediaPlayerProps {
   url: string;
@@ -83,6 +84,8 @@ export function MediaPlayer({
   const isCodeOrText =
     [
       "txt",
+      "lsm",
+      "lua",
       "json",
       "csv",
       "tsv",
@@ -105,9 +108,23 @@ export function MediaPlayer({
       "env",
       "diff",
       "patch",
+      "ini",
+      "conf",
+      "cfg",
+      "properties",
+      "proto",
+      "manifest",
     ].includes(ext) ||
     Boolean(contentType?.startsWith("text/")) ||
-    contentType === "application/json";
+    contentType === "application/json" ||
+    contentType === "application/javascript" ||
+    contentType === "application/x-lua" ||
+    (!isVideo &&
+      !isAudio &&
+      !isImage &&
+      !isPdf &&
+      (size || 0) > 0 &&
+      (size || 0) < 512 * 1024);
 
   // ─────────────────────────────────────────────────────────────
   // 1. VIDEO PLAYER STATE & HANDLERS
@@ -373,12 +390,21 @@ export function MediaPlayer({
     if (isCodeOrText && url) {
       setIsLoadingText(true);
       setTextError(null);
-      fetch(url, { cache: "no-cache" })
+      const headers: Record<string, string> = {};
+      const token = getSessionToken();
+      if (token && !url.includes("ticket_sig=")) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      fetch(url, { cache: "no-cache", credentials: "include", headers })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.text();
         })
         .then((txt) => {
+          // If binary null bytes are present, reject as binary
+          if (txt.includes("\0")) {
+            throw new Error("Binary content cannot be previewed as text");
+          }
           if (txt.length > 500_000) {
             setTextContent(
               txt.slice(0, 500_000) +
