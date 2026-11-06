@@ -1490,6 +1490,9 @@ pub async fn insert_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, all_params, &auth, &db_cfg).await?;
 
+    axiom_cache::CacheEngine::invalidate_prefix(&format!("qc:{}:", db_name));
+    axiom_cache::CacheEngine::invalidate_prefix("qc:");
+
     Ok(axum::Json(serde_json::json!({
         "success": true,
         "affected_rows": result.affected_rows,
@@ -2159,7 +2162,7 @@ pub async fn update_row_by_id(
         .await
         .map_err(|e| AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::BAD_REQUEST))?;
 
-    // Invalidate cached point lookup
+    // Invalidate cached point lookup and table query caches
     let config = axiom_core::ConfigManager::get();
     if config.cache.enabled && config.cache.query_cache {
         axiom_cache::CacheEngine::delete(&format!(
@@ -2168,6 +2171,8 @@ pub async fn update_row_by_id(
         ))
         .await;
     }
+    axiom_cache::CacheEngine::invalidate_prefix(&format!("qc:{}:", db_name));
+    axiom_cache::CacheEngine::invalidate_prefix("qc:");
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
@@ -2249,7 +2254,7 @@ pub async fn delete_row_by_id(
         .await
         .map_err(|e| AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::BAD_REQUEST))?;
 
-    // Invalidate cached point lookup
+    // Invalidate cached point lookup and table query caches
     let config = axiom_core::ConfigManager::get();
     if config.cache.enabled && config.cache.query_cache {
         axiom_cache::CacheEngine::delete(&format!(
@@ -2258,6 +2263,8 @@ pub async fn delete_row_by_id(
         ))
         .await;
     }
+    axiom_cache::CacheEngine::invalidate_prefix(&format!("qc:{}:", db_name));
+    axiom_cache::CacheEngine::invalidate_prefix("qc:");
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
@@ -2335,6 +2342,9 @@ pub async fn update_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
+    axiom_cache::CacheEngine::invalidate_prefix(&format!("qc:{}:", db_name));
+    axiom_cache::CacheEngine::invalidate_prefix("qc:");
+
     Ok(axum::Json(serde_json::json!({
         "success": true,
         "affected_rows": result.affected_rows,
@@ -2396,6 +2406,9 @@ pub async fn delete_rows(
 
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
+
+    axiom_cache::CacheEngine::invalidate_prefix(&format!("qc:{}:", db_name));
+    axiom_cache::CacheEngine::invalidate_prefix("qc:");
 
     Ok(axum::Json(serde_json::json!({
         "success": true,

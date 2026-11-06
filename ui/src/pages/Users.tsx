@@ -870,7 +870,10 @@ export function Users() {
         } = {
           email: formEmail.trim() || undefined,
           password: formPassword || undefined,
-          permissions: editingUser.id === 1 ? undefined : sanitizedPerms,
+          permissions:
+            editingUser.id === 1 || editingUser.is_super_admin
+              ? undefined
+              : sanitizedPerms,
         };
         if (cleanUsername !== editingUser.username) {
           payload.username = cleanUsername;

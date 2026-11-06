@@ -4,7 +4,7 @@
  * Design reference: Linear Issue Inspector & RowInspectorSlideOver in TableEditor
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Folder,
@@ -21,8 +21,6 @@ import {
   Share2,
   Globe,
   Eye,
-  Maximize2,
-  FileText,
 } from "lucide-react";
 import { StorageItem } from "./types";
 import { NamespaceInfo, NamespaceUsage } from "../../types";
@@ -76,130 +74,6 @@ export function StorageDetailsPanel({
   copiedKey,
   isCurrentFolderOverview = false,
 }: StorageDetailsPanelProps) {
-  const [isChecksumExpanded, setIsChecksumExpanded] = useState(true);
-  const [inlineTextSnippet, setInlineTextSnippet] = useState<string | null>(
-    null,
-  );
-  const [isLoadingSnippet, setIsLoadingSnippet] = useState(false);
-
-  // Compute cache-busted stream and preview URL
-  const previewUrl = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "file") return null;
-    const sanitizedKeyPath = selectedItem.fullKey
-      .split("/")
-      .map(encodeURIComponent)
-      .join("/");
-    const cacheBuster = selectedItem.hash
-      ? `&v=${encodeURIComponent(selectedItem.hash)}`
-      : `&_t=${selectedItem.created_at || Date.now()}`;
-    return currentNsInfo?.is_public
-      ? `/api/v1/blobs/public/${encodeURIComponent(activeNamespace)}/${sanitizedKeyPath}?inline=1${cacheBuster}`
-      : `/api/v1/blobs/${encodeURIComponent(activeNamespace)}/${sanitizedKeyPath}?inline=1${cacheBuster}`;
-  }, [selectedItem, activeNamespace, currentNsInfo?.is_public]);
-
-  const isImage = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "file") return false;
-    const ct = (selectedItem.content_type || "").toLowerCase();
-    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
-    return (
-      (ct.startsWith("image/") && !ct.includes("svg")) ||
-      ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"].includes(ext)
-    );
-  }, [selectedItem]);
-
-  const isAudio = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "file") return false;
-    const ct = (selectedItem.content_type || "").toLowerCase();
-    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
-    return (
-      ct.startsWith("audio/") ||
-      ["mp3", "wav", "ogg", "aac", "m4a", "flac"].includes(ext)
-    );
-  }, [selectedItem]);
-
-  const isVideo = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "file") return false;
-    const ct = (selectedItem.content_type || "").toLowerCase();
-    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
-    return (
-      ct.startsWith("video/") || ["mp4", "webm", "mkv", "mov"].includes(ext)
-    );
-  }, [selectedItem]);
-
-  const isCodeOrText = useMemo(() => {
-    if (!selectedItem || selectedItem.type !== "file") return false;
-    if (isImage || isAudio || isVideo) return false;
-    const ct = (selectedItem.content_type || "").toLowerCase();
-    const ext = selectedItem.name.split(".").pop()?.toLowerCase() || "";
-    return (
-      ct.startsWith("text/") ||
-      ct.includes("json") ||
-      ct.includes("xml") ||
-      ct.includes("javascript") ||
-      ct.includes("yaml") ||
-      ct.includes("toml") ||
-      ct.includes("sql") ||
-      ct.includes("lua") ||
-      [
-        "txt",
-        "md",
-        "json",
-        "js",
-        "ts",
-        "jsx",
-        "tsx",
-        "py",
-        "rs",
-        "go",
-        "sql",
-        "html",
-        "css",
-        "yaml",
-        "yml",
-        "toml",
-        "env",
-        "sh",
-        "lua",
-        "csv",
-        "tsv",
-        "log",
-        "xml",
-        "ini",
-        "conf",
-        "cfg",
-      ].includes(ext)
-    );
-  }, [selectedItem, isImage, isAudio, isVideo]);
-
-  // Fetch quick inline text preview for code and text files
-  useEffect(() => {
-    if (!isCodeOrText || !previewUrl) {
-      setInlineTextSnippet(null);
-      setIsLoadingSnippet(false);
-      return;
-    }
-    let cancelled = false;
-    setIsLoadingSnippet(true);
-    fetch(previewUrl, { cache: "no-cache" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then((txt) => {
-        if (cancelled) return;
-        setInlineTextSnippet(txt.slice(0, 4000));
-        setIsLoadingSnippet(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setInlineTextSnippet(null);
-        setIsLoadingSnippet(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isCodeOrText, previewUrl]);
-
   // Close panel on Escape key
   useEffect(() => {
     if (!isOpen) return;
@@ -215,7 +89,7 @@ export function StorageDetailsPanel({
   if (!isOpen) return null;
 
   const panel = (
-    <aside className="w-full flex-1 flex flex-col bg-[#0a0a0a] lg:border-l border-[#222222] font-sans select-none overflow-hidden relative h-full">
+    <aside className="w-full flex-1 flex flex-col bg-[#0e0e0e] lg:border-l border-[#222222] font-sans select-none overflow-hidden relative h-full">
       {/* Draggable Resize Handle on Left Border */}
       {onResizeStart && (
         <div
@@ -226,34 +100,39 @@ export function StorageDetailsPanel({
           <div className="w-full h-full" />
         </div>
       )}
-      {/* ─── Header: Fixed h-[54px] (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
-      <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
-        <h3 className="text-[15px] font-medium text-white font-sans truncate">
-          {selectedItem
-            ? selectedItem.type === "folder"
-              ? isCurrentFolderOverview
-                ? `Directory: ${selectedItem.name}`
-                : "Folder Details"
-              : "Object Details"
-            : "Namespace Overview"}
-        </h3>
+      {/* ─── Header: Matching SlideOver & RowInspector ─────────────── */}
+      <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-[#0e0e0e] border-b border-[#222222] shrink-0 font-sans">
+        <div className="min-w-0 pr-3 flex-1">
+          <h2 className="text-[16px] font-medium text-white tracking-[-0.015em] leading-snug font-sans truncate">
+            {selectedItem
+              ? selectedItem.name
+              : currentNsInfo?.name || activeNamespace || "Storage"}
+          </h2>
+          <div className="mt-0.5 text-[13px] text-[#8c8c8c] font-sans truncate">
+            {selectedItem
+              ? selectedItem.type === "folder"
+                ? `Directory · ${selectedItem.itemCount || 0} objects`
+                : `${activeNamespace} · ${formatBytes(selectedItem.size || 0)}`
+              : "Namespace Overview"}
+          </div>
+        </div>
         <button
           type="button"
           onClick={onClose}
           title="Close details inspector"
-          className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+          className="w-9 h-9 -mr-1 flex items-center justify-center rounded-[8px] text-[#888888] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* ─── Content Area ─────────────── */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 font-sans bg-[#0e0e0e]">
         {selectedItem ? (
           <>
             {/* Hero Card */}
-            <div className="p-3.5 rounded-lg bg-[#111111] border border-[#222222] flex flex-col items-center text-center">
-              <div className="w-12 h-12 rounded-[10px] bg-[#161616] border border-[#242424] flex items-center justify-center mb-2.5">
+            <div className="p-4 rounded-[8px] bg-[#141414] border border-[#222222] flex flex-col items-center text-center font-sans">
+              <div className="w-12 h-12 rounded-[10px] bg-[#181818] border border-[#262626] flex items-center justify-center mb-2.5 shadow-inner">
                 {selectedItem.type === "folder" ? (
                   <Folder className="w-6 h-6 text-[#8c8c8c]" />
                 ) : (
@@ -264,19 +143,19 @@ export function StorageDetailsPanel({
               <h4 className="text-[14px] font-medium text-white font-sans break-all max-w-full leading-snug">
                 {selectedItem.name}
               </h4>
-              <p className="text-[12px] text-[#8c8c8c] font-sans mt-0.5 truncate max-w-full">
+              <p className="text-[12.5px] text-[#8c8c8c] font-sans mt-0.5 truncate max-w-full">
                 {selectedItem.type === "folder"
                   ? "Virtual Directory"
                   : selectedItem.content_type || "application/octet-stream"}
               </p>
 
               {/* Quick Action Buttons */}
-              <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1f1f1f] grid grid-cols-2 gap-2 font-sans">
+              <div className="-mx-4 px-4 w-[calc(100%+2rem)] mt-3.5 pt-3.5 border-t border-[#1f1f1f] grid grid-cols-2 gap-2 font-sans">
                 {selectedItem.type === "file" && onPreview && (
                   <button
                     type="button"
                     onClick={() => onPreview(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-white bg-[#181818] hover:bg-[#202020] border border-[#2e2e2e] hover:border-[#3a3a3a] transition-colors cursor-pointer min-w-0"
+                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-white bg-[#1a1a1a] hover:bg-[#222222] border border-[#282828] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
                   >
                     <Eye className="w-3.5 h-3.5 text-[#a3a3a3] shrink-0" />
                     <span className="truncate">Preview</span>
@@ -363,141 +242,28 @@ export function StorageDetailsPanel({
               </div>
             </div>
 
-            {/* Live Inline Preview Card (Images, Audio, Video, Text/Code) */}
-            {selectedItem.type === "file" && previewUrl && (
-              <>
-                {isImage && (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between px-0.5">
-                      <span className="text-[13px] font-medium text-[#8c8c8c]">
-                        Image Preview
-                      </span>
-                      {onPreview && (
-                        <button
-                          type="button"
-                          onClick={() => onPreview(selectedItem)}
-                          className="text-[12px] text-blue-400 hover:text-blue-300 font-sans cursor-pointer flex items-center gap-1"
-                        >
-                          <Maximize2 className="w-3 h-3" /> Full Screen
-                        </button>
-                      )}
-                    </div>
-                    <div
-                      className="rounded-lg bg-[#0d0d0d] border border-[#222222] p-2 flex items-center justify-center overflow-hidden cursor-pointer group hover:border-[#333333] transition-colors"
-                      onClick={() => onPreview?.(selectedItem)}
-                    >
-                      <img
-                        src={previewUrl}
-                        alt={selectedItem.name}
-                        className="max-h-48 w-full object-contain rounded transition-transform group-hover:scale-[1.02]"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {isAudio && (
-                  <div className="space-y-1">
-                    <span className="text-[13px] font-medium text-[#8c8c8c] block px-0.5">
-                      Audio Player
-                    </span>
-                    <div className="rounded-lg bg-[#0d0d0d] border border-[#222222] p-3">
-                      <audio
-                        controls
-                        src={previewUrl}
-                        className="w-full"
-                        preload="metadata"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {isVideo && (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between px-0.5">
-                      <span className="text-[13px] font-medium text-[#8c8c8c]">
-                        Video Player
-                      </span>
-                      {onPreview && (
-                        <button
-                          type="button"
-                          onClick={() => onPreview(selectedItem)}
-                          className="text-[12px] text-blue-400 hover:text-blue-300 font-sans cursor-pointer flex items-center gap-1"
-                        >
-                          <Maximize2 className="w-3 h-3" /> Full Screen
-                        </button>
-                      )}
-                    </div>
-                    <div className="rounded-lg bg-black border border-[#222222] overflow-hidden">
-                      <video
-                        controls
-                        src={previewUrl}
-                        className="max-h-48 w-full"
-                        preload="metadata"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {isCodeOrText && (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between px-0.5">
-                      <span className="text-[13px] font-medium text-[#8c8c8c] flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                        Content Preview
-                      </span>
-                      {onPreview && (
-                        <button
-                          type="button"
-                          onClick={() => onPreview(selectedItem)}
-                          className="text-[12px] text-blue-400 hover:text-blue-300 font-sans cursor-pointer flex items-center gap-1"
-                        >
-                          <Maximize2 className="w-3 h-3" /> Full Screen
-                        </button>
-                      )}
-                    </div>
-                    <div className="rounded-lg bg-[#0c0c0c] border border-[#222222] p-2.5 overflow-hidden font-mono text-[11.5px] text-[#cccccc] leading-relaxed max-h-52 overflow-y-auto select-text">
-                      {isLoadingSnippet ? (
-                        <div className="flex items-center justify-center py-6 text-[#777777] gap-2">
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Loading preview...</span>
-                        </div>
-                      ) : inlineTextSnippet !== null ? (
-                        <pre className="whitespace-pre-wrap break-words m-0">
-                          {inlineTextSnippet}
-                        </pre>
-                      ) : (
-                        <div className="py-4 text-center text-[#777777]">
-                          Binary or empty content
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
             {/* Properties Group */}
-            <div className="space-y-1">
-              <span className="text-[13px] font-medium text-[#8c8c8c] block px-0.5">
+            <div className="space-y-2">
+              <span className="text-[13.5px] font-medium text-white block px-0.5 font-sans">
                 Properties
               </span>
 
-              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13px] font-sans">
-                <div className="flex items-center justify-between px-3 py-2">
+              <div className="rounded-[8px] bg-[#141414] border border-[#222222] divide-y divide-[#1f1f1f] text-[13px] font-sans">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-[#8c8c8c]">Namespace</span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-white font-medium">
                       {activeNamespace}
                     </span>
                     {currentNsInfo?.is_public && (
-                      <span className="px-2 py-0.5 rounded-[4px] text-[12px] bg-[#161616] border border-[#2e2e2e] font-medium font-sans text-[#cccccc] leading-none">
+                      <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] bg-[#1a1a1a] border border-[#2e2e2e] font-medium font-sans text-[#cccccc] leading-none">
                         Public
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-[#8c8c8c]">Access Policy</span>
                   <span
                     className={`font-medium ${
@@ -513,7 +279,7 @@ export function StorageDetailsPanel({
                 </div>
 
                 {selectedItem.type === "file" && !currentNsInfo?.is_public && (
-                  <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center justify-between px-3.5 py-2.5">
                     <span className="text-[#8c8c8c]">Active Share Links</span>
                     <div className="flex items-center gap-2">
                       <span className="text-white font-medium">
@@ -533,7 +299,7 @@ export function StorageDetailsPanel({
                 )}
 
                 {selectedItem.type === "file" && currentNsInfo?.is_public && (
-                  <div className="flex items-center justify-between px-3 py-2 gap-2">
+                  <div className="flex items-center justify-between px-3.5 py-2.5 gap-2">
                     <span className="text-[#8c8c8c] shrink-0">
                       Direct CDN URL
                     </span>
@@ -566,7 +332,7 @@ export function StorageDetailsPanel({
                   </div>
                 )}
 
-                <div className="flex items-center justify-between px-3 py-2 gap-2">
+                <div className="flex items-center justify-between px-3.5 py-2.5 gap-2">
                   <span className="text-[#8c8c8c] shrink-0">Path Key</span>
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span
@@ -592,7 +358,7 @@ export function StorageDetailsPanel({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-[#8c8c8c]">
                     {selectedItem.type === "folder"
                       ? "Contents"
@@ -605,7 +371,7 @@ export function StorageDetailsPanel({
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-[#8c8c8c]">Storage Tier</span>
                   <span className="text-white font-medium">
                     {selectedItem.type === "folder"
@@ -617,7 +383,7 @@ export function StorageDetailsPanel({
                 </div>
 
                 {selectedItem.type === "file" && selectedItem.created_at && (
-                  <div className="flex items-center justify-between px-3 py-2">
+                  <div className="flex items-center justify-between px-3.5 py-2.5">
                     <span className="text-[#8c8c8c]">Uploaded</span>
                     <span className="text-white tabular-nums text-[13px]">
                       {new Date(
@@ -631,9 +397,9 @@ export function StorageDetailsPanel({
 
             {/* Checksum & Cryptographic Integrity Card (Files Only) */}
             {selectedItem.type === "file" && selectedItem.hash && (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between px-0.5">
-                  <span className="text-[13px] font-medium text-[#8c8c8c]">
+                  <span className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
                     BLAKE3 Integrity
                   </span>
                   <button
@@ -641,7 +407,7 @@ export function StorageDetailsPanel({
                     onClick={() =>
                       onCopyText(selectedItem.hash!, "blake3-hash")
                     }
-                    className="text-[13px] text-[#8c8c8c] hover:text-white cursor-pointer inline-flex items-center gap-1"
+                    className="text-[12.5px] text-[#8c8c8c] hover:text-white cursor-pointer inline-flex items-center gap-1 font-sans"
                   >
                     {copiedKey === "blake3-hash" ? (
                       <>
@@ -659,8 +425,8 @@ export function StorageDetailsPanel({
                   </button>
                 </div>
 
-                <div className="rounded-lg bg-[#111111] border border-[#222222] p-2.5 space-y-2">
-                  <div className="p-2 rounded bg-[#0c0c0c] border border-[#1f1f1f] text-[12px] text-[#a1a1aa] break-all select-all leading-relaxed font-mono">
+                <div className="rounded-[8px] bg-[#141414] border border-[#222222] p-3 space-y-2 font-sans">
+                  <div className="p-2.5 rounded-[6px] bg-[#0c0c0c] border border-[#1f1f1f] text-[11.5px] text-[#a1a1aa] break-all select-all leading-relaxed font-mono">
                     {selectedItem.hash}
                   </div>
 
@@ -699,25 +465,25 @@ export function StorageDetailsPanel({
           </>
         ) : (
           /* Namespace Overview when no item is selected */
-          <div className="space-y-3">
-            <div className="p-3 rounded-lg bg-[#111111] border border-[#222222] space-y-1.5">
+          <div className="space-y-4">
+            <div className="p-4 rounded-[8px] bg-[#141414] border border-[#222222] space-y-1.5 font-sans">
               <div className="flex items-center gap-2">
-                <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-                <h4 className="text-sm font-medium text-white truncate">
+                <HardDrive className="w-4 h-4 text-blue-400" />
+                <h4 className="text-[14px] font-medium text-white truncate">
                   {currentNsInfo
                     ? currentNsInfo.name
                     : activeNamespace || "None"}
                 </h4>
               </div>
-              <p className="text-xs text-[#8c8c8c] leading-relaxed">
+              <p className="text-[12.5px] text-[#8c8c8c] leading-relaxed">
                 Dedicated container boundary backed by content-addressed
                 storage.
               </p>
             </div>
 
             {currentNsInfo && (
-              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13px] font-sans">
-                <div className="flex items-center justify-between px-3 py-2">
+              <div className="rounded-[8px] bg-[#141414] border border-[#222222] divide-y divide-[#1f1f1f] text-[13px] font-sans">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-[#8c8c8c]">Total Objects</span>
                   <span className="text-white tabular-nums">
                     {namespaceUsage
@@ -725,7 +491,7 @@ export function StorageDetailsPanel({
                       : currentNsInfo.total_objects}
                   </span>
                 </div>
-                <div className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-[#8c8c8c]">Consumed Space</span>
                   <span className="text-white tabular-nums">
                     {formatBytes(
@@ -735,7 +501,7 @@ export function StorageDetailsPanel({
                     )}
                   </span>
                 </div>
-                <div className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-[#8c8c8c]">Allocated Quota</span>
                   <span className="text-white tabular-nums">
                     {currentNsInfo.max_bytes
@@ -745,13 +511,13 @@ export function StorageDetailsPanel({
                 </div>
                 {namespaceUsage && namespaceUsage.max_bytes !== null && (
                   <>
-                    <div className="flex items-center justify-between px-3 py-2">
+                    <div className="flex items-center justify-between px-3.5 py-2.5">
                       <span className="text-[#8c8c8c]">Space Remaining</span>
                       <span className="text-emerald-400 font-medium tabular-nums">
                         {formatBytes(namespaceUsage.remaining_bytes ?? 0)}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between px-3 py-2">
+                    <div className="flex items-center justify-between px-3.5 py-2.5">
                       <span className="text-[#8c8c8c]">Quota Utilized</span>
                       <span
                         className={`font-medium tabular-nums ${

@@ -2428,8 +2428,10 @@ pub async fn update_user_handler(
     )
     .await;
 
-    // Instantly invalidate RAM session caches so updated permissions take effect immediately
+    // Instantly invalidate RAM session caches and clear login rate limit lockouts so account is unlocked immediately
     axiom_cache::CacheEngine::invalidate_prefix("sess:");
+    axiom_cache::CacheEngine::delete(&format!("rl:account:{}", updated.username)).await;
+    axiom_cache::CacheEngine::delete(&format!("rl:account:id:{}", updated.id)).await;
 
     Ok(Json(json!({
         "success": true,

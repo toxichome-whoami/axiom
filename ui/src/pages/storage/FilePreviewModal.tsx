@@ -128,53 +128,55 @@ export function FilePreviewModal({
     ? `${window.location.origin}/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}`
     : "";
 
-  // Right-hand Inspector Panel Content
+  // Right-hand Inspector Panel Content (matching RowInspectorSlideOver in Table)
   const detailsPanelContent = (
-    <div className="flex flex-col h-full font-sans select-none bg-[#0a0a0a]">
-      {/* Panel Top Header Bar (54px edge-to-edge) */}
-      <div className="h-[54px] px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <PanelRight className="w-4 h-4 text-[#8c8c8c]" />
-          <h3 className="text-[14px] font-medium text-white tracking-tight">
-            Object Details
-          </h3>
+    <div className="flex flex-col h-full font-sans select-none bg-[#0e0e0e]">
+      {/* Panel Top Header Bar matching SlideOver & RowInspector */}
+      <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-[#0e0e0e] border-b border-[#222222] shrink-0 font-sans">
+        <div className="min-w-0 pr-3 flex-1">
+          <h2 className="text-[16px] font-medium text-white tracking-[-0.015em] leading-snug font-sans truncate">
+            {item.name}
+          </h2>
+          <div className="mt-0.5 text-[13px] text-[#8c8c8c] font-sans truncate">
+            {namespace} · {formatBytes(item.size || 0)}
+          </div>
         </div>
         <button
           type="button"
           onClick={() => setShowDetails(false)}
-          title="Hide details panel"
-          className="w-8 h-8 rounded-[6px] flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+          title="Close details"
+          className="w-9 h-9 -mr-1 flex items-center justify-center text-[#888888] hover:text-white rounded-[8px] hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Panel Scrollable Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 font-sans bg-[#0e0e0e]">
         {/* Hero Card */}
-        <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#222222] flex flex-col items-center text-center">
-          <div className="w-12 h-12 rounded-[10px] bg-[#161616] border border-[#262626] flex items-center justify-center mb-2.5 shadow-inner">
+        <div className="p-4 rounded-[8px] bg-[#141414] border border-[#222222] flex flex-col items-center text-center font-sans">
+          <div className="w-12 h-12 rounded-[10px] bg-[#181818] border border-[#262626] flex items-center justify-center mb-2.5 shadow-inner">
             {getFileIcon(item.name, "w-6 h-6")}
           </div>
 
           <h4
-            className="text-[14px] font-medium text-white break-all max-w-full leading-snug"
+            className="text-[14px] font-medium text-white break-all max-w-full leading-snug font-sans"
             title={item.name}
           >
             {item.name}
           </h4>
-          <p className="text-[12px] text-[#8c8c8c] mt-0.5 truncate max-w-full font-mono">
+          <p className="text-[12.5px] text-[#8c8c8c] mt-0.5 truncate max-w-full font-mono">
             {item.content_type || "application/octet-stream"}
           </p>
 
           {/* Quick Action Grid */}
-          <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1f1f1f] grid grid-cols-2 gap-2">
+          <div className="-mx-4 px-4 w-[calc(100%+2rem)] mt-3.5 pt-3.5 border-t border-[#1f1f1f] grid grid-cols-2 gap-2 font-sans">
             <button
               type="button"
               onClick={() => onDownload(item.fullKey)}
-              className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-medium text-black bg-white hover:bg-[#e0e0e0] transition-colors cursor-pointer min-w-0 shadow-xs"
+              className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-white bg-[#1a1a1a] hover:bg-[#222222] border border-[#282828] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
             >
-              <Download className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
+              <Download className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
               <span className="truncate">Download</span>
             </button>
 
@@ -185,7 +187,7 @@ export function FilePreviewModal({
                   onClose();
                   onShare(item);
                 }}
-                className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#282828] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
+                className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
               >
                 <Share2 className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                 <span className="truncate">Share</span>
@@ -202,7 +204,7 @@ export function FilePreviewModal({
                     handleCopyText(publicCdnUrl, "public-url");
                   }
                 }}
-                className="col-span-2 inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer"
+                className="col-span-2 inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer"
                 title="Copy direct permanent CDN URL"
               >
                 {copiedKey === "public-url" ? (
@@ -222,14 +224,14 @@ export function FilePreviewModal({
         </div>
 
         {/* Properties Card */}
-        <div className="space-y-1.5">
-          <span className="text-[12px] font-medium text-[#8c8c8c] block px-0.5 uppercase tracking-wider">
+        <div className="space-y-2">
+          <span className="text-[13.5px] font-medium text-white block px-0.5 font-sans">
             Properties
           </span>
 
-          <div className="rounded-[8px] bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13px]">
+          <div className="rounded-[8px] bg-[#141414] border border-[#222222] divide-y divide-[#1f1f1f] text-[13px] font-sans">
             {/* Namespace */}
-            <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex items-center justify-between px-3.5 py-2.5">
               <span className="text-[#8c8c8c] flex items-center gap-1.5">
                 <HardDrive className="w-3.5 h-3.5 text-[#666666]" />
                 Namespace
@@ -237,7 +239,7 @@ export function FilePreviewModal({
               <div className="flex items-center gap-1.5">
                 <span className="text-white font-medium">{namespace}</span>
                 {isPublic && (
-                  <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
+                  <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] bg-[#1a1a1a] border border-[#2e2e2e] text-[#cccccc] leading-none">
                     Public
                   </span>
                 )}
@@ -245,12 +247,12 @@ export function FilePreviewModal({
             </div>
 
             {/* Path Key */}
-            <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex items-center justify-between px-3.5 py-2.5">
               <span className="text-[#8c8c8c]">Path</span>
               <button
                 type="button"
                 onClick={() => handleCopyText(item.fullKey, "full-key")}
-                className="flex items-center gap-1 text-white hover:text-blue-400 transition-colors font-mono text-[12px] max-w-[170px] truncate"
+                className="flex items-center gap-1 text-white hover:text-blue-400 transition-colors font-mono text-[12px] max-w-[170px] truncate cursor-pointer"
                 title={`Copy path: ${item.fullKey}`}
               >
                 <span className="truncate">{item.fullKey}</span>
@@ -263,7 +265,7 @@ export function FilePreviewModal({
             </div>
 
             {/* Size */}
-            <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex items-center justify-between px-3.5 py-2.5">
               <span className="text-[#8c8c8c]">Size</span>
               <span className="text-white font-medium tabular-nums">
                 {formatBytes(item.size || 0)}{" "}
@@ -274,10 +276,10 @@ export function FilePreviewModal({
             </div>
 
             {/* Storage Tier */}
-            <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex items-center justify-between px-3.5 py-2.5">
               <span className="text-[#8c8c8c] flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-[#666666]" />
-                Tier
+                Storage Tier
               </span>
               <span className="text-white text-[12.5px] font-medium">
                 {item.inline ? "Inline SQLite" : "Local Disk Content"}
@@ -285,7 +287,7 @@ export function FilePreviewModal({
             </div>
 
             {/* Content Type */}
-            <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex items-center justify-between px-3.5 py-2.5">
               <span className="text-[#8c8c8c] flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-[#666666]" />
                 Type
@@ -300,7 +302,7 @@ export function FilePreviewModal({
 
             {/* Created Timestamp */}
             {item.created_at && item.created_at > 0 && (
-              <div className="flex items-center justify-between px-3 py-2">
+              <div className="flex items-center justify-between px-3.5 py-2.5">
                 <span className="text-[#8c8c8c] flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-[#666666]" />
                   Uploaded
@@ -315,16 +317,16 @@ export function FilePreviewModal({
 
         {/* Cryptographic Integrity Card */}
         {item.hash && (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <div className="flex items-center justify-between px-0.5">
-              <span className="text-[12px] font-medium text-[#8c8c8c] uppercase tracking-wider flex items-center gap-1.5">
+              <span className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
                 <Hash className="w-3.5 h-3.5 text-[#666666]" />
                 BLAKE3 Hash
               </span>
               <button
                 type="button"
                 onClick={() => handleCopyText(item.hash!, "hash")}
-                className="text-[12px] text-[#8c8c8c] hover:text-white cursor-pointer inline-flex items-center gap-1"
+                className="text-[12.5px] text-[#8c8c8c] hover:text-white cursor-pointer inline-flex items-center gap-1 font-sans"
               >
                 {copiedKey === "hash" ? (
                   <>
@@ -340,8 +342,8 @@ export function FilePreviewModal({
               </button>
             </div>
 
-            <div className="rounded-[8px] bg-[#111111] border border-[#222222] p-2.5">
-              <div className="p-2 rounded-[5px] bg-[#0c0c0c] border border-[#1f1f1f] text-[11px] text-[#a1a1aa] break-all select-all leading-relaxed font-mono">
+            <div className="rounded-[8px] bg-[#141414] border border-[#222222] p-3">
+              <div className="p-2.5 rounded-[6px] bg-[#0c0c0c] border border-[#1f1f1f] text-[11.5px] text-[#a1a1aa] break-all select-all leading-relaxed font-mono">
                 {item.hash}
               </div>
             </div>
@@ -537,7 +539,7 @@ export function FilePreviewModal({
 
         {/* Desktop Inline Right Inspector (>= lg) */}
         {showDetails && (
-          <aside className="hidden lg:flex w-80 xl:w-88 shrink-0 flex-col border-l border-[#222222] bg-[#0a0a0a] h-full overflow-hidden select-text">
+          <aside className="hidden lg:flex w-96 xl:w-[420px] shrink-0 flex-col border-l border-[#222222] bg-[#0e0e0e] h-full overflow-hidden select-text font-sans">
             {detailsPanelContent}
           </aside>
         )}

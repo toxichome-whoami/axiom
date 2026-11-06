@@ -1677,9 +1677,9 @@ impl MetadataStore {
             .and_then(|r| r.get(0).ok());
 
         // Single Root Super Admin Invariants:
-        // 1. Root super-admin (id = 1 or min_id) can never be demoted.
+        // 1. Root super-admin (id = 1, min_id, or existing super admin) can never be demoted.
         // 2. Secondary accounts can NEVER be promoted to super-admin.
-        let is_root = id == 1 || min_id == Some(id);
+        let is_root = id == 1 || min_id == Some(id) || _existing_super;
         if is_root && is_super_admin == Some(false) {
             return Err("Root super admin account cannot be demoted".to_string());
         }
@@ -1739,7 +1739,12 @@ impl MetadataStore {
 
         let super_admin_int: i64 = if is_root { 1 } else { 0 };
 
-        let new_perms = permissions.unwrap_or(existing_perms);
+        // Invariant: Root super administrator always maintains full permissions and cannot be wiped
+        let new_perms = if is_root {
+            existing_perms
+        } else {
+            permissions.unwrap_or(existing_perms)
+        };
         let perms_json = serde_json::to_string(&new_perms)
             .map_err(|e| format!("Failed to serialize permissions: {}", e))?;
 
