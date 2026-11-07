@@ -244,6 +244,7 @@ export function useRowOperations({
       }
       setDeleteRowTarget(null);
       setSelectedRowIndex(null);
+      setSelectedRowIndices(new Set());
       setIsDetailsOpen(false);
       setRowEditValues({});
       setInspectorTab("details");

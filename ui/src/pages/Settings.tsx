@@ -262,6 +262,24 @@ export function Settings() {
       category: "database",
     },
     {
+      method: "GET",
+      path: "/api/v1/db/{alias}/{table}/rows/{id}",
+      desc: "Fetch single row record by primary key",
+      category: "database",
+    },
+    {
+      method: "PATCH",
+      path: "/api/v1/db/{alias}/{table}/rows/{id}",
+      desc: "Update single row record by primary key",
+      category: "database",
+    },
+    {
+      method: "DELETE",
+      path: "/api/v1/db/{alias}/{table}/rows/{id}",
+      desc: "Delete single row record by primary key",
+      category: "database",
+    },
+    {
       method: "POST",
       path: "/api/v1/db/{alias}/query",
       desc: "Execute raw SQL query with AST firewall validation",
@@ -349,6 +367,12 @@ export function Settings() {
       category: "storage",
     },
     {
+      method: "HEAD",
+      path: "/api/v1/blobs/public/{namespace}/{key}",
+      desc: "Check public CDN object existence, headers, and 304 ETag",
+      category: "storage",
+    },
+    {
       method: "POST",
       path: "/api/v1/blobs/uploads/{namespace}",
       desc: "Initialize chunked/resumable upload session",
@@ -370,6 +394,12 @@ export function Settings() {
       method: "PUT",
       path: "/api/v1/blobs/uploads/{namespace}/{upload_id}",
       desc: "Upload chunk via Content-Range or x-upload-offset",
+      category: "storage",
+    },
+    {
+      method: "PUT",
+      path: "/api/v1/blobs/uploads/{namespace}/{upload_id}/parts/{part}",
+      desc: "Upload discrete numbered chunk part",
       category: "storage",
     },
     {
@@ -400,6 +430,12 @@ export function Settings() {
       method: "POST",
       path: "/api/v1/blobs/tickets/{namespace}/{signature}/revoke",
       desc: "Revoke capability ticket immediately",
+      category: "storage",
+    },
+    {
+      method: "POST",
+      path: "/api/v1/blobs/tickets/{namespace}/{signature}/enable",
+      desc: "Re-enable revoked capability ticket",
       category: "storage",
     },
     {
@@ -527,6 +563,18 @@ export function Settings() {
     },
     {
       method: "GET",
+      path: "/admin/v1/settings",
+      desc: "Inspect global security and runtime configuration",
+      category: "admin",
+    },
+    {
+      method: "PATCH",
+      path: "/admin/v1/settings",
+      desc: "Update security settings: PBAC cache, CAPTCHA, query rules",
+      category: "admin",
+    },
+    {
+      method: "GET",
       path: "/admin/v1/audit",
       desc: "Query audit logs with cursor pagination and filters",
       category: "admin",
@@ -545,8 +593,44 @@ export function Settings() {
     },
     {
       method: "GET",
+      path: "/admin/v1/auth/me",
+      desc: "Inspect current authenticated administrator session",
+      category: "admin",
+    },
+    {
+      method: "POST",
+      path: "/admin/v1/auth/logout",
+      desc: "Invalidate administrator session cookie",
+      category: "admin",
+    },
+    {
+      method: "GET",
       path: "/admin/v1/users",
       desc: "List administrative users configured in gateway",
+      category: "admin",
+    },
+    {
+      method: "POST",
+      path: "/admin/v1/users",
+      desc: "Create new administrator user account",
+      category: "admin",
+    },
+    {
+      method: "GET",
+      path: "/admin/v1/users/{id}",
+      desc: "Inspect administrator user details and role bindings",
+      category: "admin",
+    },
+    {
+      method: "PATCH",
+      path: "/admin/v1/users/{id}",
+      desc: "Update administrator user account, roles, or password",
+      category: "admin",
+    },
+    {
+      method: "DELETE",
+      path: "/admin/v1/users/{id}",
+      desc: "Delete administrator user account",
       category: "admin",
     },
     {
@@ -568,9 +652,21 @@ export function Settings() {
       category: "admin",
     },
     {
+      method: "GET",
+      path: "/admin/v1/blobs/namespaces",
+      desc: "List storage namespaces with administrative quota details",
+      category: "admin",
+    },
+    {
       method: "POST",
       path: "/admin/v1/blobs/namespaces",
       desc: "Create new storage namespace with quota",
+      category: "admin",
+    },
+    {
+      method: "GET",
+      path: "/admin/v1/blobs/namespaces/{namespace}",
+      desc: "Inspect storage namespace configuration and retention",
       category: "admin",
     },
     {
@@ -589,6 +685,24 @@ export function Settings() {
       method: "GET",
       path: "/admin/v1/blobs/tickets",
       desc: "Global audit of all capability tickets across namespaces",
+      category: "admin",
+    },
+    {
+      method: "POST",
+      path: "/admin/v1/blobs/tickets/{signature}/revoke",
+      desc: "Revoke capability ticket globally",
+      category: "admin",
+    },
+    {
+      method: "POST",
+      path: "/admin/v1/blobs/tickets/{signature}/enable",
+      desc: "Re-enable revoked capability ticket globally",
+      category: "admin",
+    },
+    {
+      method: "DELETE",
+      path: "/admin/v1/blobs/tickets/{signature}",
+      desc: "Delete capability ticket record globally",
       category: "admin",
     },
   ];
@@ -634,6 +748,30 @@ export function Settings() {
       method: "PATCH",
       path: "/admin/v1/cluster/moniker",
       desc: "Update node display name / moniker",
+      category: "cluster",
+    },
+    {
+      method: "POST",
+      path: "/internal/v1/cluster/handshake",
+      desc: "Cluster node mutual TLS authentication and handshake",
+      category: "cluster",
+    },
+    {
+      method: "GET",
+      path: "/internal/v1/cluster/ping",
+      desc: "Heartbeat probe between cluster nodes",
+      category: "cluster",
+    },
+    {
+      method: "POST",
+      path: "/internal/v1/cluster/event",
+      desc: "Replicate Raft event to cluster quorum",
+      category: "cluster",
+    },
+    {
+      method: "GET",
+      path: "/internal/v1/cluster/sync",
+      desc: "Incremental state synchronization across nodes",
       category: "cluster",
     },
   ];

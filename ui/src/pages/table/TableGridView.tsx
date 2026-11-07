@@ -498,9 +498,18 @@ export function TableGridView({
                 ) : (
                   rows.map((row, idx) => {
                     const isSelected = selectedRowIndex === idx;
+                    const pkCol = columns.find((c) => c.primary_key);
+                    const rowKey =
+                      pkCol &&
+                      row[pkCol.name] !== undefined &&
+                      row[pkCol.name] !== null
+                        ? `row-pk-${String(row[pkCol.name])}`
+                        : row.id !== undefined && row.id !== null
+                          ? `row-id-${String(row.id)}`
+                          : `row-idx-${idx}`;
                     return (
                       <tr
-                        key={idx}
+                        key={rowKey}
                         onClick={() => onSelectRow(idx, false)}
                         onContextMenu={(e) => {
                           if (onCellContextMenu) {

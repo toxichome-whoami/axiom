@@ -2157,8 +2157,16 @@ pub async fn update_row_by_id(
         }
     }
 
+    let final_sql = if (dialect == "postgres" || dialect == "any") && sql.contains('?') {
+        format_postgres_placeholders(&sql)
+    } else if dialect == "oracle" && sql.contains('?') {
+        format_oracle_placeholders(&sql)
+    } else {
+        sql
+    };
+
     let result = engine
-        .execute(&sql, &values)
+        .execute(&final_sql, &values)
         .await
         .map_err(|e| AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::BAD_REQUEST))?;
 
@@ -2249,8 +2257,16 @@ pub async fn delete_row_by_id(
         }
     }
 
+    let final_sql = if (dialect == "postgres" || dialect == "any") && sql.contains('?') {
+        format_postgres_placeholders(&sql)
+    } else if dialect == "oracle" && sql.contains('?') {
+        format_oracle_placeholders(&sql)
+    } else {
+        sql
+    };
+
     let result = engine
-        .execute(&sql, &values)
+        .execute(&final_sql, &values)
         .await
         .map_err(|e| AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::BAD_REQUEST))?;
 

@@ -326,13 +326,13 @@ export function FilePreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-[#0c0c0c] font-sans select-none overflow-hidden animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-md font-sans select-none overflow-hidden animate-in fade-in duration-150"
       role="dialog"
       aria-modal="true"
       aria-label={`Preview ${item.name}`}
     >
       {/* ─── Top Header Bar: 54px Edge-to-Edge ───────────────────────── */}
-      <header className="h-[54px] w-full px-3 sm:px-5 bg-[#0c0c0c] border-b border-[#222222] flex items-center justify-between shrink-0 font-sans z-20">
+      <header className="h-[54px] w-full px-3 sm:px-5 bg-[#0e0e0e]/95 backdrop-blur-md border-b border-[#222222] flex items-center justify-between shrink-0 font-sans z-20">
         {/* Left: Icon, Filename, Ext pill, Public badge, Size */}
         <div className="flex items-center gap-2.5 min-w-0 pr-2">
           <div className="w-8 h-8 rounded-[7px] bg-[#141414] border border-[#242424] flex items-center justify-center shrink-0 shadow-inner">
@@ -457,10 +457,16 @@ export function FilePreviewModal({
 
       {/* ─── Main Two-Pane Canvas: Edge-to-Edge ───────────────────────── */}
       <div className="flex-1 flex flex-row min-h-0 w-full overflow-hidden relative">
-        {/* Center Media Viewport */}
-        <main className="flex-1 min-h-0 w-full flex items-center justify-center p-3 sm:p-6 bg-[#09090b] overflow-auto relative">
+        {/* Center Media Viewport - click anywhere on backdrop to close */}
+        <main
+          className="flex-1 min-h-0 w-full flex items-center justify-center p-3 sm:p-6 bg-transparent overflow-auto relative cursor-pointer"
+          onClick={onClose}
+        >
           {isLoadingStream ? (
-            <div className="flex items-center gap-3 text-[#8c8c8c] text-[13px] py-16 font-sans">
+            <div
+              className="flex items-center gap-3 text-[#8c8c8c] text-[13px] py-16 font-sans cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            >
               <svg
                 className="animate-spin h-5 w-5 text-white"
                 fill="none"
@@ -483,7 +489,10 @@ export function FilePreviewModal({
               <span>Loading media stream...</span>
             </div>
           ) : streamError ? (
-            <div className="text-center p-8 max-w-sm space-y-3 font-sans">
+            <div
+              className="text-center p-8 max-w-sm space-y-3 font-sans cursor-default bg-[#0c0c0c] border border-[#222222] rounded-[8px]"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="text-[#e5484d] text-[13px]">{streamError}</div>
               <button
                 type="button"
@@ -494,7 +503,10 @@ export function FilePreviewModal({
               </button>
             </div>
           ) : streamUrl ? (
-            <div className="w-full h-full flex items-center justify-center min-h-0 max-w-6xl">
+            <div
+              className="w-full max-w-5xl my-auto cursor-default shrink-0 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
               <MediaPlayer
                 url={streamUrl}
                 name={item.name}
@@ -510,7 +522,10 @@ export function FilePreviewModal({
 
         {/* Desktop Inline Right Inspector (>= lg) */}
         {showDetails && (
-          <aside className="hidden lg:flex w-96 xl:w-[420px] shrink-0 flex-col border-l border-[#222222] bg-[#0e0e0e] h-full overflow-hidden select-text font-sans">
+          <aside
+            className="hidden lg:flex w-96 xl:w-[420px] shrink-0 flex-col border-l border-[#222222] bg-[#0e0e0e] h-full overflow-hidden select-text font-sans shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             {detailsPanelContent}
           </aside>
         )}
