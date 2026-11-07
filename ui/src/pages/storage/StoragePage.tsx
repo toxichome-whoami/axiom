@@ -1994,15 +1994,13 @@ export function StoragePage() {
 
   // Open Capability Link Share modal
   const handleOpenShare = useCallback(
-    (
-      item: StorageItem,
-      initialTab: "public" | "create" | "manage" = "manage",
-    ) => {
+    (item: StorageItem, initialTab?: "public" | "create" | "manage") => {
       setItemToShare(item);
-      setShareInitialTab(initialTab);
+      const isPublic = Boolean(currentNsInfo?.is_public);
+      setShareInitialTab(isPublic ? "public" : initialTab || "create");
       setIsShareOpen(true);
     },
-    [],
+    [currentNsInfo],
   );
 
   // Verify blob cryptographic hash integrity
@@ -2649,7 +2647,6 @@ export function StoragePage() {
             ? activeTicketCountsByKey[inspectorItem.fullKey] || 0
             : 0
         }
-        onCopyPublicUrl={handleCopyPublicUrl}
         onOpenMove={
           canUpdateBlob
             ? (item) => {
@@ -3353,8 +3350,6 @@ export function StoragePage() {
         onPreview={handleOpenPreview}
         onDownload={(item) => handleDownload(item.fullKey)}
         onShare={handleOpenShare}
-        onCopyPublicUrl={handleCopyPublicUrl}
-        isPublicNamespace={Boolean(currentNsInfo?.is_public)}
         onMove={
           canUpdateBlob
             ? (item) => {
@@ -3420,7 +3415,6 @@ export function StoragePage() {
         isPublic={Boolean(currentNsInfo?.is_public)}
         onDownload={handleDownload}
         onShare={handleOpenShare}
-        onCopyPublicUrl={handleCopyPublicUrl}
       />
 
       {/* Capability Ticket / Share Link Modal */}

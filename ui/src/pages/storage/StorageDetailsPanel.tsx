@@ -19,7 +19,6 @@ import {
   Layers,
   HardDrive,
   Share2,
-  Globe,
   Eye,
 } from "lucide-react";
 import { StorageItem } from "./types";
@@ -40,7 +39,6 @@ export interface StorageDetailsPanelProps {
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
   activeTicketCount?: number;
-  onCopyPublicUrl?: (item: StorageItem) => void;
   onOpenMove?: (item: StorageItem) => void;
   onOpenCopy?: (item: StorageItem) => void;
   onDelete?: (item: StorageItem) => void;
@@ -64,7 +62,6 @@ export function StorageDetailsPanel({
   onDownload,
   onShare,
   activeTicketCount,
-  onCopyPublicUrl,
   onOpenMove,
   onOpenCopy,
   onDelete,
@@ -183,29 +180,6 @@ export function StorageDetailsPanel({
                     <span className="truncate">Share</span>
                   </button>
                 )}
-
-                {selectedItem.type === "file" &&
-                  currentNsInfo?.is_public &&
-                  onCopyPublicUrl && (
-                    <button
-                      type="button"
-                      onClick={() => onCopyPublicUrl(selectedItem)}
-                      className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer min-w-0"
-                      title="Copy direct permanent public CDN URL"
-                    >
-                      {copiedKey === "public-url" ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span className="truncate">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Globe className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
-                          <span className="truncate">Public URL</span>
-                        </>
-                      )}
-                    </button>
-                  )}
 
                 {onOpenMove && (
                   <button

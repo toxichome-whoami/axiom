@@ -35,7 +35,6 @@ export interface FilePreviewModalProps {
   isPublic?: boolean;
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
-  onCopyPublicUrl?: (item: StorageItem) => void;
 }
 
 export function FilePreviewModal({
@@ -46,7 +45,6 @@ export function FilePreviewModal({
   isPublic = false,
   onDownload,
   onShare,
-  onCopyPublicUrl,
 }: FilePreviewModalProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isLoadingStream, setIsLoadingStream] = useState(false);
@@ -191,33 +189,6 @@ export function FilePreviewModal({
               >
                 <Share2 className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                 <span className="truncate">Share</span>
-              </button>
-            )}
-
-            {isPublic && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (onCopyPublicUrl) {
-                    onCopyPublicUrl(item);
-                  } else if (publicCdnUrl) {
-                    handleCopyText(publicCdnUrl, "public-url");
-                  }
-                }}
-                className="col-span-2 inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer"
-                title="Copy direct permanent CDN URL"
-              >
-                {copiedKey === "public-url" ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>CDN URL Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Globe className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
-                    <span>Copy Public CDN URL</span>
-                  </>
-                )}
               </button>
             )}
           </div>

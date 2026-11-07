@@ -22,6 +22,7 @@ import {
   Code2,
   ExternalLink,
   Terminal,
+  Eye,
 } from "lucide-react";
 import { StorageItem } from "./types";
 import { BlobTicket, CreateBlobTicketResponse } from "../../types";
@@ -81,9 +82,9 @@ export function ShareTicketModal({
   initialTab,
   onTicketChanged,
 }: ShareTicketModalProps) {
-  // If public namespace, default tab is 'public', otherwise initialTab or 'create'
+  // If public namespace, tab is always 'public', otherwise initialTab or 'create'
   const [activeTab, setActiveTab] = useState<"public" | "create" | "manage">(
-    initialTab || (isPublicNamespace ? "public" : "create"),
+    isPublicNamespace ? "public" : initialTab || "create",
   );
   const [selectedTtl, setSelectedTtl] = useState<number>(3600);
   const [customHours, setCustomHours] = useState<string>("12");
@@ -96,8 +97,8 @@ export function ShareTicketModal({
   const [resultFormat, setResultFormat] = useState<
     "viewer" | "stream" | "embed" | "curl"
   >("viewer");
-  const [publicFormat, setPublicFormat] = useState<"url" | "embed" | "curl">(
-    "url",
+  const [publicFormat, setPublicFormat] = useState<"preview" | "url" | "embed">(
+    "preview",
   );
 
   const [tickets, setTickets] = useState<BlobTicket[]>([]);
@@ -160,7 +161,7 @@ export function ShareTicketModal({
       setTicketToDelete(null);
       setResultFormat("viewer");
       setPublicFormat("url");
-      setActiveTab(initialTab || (isPublicNamespace ? "public" : "create"));
+      setActiveTab(isPublicNamespace ? "public" : initialTab || "create");
       if (!isPublicNamespace) {
         loadTickets();
       }
@@ -246,6 +247,7 @@ export function ShareTicketModal({
     .map(encodeURIComponent)
     .join("/");
   const publicCdnUrl = `${window.location.origin}/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}`;
+  const publicPreviewUrl = `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`;
 
   // Signed Capability URLs
   const rawTicketUrl = generatedTicket
@@ -318,9 +320,20 @@ export function ShareTicketModal({
                 <Share2 className="w-4 h-4 text-white" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-[15px] font-sans font-semibold text-white tracking-tight leading-tight">
-                  {isPublicNamespace ? "Share Public Object" : "Share Object"}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[15px] font-sans font-semibold text-white tracking-tight leading-tight">
+                    Share Object
+                  </h3>
+                  {isPublicNamespace ? (
+                    <span className="px-2 py-0.5 rounded-[4px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-medium leading-none">
+                      Public
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#2c2c2c] text-[#8c8c8c] text-[11px] font-medium leading-none">
+                      Private
+                    </span>
+                  )}
+                </div>
                 <p
                   className="text-[13px] text-[#8c8c8c] font-sans truncate max-w-[360px] mt-0.5"
                   title={`${namespace}/${item.fullKey}`}
@@ -409,8 +422,20 @@ export function ShareTicketModal({
                   </div>
                 </div>
 
-                {/* Segmented Format Selector */}
+                {/* Segmented Format Selector (3 Tabs: Preview Page, Direct CDN, Embed/cURL) */}
                 <div className="flex items-center gap-1 p-0.5 rounded-[7px] bg-[#121212] border border-[#202020]">
+                  <button
+                    type="button"
+                    onClick={() => setPublicFormat("preview")}
+                    className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                      publicFormat === "preview"
+                        ? "bg-[#222222] text-white shadow-xs"
+                        : "text-[#888888] hover:text-[#cccccc]"
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Preview Page</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setPublicFormat("url")}
@@ -421,37 +446,78 @@ export function ShareTicketModal({
                     }`}
                   >
                     <Globe className="w-3.5 h-3.5" />
-                    <span>Public URL</span>
+                    <span>Direct CDN</span>
                   </button>
-                  {isMedia && (
-                    <button
-                      type="button"
-                      onClick={() => setPublicFormat("embed")}
-                      className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                        publicFormat === "embed"
-                          ? "bg-[#222222] text-white shadow-xs"
-                          : "text-[#888888] hover:text-[#cccccc]"
-                      }`}
-                    >
-                      <Code2 className="w-3.5 h-3.5" />
-                      <span>HTML Embed</span>
-                    </button>
-                  )}
                   <button
                     type="button"
-                    onClick={() => setPublicFormat("curl")}
+                    onClick={() => setPublicFormat("embed")}
                     className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                      publicFormat === "curl"
+                      publicFormat === "embed"
                         ? "bg-[#222222] text-white shadow-xs"
                         : "text-[#888888] hover:text-[#cccccc]"
                     }`}
                   >
-                    <Terminal className="w-3.5 h-3.5" />
-                    <span>cURL</span>
+                    {isMedia ? (
+                      <>
+                        <Code2 className="w-3.5 h-3.5" />
+                        <span>HTML Embed</span>
+                      </>
+                    ) : (
+                      <>
+                        <Terminal className="w-3.5 h-3.5" />
+                        <span>cURL</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
-                {/* Format Content */}
+                {/* Format 1: Public Preview Viewer Page */}
+                {publicFormat === "preview" && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
+                      <span>Preview Viewer Page</span>
+                      <a
+                        href={publicPreviewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 text-[13px] font-sans text-[#8c8c8c] hover:text-white transition-colors"
+                      >
+                        <span>Open in tab</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
+                      <Eye className="w-4 h-4 text-[#777777] shrink-0" />
+                      <input
+                        type="text"
+                        readOnly
+                        value={publicPreviewUrl}
+                        className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(publicPreviewUrl, "public-preview")
+                        }
+                        className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                      >
+                        {copiedKey === "public-preview" ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-[#888888]" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Format 2: Direct CDN URL */}
                 {publicFormat === "url" && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
@@ -497,20 +563,26 @@ export function ShareTicketModal({
                   </div>
                 )}
 
+                {/* Format 3: Snippet (HTML Embed or cURL command) */}
                 {publicFormat === "embed" && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
-                      <span>HTML Media Tag</span>
+                      <span>
+                        {isMedia ? "HTML Media Tag" : "cURL Terminal Command"}
+                      </span>
                       <button
                         type="button"
                         onClick={() =>
-                          copyToClipboard(publicEmbedSnippet, "public-embed")
+                          copyToClipboard(
+                            isMedia ? publicEmbedSnippet : publicCurlSnippet,
+                            "public-snippet",
+                          )
                         }
                         className="flex items-center gap-1 text-[#8c8c8c] hover:text-white transition-colors cursor-pointer text-[12.5px] font-sans"
                       >
-                        {copiedKey === "public-embed" ? (
+                        {copiedKey === "public-snippet" ? (
                           <span className="text-emerald-400 flex items-center gap-1">
-                            <Check className="w-3.5 h-3.5" /> Copied snippet
+                            <Check className="w-3.5 h-3.5" /> Copied
                           </span>
                         ) : (
                           <span className="flex items-center gap-1">
@@ -519,47 +591,42 @@ export function ShareTicketModal({
                         )}
                       </button>
                     </div>
-                    <div className="rounded-[7px] bg-[#141414] border border-[#262626] p-3">
-                      <pre className="font-mono text-[12.5px] text-[#cccccc] whitespace-pre-wrap break-all select-all leading-relaxed">
-                        {publicEmbedSnippet}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-
-                {publicFormat === "curl" && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
-                      <span>cURL Terminal Command</span>
-                    </div>
-                    <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
-                      <Terminal className="w-4 h-4 text-[#777777] shrink-0" />
-                      <input
-                        type="text"
-                        readOnly
-                        value={publicCurlSnippet}
-                        className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(publicCurlSnippet, "public-curl")
-                        }
-                        className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
-                      >
-                        {copiedKey === "public-curl" ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="text-emerald-400">Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-[#888888]" />
-                            <span>Copy</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                    {isMedia ? (
+                      <div className="rounded-[7px] bg-[#141414] border border-[#262626] p-3">
+                        <pre className="font-mono text-[12.5px] text-[#cccccc] whitespace-pre-wrap break-all select-all leading-relaxed">
+                          {publicEmbedSnippet}
+                        </pre>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
+                        <Terminal className="w-4 h-4 text-[#777777] shrink-0" />
+                        <input
+                          type="text"
+                          readOnly
+                          value={publicCurlSnippet}
+                          className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyToClipboard(publicCurlSnippet, "public-snippet")
+                          }
+                          className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                        >
+                          {copiedKey === "public-snippet" ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="text-emerald-400">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-[#888888]" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

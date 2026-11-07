@@ -20,7 +20,6 @@ import {
   Copy,
   Share2,
   Eye,
-  Globe,
 } from "lucide-react";
 import { StorageItem, ClipboardState } from "./types";
 
@@ -38,8 +37,6 @@ export interface ContextMenuProps {
   onOpenFolder?: (item: StorageItem) => void;
   onDownload?: (item: StorageItem) => void;
   onShare?: (item: StorageItem) => void;
-  onCopyPublicUrl?: (item: StorageItem) => void;
-  isPublicNamespace?: boolean;
   onMove?: (item: StorageItem) => void;
   onRename?: (item: StorageItem) => void;
   onCopy?: (item: StorageItem) => void;
@@ -60,8 +57,6 @@ export function ContextMenu({
   onOpenFolder,
   onDownload,
   onShare,
-  onCopyPublicUrl,
-  isPublicNamespace,
   onMove,
   onRename,
   onCopy,
@@ -118,8 +113,7 @@ export function ContextMenu({
     ((item.type === "folder" && onOpenFolder) ||
       (item.type === "file" && onPreview) ||
       (item.type === "file" && onDownload) ||
-      (item.type === "file" && onShare) ||
-      (item.type === "file" && isPublicNamespace && onCopyPublicUrl)),
+      (item.type === "file" && onShare)),
   );
 
   const hasMutationActions = Boolean(item && (onRename || onMove || onCopy));
@@ -202,20 +196,6 @@ export function ContextMenu({
             >
               <Share2 className="w-4 h-4 text-white shrink-0" />
               <span>Share Link...</span>
-            </button>
-          )}
-
-          {item.type === "file" && isPublicNamespace && onCopyPublicUrl && (
-            <button
-              type="button"
-              onClick={() => {
-                onCopyPublicUrl(item);
-                onClose();
-              }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors cursor-pointer text-left"
-            >
-              <Globe className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-              <span>Copy Public URL</span>
             </button>
           )}
 
